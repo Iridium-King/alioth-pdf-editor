@@ -1,6 +1,14 @@
-const ALIOTH_VERSION = '3.2.35';
+const ALIOTH_VERSION = '3.2.36';
         window.ALIOTH_VERSION = ALIOTH_VERSION;
         const ALIOTH_CHANGELOG = [
+            {
+                version: '3.2.36',
+                date: '2026-11-05',
+                items: [
+                    { type: 'fix', text: '<strong>Fuentes:</strong> Utiliza las fuentes instaladas de Windows para vista, métricas y exportación; alternativas libres cuando falten, sin redistribuir fuentes de Microsoft.' },
+                    { type: 'improve', text: '<strong>Distribución:</strong> Construcción con dependencias fijadas y configuración personal excluida. Firma local propia y aviso de integración en About / Legal.' }
+                ]
+            },
             {
                 version: '3.2.35',
                 date: '2026-11-04',

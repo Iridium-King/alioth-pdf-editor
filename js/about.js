@@ -1,5 +1,5 @@
     (function(){
-        const legalTabs = ['terms', 'privacy', 'ai', 'licenses'];
+        const legalTabs = ['terms', 'privacy', 'ai', 'licenses', 'windows'];
         let activeLegalTab = 'privacy';
         let activeAboutTab = 'features';
         const featureGroups = [
@@ -45,6 +45,7 @@
             });
             title.textContent = copy[activeLegalTab].title;
             body.textContent = copy[activeLegalTab].body;
+            body.style.whiteSpace = activeLegalTab === 'windows' ? 'pre-line' : '';
             contact.textContent = `${legal.common.project} · ${legal.common.contact}`;
             if (enableAi) {
                 const enabled = legal.isAiEnabled(window.localStorage);
