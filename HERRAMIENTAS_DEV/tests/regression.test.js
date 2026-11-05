@@ -8,7 +8,9 @@ const root = path.resolve(__dirname, '..', '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 
 test('Python proxy compiles', () => {
-  execFileSync(path.join(root, '_python', 'python.exe'), ['-m', 'py_compile', path.join(root, '_proxy.py')]);
+  const python = process.env.ALIOTH_PYTHON || ['.build-python', '_python']
+    .map(folder => path.join(root, folder, 'python.exe')).find(file => fs.existsSync(file)) || 'python';
+  execFileSync(python, ['-m', 'py_compile', path.join(root, '_proxy.py')]);
 });
 
 test('Gemini uses the supported stable model', () => {

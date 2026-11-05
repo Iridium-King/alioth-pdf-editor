@@ -1,8 +1,9 @@
 import sys
 import os
 import fitz
+from pathlib import Path
 
-sys.path.insert(0, r"c:\PDF TOOL\js\engine")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'js/engine'))
 import text_splice
 
 doc = fitz.open()
