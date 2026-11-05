@@ -1,8 +1,8 @@
-pypdfium2
-pymupdf
-Pillow
-pytesseract
-openpyxl
-python-pptx
-pywin32
-certifi
+pypdfium2==5.11.0
+pymupdf==1.28.0
+Pillow==12.3.0
+pytesseract==0.3.13
+openpyxl==3.1.5
+python-pptx==1.0.2
+pywin32==311
+certifi==2026.6.17
