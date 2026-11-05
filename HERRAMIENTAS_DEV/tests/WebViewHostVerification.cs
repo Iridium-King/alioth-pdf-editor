@@ -588,6 +588,12 @@ internal sealed partial class HostWindow
     {
         RequireIsolatedLayoutProfile();
         await WaitForFailureInterface();
+        string fontProof = await EvaluatePromise(File.ReadAllText(Path.Combine(Program.Assets, "HERRAMIENTAS_DEV/tests/fonts-release-verification.js")));
+        File.WriteAllText(Path.Combine(directory,"fonts.json"), fontProof);
+        string fontPdf = Program.Json.Deserialize<string>(await view.CoreWebView2.ExecuteScriptAsync("window.__qaFontPdf"));
+        File.WriteAllBytes(Path.Combine(directory,"fonts.pdf"), Convert.FromBase64String(fontPdf));
+        await CaptureView(directory, "about-windows.png");
+        await view.CoreWebView2.ExecuteScriptAsync("document.getElementById('about-modal').style.display='none'");
         string original = Path.Combine(directory, "origen ñ", "base.pdf");
         string inserted = Path.Combine(directory, "insertado", "otro.pdf");
         await view.CoreWebView2.ExecuteScriptAsync(@"(() => {

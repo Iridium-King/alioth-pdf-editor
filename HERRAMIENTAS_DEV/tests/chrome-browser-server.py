@@ -25,6 +25,15 @@ if '--fixture-migration' in sys.argv:
 
 class VerificationHandler(proxy.AliothHandler):
     def do_GET(self):
+        for prefix, original in [('/__qa/original-font/', True), ('/__qa/free-font/', False)]:
+            if self.path.startswith(prefix):
+                from _system_fonts import FONT_FILES, resolve_font
+                name = self.path.removeprefix(prefix)
+                if name.lower() not in FONT_FILES:
+                    return self._send_error(404, 'Unknown QA font')
+                root = Path(__file__).resolve().parents[2]
+                path = root / 'fonts/standard_fonts' / name if original else resolve_font(name, root, [])
+                return self._send_raw(200, path.read_bytes(), 'font/ttf')
         if self.path == '/__qa/windows':
             from _window_chrome import window_chrome
             api = window_chrome._api()
