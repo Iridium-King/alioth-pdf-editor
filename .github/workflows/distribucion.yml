@@ -1,0 +1,32 @@
+name: Construir Distribucion
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ['**/*.md']
+permissions:
+  contents: read
+jobs:
+  distribution:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      PYTHONHASHSEED: '0'
+      SOURCE_DATE_EPOCH: '1793836800'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Restaurar insumos verificados y construir solo Distribucion
+        run: python HERRAMIENTAS_DEV/bootstrap_build.py
+      - name: Regresion Python
+        run: ./.build-python/python.exe -m unittest discover -s HERRAMIENTAS_DEV/tests -p 'test_*.py'
+      - name: Regresion JavaScript
+        run: node --test HERRAMIENTAS_DEV/tests/*.test.cjs HERRAMIENTAS_DEV/tests/regression.test.js
+      - name: Publicar exclusivamente portable de Distribucion sin firma privada
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Alioth-PDF-Distribucion
+          path: RELEASE/Distribucion/Alioth_PDF_Editor_Distribucion.exe
+          if-no-files-found: error
+          retention-days: 14
