@@ -1,0 +1,205 @@
+body.compact-chrome {
+    --chrome-zoom-width: 51px; --chrome-title-height: 29px; --chrome-header-height: 26px;
+    --chrome-tab-height: 25px; --chrome-active-tab-height: 26px;
+    --chrome-file-size: 22px; --chrome-file-icon: 20px;
+}
+body.compact-chrome.reading-mode {
+    --chrome-title-height: 26.1px; --chrome-header-height: 23px;
+    --chrome-tab-height: 22.5px; --chrome-active-tab-height: 23.4px;
+    --chrome-file-size: 19px; --chrome-file-icon: 17.5px;
+}
+.app-titlebar {
+    display: flex; align-items: center; gap: 6px; height: var(--chrome-title-height); min-height: var(--chrome-title-height);
+    padding-left: 7px; background: #000; color: #eee; user-select: none; flex-shrink: 0;
+}
+.chrome-brand { display: flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 11px; padding-right: 8px; order: 0; }
+.chrome-brand img { width: 16px; height: 16px; }
+.chrome-drag-space { width: 64px; min-width: 24px; align-self: stretch; order: 2; }
+.chrome-window-controls { display: flex; align-self: stretch; margin-left: auto; flex-shrink: 0; order: 3; }
+.chrome-window-controls[hidden] { display: none; }
+.chrome-window-controls button { display: grid; place-items: center; width: 38px; padding: 0; border: 0; background: transparent; color: #eee; line-height: 1; cursor: default; }
+.chrome-window-controls svg { display: block; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.chrome-window-controls .chrome-restore-glyph,
+.chrome-window-controls .is-maximized .chrome-maximize-glyph { display: none; }
+.chrome-window-controls .is-maximized .chrome-restore-glyph { display: inline; }
+.chrome-window-controls button:hover { background: #333; }
+.chrome-window-controls [data-window="close"]:hover { background: #c42b1c; }
+.chrome-tab-strip { display: flex; align-items: center; flex: 1 1 0%; min-width: 0; height: 100%; gap: 3px; overflow: hidden; order: 1; }
+.chrome-tab-nav { display: grid; place-items: center; flex: 0 0 20px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px; background: rgba(255,255,255,.08); color: #eee; cursor: pointer; }
+.chrome-tab-nav svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.chrome-tab-nav:hover:not(:disabled) { background: rgba(255,255,255,.2); }
+.chrome-tab-nav:disabled { opacity: .25; cursor: default; }
+.chrome-tab-nav:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+body.compact-chrome .app-titlebar #docTabsWrapper {
+    display: flex !important; flex: 1 1 auto !important; align-items: flex-end !important; justify-content: flex-start !important;
+    min-width: 0; max-width: none !important; height: 100%; margin: 0 !important; padding: 0 !important; order: 0 !important;
+}
+body.compact-chrome .app-titlebar #docTabsWrapper .doc-tab { height: var(--chrome-tab-height) !important; flex-shrink: 0; max-width: 180px; margin-top: 0; box-sizing: border-box; }
+body.compact-chrome .app-titlebar #docTabsWrapper .doc-tab.active { height: var(--chrome-active-tab-height) !important; background: var(--primary) !important; }
+body.compact-chrome .app-titlebar .doc-tab-add { width: 23px !important; height: 23px !important; flex-shrink: 0; margin-bottom: 2px; }
+body.compact-chrome .tabs-container { display: none !important; }
+body.compact-chrome .app-header { height: var(--chrome-header-height) !important; min-height: var(--chrome-header-height); flex-shrink: 0; gap: 6px; }
+body.compact-chrome .chrome-search-tools { order: initial !important; gap: 4px !important; margin-left: 2px !important; min-width: 0; }
+body.compact-chrome .chrome-search-tools .dark-toggle-btn {
+    width: 24px; min-width: 24px; height: 24px; padding: 3px; margin: 0 !important;
+    background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.22); border-radius: 50% !important;
+}
+body.compact-chrome .chrome-search-tools .dark-toggle-btn:hover { background: rgba(255,255,255,.25); }
+body.compact-chrome .chrome-search-tools svg { flex-shrink: 0; }
+body.compact-chrome .header-right { gap: 14px; }
+body.compact-chrome .header-right .chrome-file-button {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: var(--chrome-file-size) !important; min-width: var(--chrome-file-size) !important; height: var(--chrome-file-size) !important;
+    min-height: var(--chrome-file-size) !important; max-height: var(--chrome-file-size) !important; flex-shrink: 0;
+    box-sizing: border-box; padding: 0 !important; gap: 0;
+    border-radius: 6px !important; border: 1px solid rgba(255,255,255,.3) !important;
+    background: rgba(255,255,255,.15) !important; color: #fff !important;
+}
+body.compact-chrome .header-right .chrome-file-button:hover { background: rgba(255,255,255,.3) !important; }
+body.compact-chrome .chrome-file-button span { display: none; }
+body.compact-chrome .header-right .chrome-file-button svg,
+body.compact-chrome #btn-header-save svg { width: var(--chrome-file-icon) !important; height: var(--chrome-file-icon) !important; max-width: 100%; max-height: 100%; flex-shrink: 0; margin: 0; }
+body.compact-chrome #btn-header-save-as svg { fill: none !important; }
+#btn-header-save-as svg { color: #4ade80; }
+body.compact-chrome #btn-header-save-as { border-bottom-color: #4ade80 !important; }
+body.compact-chrome #recent-docs-btn { border-radius: 50% !important; }
+body.compact-chrome #btn-header-close { height: var(--chrome-file-size) !important; min-height: var(--chrome-file-size) !important; max-height: var(--chrome-file-size) !important; padding: 0 5px; line-height: normal; }
+body.compact-chrome #ribbon-capsule-wrapper { position: relative; z-index: 100; overflow: visible; }
+body.compact-chrome #view-toggle-widget {
+    position: absolute; right: 3px; top: 100%; height: 23px; box-sizing: border-box;
+    margin: 0 !important; padding: 1px 3px !important; transform: none !important;
+    border: 1px solid rgba(255,255,255,.13); border-radius: 5px;
+    background: rgba(30,30,45,.22); backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: 0 2px 5px rgba(0,0,0,.12); z-index: 110;
+    transition: background .2s ease, border-color .2s ease;
+}
+body.compact-chrome #view-toggle-widget:hover,
+body.compact-chrome #view-toggle-widget:focus-within { background: rgba(30,30,45,.65); border-color: rgba(255,255,255,.25); }
+body.compact-chrome #view-toggle-widget .header-toggles { gap: 2px; height: 19px; padding: 0; margin: 0; align-items: center; }
+body.compact-chrome #view-toggle-widget .view-toggle-btn {
+    position: relative; width: 20px; min-width: 20px; height: 19px; box-sizing: border-box;
+    padding: 2px; margin: 0; border-radius: 3px; border: 1px solid transparent;
+    background: transparent; color: rgba(255,255,255,.8); box-shadow: none;
+    display: flex; align-items: center; justify-content: center;
+}
+body.compact-chrome #view-toggle-widget .view-toggle-btn svg { width: 14px; height: 14px; flex: 0 0 14px; transform: none; }
+body.compact-chrome #view-toggle-widget .view-toggle-btn:hover,
+body.compact-chrome #view-toggle-widget .view-toggle-btn:focus-visible { color: #fff; background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.26); }
+body.compact-chrome #view-toggle-widget .view-toggle-btn[aria-pressed="true"] {
+    color: #f1f5f9; background: rgba(255,255,255,.09) !important; border-bottom: 2px solid var(--accent);
+}
+body.compact-chrome.h-layout #toggleSbIndex { top: calc(50% - 112px) !important; }
+body.compact-chrome.h-layout #toggleSbBookmark { top: calc(50% - 66px) !important; }
+body.compact-chrome.h-layout #toggleSbAttach { top: calc(50% - 20px) !important; }
+body.compact-chrome.h-layout #toggleSbFields { top: calc(50% + 26px) !important; }
+body.compact-chrome.h-layout #toggleSbLayers { top: calc(50% + 72px) !important; }
+body.compact-chrome #sidebarContainer:has(#sidebar.hidden) .toggle-sb-bookmark,
+body.compact-chrome #sidebarContainer.hidden .toggle-sb-bookmark { display: none !important; }
+body.compact-chrome .toggle-sb-bookmark svg { width: 8px; height: 10px; flex-shrink: 0; }
+body.compact-chrome .toggle-sb-bookmark.panel-selected { background: color-mix(in srgb, var(--accent) 35%, #28282d); color: white; border-right-color: var(--accent); }
+body.compact-chrome:not(.h-layout) .sidebar-header-row {
+    width: 100%; max-width: 100%; box-sizing: border-box; height: 35px; padding: 3px 8px !important;
+    align-self: center; justify-content: center; gap: 9px; margin-bottom: 0;
+}
+body.compact-chrome:not(.h-layout) .sidebar-header-row > div { flex: 0 0 76px; gap: 8px !important; }
+body.compact-chrome:not(.h-layout) #pageCountDisplay {
+    flex: 0 0 auto; width: max-content; justify-content: center; box-sizing: border-box;
+    padding: 3px 8px; overflow: visible; text-overflow: clip;
+}
+body.compact-chrome:not(.h-layout) .sidebar-btn-mini { width: 20px; height: 20px; flex: 0 0 auto; box-sizing: border-box; }
+body.compact-chrome:not(.h-layout) .page-count-compact .page-count-current { display: none; }
+body.compact-chrome:not(.h-layout) .page-count-compact #pageCountDisplay { font-size: 10px !important; }
+body.compact-chrome:not(.h-layout) .sidebar.narrow #pageCountDisplay { padding: 2px 5px; font-size: 9px !important; }
+body.compact-chrome:not(.h-layout) .sidebar.narrow .sidebar-header-row { padding: 3px 4px !important; gap: 2px; }
+body.compact-chrome:not(.h-layout) .sidebar.narrow .sidebar-header-row > div { flex-basis: 52px; gap: 2px !important; }
+body.compact-chrome:not(.h-layout) .sidebar.narrow .sidebar-btn-mini { width: 16px; height: 16px; }
+#sidebar-panel-tabs {
+    display: flex; align-items: center; justify-content: center; align-self: center;
+    flex: 0 0 28px; height: 28px; width: max-content; max-width: 100%;
+    box-sizing: border-box; gap: 3px; padding: 3px 6px; position: relative; z-index: 60;
+}
+body.compact-chrome:not(.h-layout) #sidebar-panel-tabs .toggle-sb-bookmark {
+    position: relative; inset: auto !important; width: 22px; height: 22px; flex: 0 0 auto;
+    box-sizing: border-box; padding: 2px; border: 1px solid rgba(255,255,255,.12); border-radius: 4px;
+    background: rgba(255,255,255,.05); color: white; box-shadow: none; transform: none;
+}
+body.compact-chrome:not(.h-layout) #sidebar-panel-tabs .toggle-sb-bookmark svg { width: 14px; height: 14px; }
+body.compact-chrome:not(.h-layout) #sidebar-panel-tabs .toggle-sb-bookmark:hover { background: rgba(255,255,255,.15); }
+body.compact-chrome:not(.h-layout) #sidebar-panel-tabs .toggle-sb-bookmark.panel-selected {
+    background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.12); border-bottom: 2px solid var(--accent);
+}
+#sidebar-panel-tabs .toggle-sb-bookmark:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+body.compact-chrome:not(.h-layout) .sidebar.narrow #sidebar-panel-tabs { gap: 2px; padding: 3px 4px; }
+body.compact-chrome:not(.h-layout) .sidebar.narrow #sidebar-panel-tabs .toggle-sb-bookmark { width: 16px; padding: 1px; }
+body.compact-chrome:not(.h-layout) .sidebar.narrow #sidebar-panel-tabs .toggle-sb-bookmark svg { width: 12px; height: 12px; }
+body.h-layout #sidebar-panel-tabs,
+.sidebar.hidden #sidebar-panel-tabs,
+.sidebar.fullscreen-grid #sidebar-panel-tabs,
+body.reading-mode #sidebar-panel-tabs { display: none; }
+body.compact-chrome:not(.h-layout) .toggle-sb {
+    left: 100% !important; right: auto !important; width: 8.193px;
+    box-sizing: border-box; border-radius: 0 6px 6px 0; border-left: none;
+    border-right: 1px solid rgba(255,255,255,.15); box-shadow: 2px 0 6px rgba(0,0,0,.25);
+    background: var(--primary); opacity: .45;
+}
+body.compact-chrome:not(.h-layout) .toggle-sb:hover { opacity: 1; background: var(--accent, var(--primary)); }
+body.compact-chrome:not(.h-layout) .sidebar.hidden .toggle-sb { left: 0 !important; }
+body.compact-chrome.h-layout .toggle-sb-bookmark { width: 13.6px !important; }
+body.compact-chrome.h-layout .toggle-sb { width: 39.78px !important; }
+body.compact-chrome:not(.h-layout) #index-panel-sidebar,
+body.compact-chrome:not(.h-layout) #bookmark-panel,
+body.compact-chrome:not(.h-layout) #attach-panel-sidebar,
+body.compact-chrome:not(.h-layout) #fields-panel-sidebar,
+body.compact-chrome:not(.h-layout) #layers-panel-sidebar { padding-left: 0; box-sizing: border-box; }
+body.compact-chrome:not(.h-layout):not(.reading-mode) #index-panel-sidebar,
+body.compact-chrome:not(.h-layout):not(.reading-mode) #bookmark-panel,
+body.compact-chrome:not(.h-layout):not(.reading-mode) #attach-panel-sidebar,
+body.compact-chrome:not(.h-layout):not(.reading-mode) #fields-panel-sidebar,
+body.compact-chrome:not(.h-layout):not(.reading-mode) #layers-panel-sidebar { top: 63px; }
+body.compact-chrome #zoom-float-widget {
+    width: var(--chrome-zoom-width) !important; box-sizing: border-box !important;
+    right: 6px !important; padding: 0; gap: 3px; border-radius: 0;
+    background: transparent; border: 0; box-shadow: none; backdrop-filter: none;
+    align-items: stretch; opacity: .25; transition: opacity .2s;
+}
+body.compact-chrome #zoom-float-widget:hover,
+body.compact-chrome #zoom-float-widget:focus-within { opacity: 1; }
+body.compact-chrome #zoom-controls-col { width: 33px; min-width: 33px; flex: 0 0 33px; box-sizing: border-box; height: 152px; padding: 4px 3px; border-radius: 5px; }
+body.compact-chrome #zoom-slider-col { width: 15px; min-width: 15px; flex: 0 0 15px; box-sizing: border-box; height: 152px; padding: 5px 0; border-radius: 5px; }
+body.compact-chrome #zoomSlider { width: 13px; height: 136px; margin: 0; }
+body.compact-chrome #reading-mode-float-widget {
+    width: var(--chrome-zoom-width) !important; height: 26px !important; right: 6px !important;
+    bottom: 181px !important; box-sizing: border-box !important; padding: 0; border-radius: 5px;
+    background: rgba(30,30,45,.38); border: 0;
+    opacity: .25; transition: opacity .2s;
+}
+body.compact-chrome #reading-mode-float-widget:hover,
+body.compact-chrome #reading-mode-float-widget:focus-within { opacity: 1; }
+body.compact-chrome #reading-mode-float-widget #btn-reading-mode { width: 100% !important; min-width: 0 !important; max-width: 100% !important; margin: 0 !important; height: 26px !important; padding: 0 2px !important; border-radius: 5px !important; font-size: 8px !important; gap: 3px !important; box-sizing: border-box; box-shadow: none !important; }
+body.compact-chrome #btn-reading-mode svg { width: 11px !important; height: 11px !important; flex-shrink: 0; }
+body.compact-chrome.h-layout #reading-mode-float-widget { bottom: 273px !important; }
+body.compact-chrome.h-layout.reading-mode #reading-mode-float-widget { bottom: 181px !important; }
+body.compact-chrome.reading-mode #view-toggle-widget { display: none !important; }
+body.compact-chrome.reading-mode .history-controls,
+body.compact-chrome.reading-mode .header-right { order: 0; }
+body.compact-chrome.reading-mode .header-right { margin-left: auto !important; }
+body.compact-chrome.reading-mode .chrome-brand { font-size: 9.9px; }
+body.compact-chrome.reading-mode .chrome-brand img { width: 14.4px; height: 14.4px; }
+body.compact-chrome.reading-mode .chrome-search-tools .dark-toggle-btn { width: 21px; min-width: 21px; height: 21px; }
+body.compact-chrome.reading-mode #btn-print { width: 22.75px !important; height: 22.75px !important; }
+body.compact-chrome.reading-mode #btn-print svg { width: 12.25px !important; height: 12.25px !important; }
+body.compact-chrome.reading-mode .app-titlebar .doc-tab-add { width: 20.7px !important; height: 20.7px !important; }
+body.compact-chrome.reading-mode .chrome-tab-nav { flex-basis: 18px; width: 18px; height: 18px; }
+body.compact-chrome.reading-mode #toggleAutoScrollReading.active { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+body.compact-chrome.reading-mode #index-panel-sidebar,
+body.compact-chrome.reading-mode #bookmark-panel { top: calc(var(--chrome-title-height) + var(--chrome-header-height) + 23px) !important; }
+@media (max-width: 1100px) {
+    body.compact-chrome .header-tabs-wrapper { position: static; transform: none; margin: 0 auto; min-width: 0; gap: 2px; }
+    body.compact-chrome .header-tabs-wrapper .tab-btn { padding-left: 7px; padding-right: 7px; }
+    body.compact-chrome .command-palette-trigger-btn span { display: none; }
+}
+@media (max-width: 760px) {
+    .chrome-brand span { display: none; }
+    body.compact-chrome .header-tabs-wrapper .tab-btn { padding-left: 3px; padding-right: 3px; font-size: 9px; }
+    body.compact-chrome #btn-header-close span { display: none; }
+}

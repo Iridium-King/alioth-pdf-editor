@@ -1,0 +1,603 @@
+        /* ============================================================
+           FONT DEFINITIONS - Local TTF Fonts for PDF Editor
+           ============================================================ */
+
+        @font-face { font-family: 'Alioth Ribbon UI'; src: url('../fonts/standard_fonts/ARIALN.TTF') format('truetype'); font-weight: 400; font-style: normal; font-display: block; }
+        @font-face { font-family: 'Alioth Ribbon UI'; src: url('../fonts/standard_fonts/ARIALNB.TTF') format('truetype'); font-weight: 700; font-style: normal; font-display: block; }
+        @font-face { font-family: 'Alioth Ribbon UI'; src: url('../fonts/standard_fonts/ARIALNI.TTF') format('truetype'); font-weight: 400; font-style: italic; font-display: block; }
+        @font-face { font-family: 'Alioth Ribbon UI'; src: url('../fonts/standard_fonts/ARIALNBI.TTF') format('truetype'); font-weight: 700; font-style: italic; font-display: block; }
+
+        .toolbar-area,
+        .toolbar-area button,
+        .toolbar-area input,
+        .toolbar-area select { font-family: 'Alioth Ribbon UI', 'Arial Narrow', Arial, sans-serif; }
+
+        /* === UI Font: Montserrat === */
+        @font-face {
+            font-family: 'Montserrat';
+            src: url('../fonts/Montserrat-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Montserrat';
+            src: url('../fonts/Montserrat-Bold.woff2') format('woff2');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        /* === Arial Family === */
+        @font-face {
+            font-family: 'Arial';
+            src: url('../fonts/standard_fonts/arial.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Arial';
+            src: url('../fonts/standard_fonts/arialbd.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Arial';
+            src: url('../fonts/standard_fonts/ariali.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Arial';
+            src: url('../fonts/standard_fonts/arialbi.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Arial Narrow Family === */
+        @font-face {
+            font-family: 'Arial Narrow';
+            src: url('../fonts/standard_fonts/ARIALN.TTF') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Arial Narrow';
+            src: url('../fonts/standard_fonts/ARIALNB.TTF') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Arial Narrow';
+            src: url('../fonts/standard_fonts/ARIALNI.TTF') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Arial Narrow';
+            src: url('../fonts/standard_fonts/ARIALNBI.TTF') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Calibri Family === */
+        @font-face {
+            font-family: 'Calibri';
+            src: url('../fonts/standard_fonts/calibri.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Calibri';
+            src: url('../fonts/standard_fonts/calibrib.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Calibri';
+            src: url('../fonts/standard_fonts/calibrii.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Calibri';
+            src: url('../fonts/standard_fonts/calibriz.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Calibri Light';
+            src: url('../fonts/standard_fonts/calibril.ttf') format('truetype');
+            font-weight: 300;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Calibri Light';
+            src: url('../fonts/standard_fonts/calibrili.ttf') format('truetype');
+            font-weight: 300;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Consolas Family === */
+        @font-face {
+            font-family: 'Consolas';
+            src: url('../fonts/standard_fonts/consola.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Consolas';
+            src: url('../fonts/standard_fonts/consolab.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Consolas';
+            src: url('../fonts/standard_fonts/consolai.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Consolas';
+            src: url('../fonts/standard_fonts/consolaz.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Courier New Family === */
+        @font-face {
+            font-family: 'Courier New';
+            src: url('../fonts/standard_fonts/cour.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Courier New';
+            src: url('../fonts/standard_fonts/courbd.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Courier New';
+            src: url('../fonts/standard_fonts/couri.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Courier New';
+            src: url('../fonts/standard_fonts/courbi.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Georgia Family === */
+        @font-face {
+            font-family: 'Georgia';
+            src: url('../fonts/standard_fonts/georgia.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Georgia';
+            src: url('../fonts/standard_fonts/georgiab.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Georgia';
+            src: url('../fonts/standard_fonts/georgiai.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Georgia';
+            src: url('../fonts/standard_fonts/georgiaz.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Impact === */
+        @font-face {
+            font-family: 'Impact';
+            src: url('../fonts/standard_fonts/impact.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        /* === Segoe UI Family === */
+        @font-face {
+            font-family: 'Segoe UI';
+            src: url('../fonts/standard_fonts/segoeui.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Segoe UI';
+            src: url('../fonts/standard_fonts/segoeuib.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Segoe UI';
+            src: url('../fonts/standard_fonts/segoeuii.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Segoe UI';
+            src: url('../fonts/standard_fonts/segoeuiz.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Segoe UI Light';
+            src: url('../fonts/standard_fonts/segoeuil.ttf') format('truetype');
+            font-weight: 300;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Segoe UI Semilight';
+            src: url('../fonts/standard_fonts/segoeuisl.ttf') format('truetype');
+            font-weight: 350;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        /* === Tahoma Family === */
+        @font-face {
+            font-family: 'Tahoma';
+            src: url('../fonts/standard_fonts/tahoma.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Tahoma';
+            src: url('../fonts/standard_fonts/tahomabd.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        /* === Times New Roman Family === */
+        @font-face {
+            font-family: 'Times New Roman';
+            src: url('../fonts/standard_fonts/times.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Times New Roman';
+            src: url('../fonts/standard_fonts/timesbd.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Times New Roman';
+            src: url('../fonts/standard_fonts/timesi.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Times New Roman';
+            src: url('../fonts/standard_fonts/timesbi.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Trebuchet MS Family === */
+        @font-face {
+            font-family: 'Trebuchet MS';
+            src: url('../fonts/standard_fonts/trebuc.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Trebuchet MS';
+            src: url('../fonts/standard_fonts/trebucbd.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Trebuchet MS';
+            src: url('../fonts/standard_fonts/trebucit.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Trebuchet MS';
+            src: url('../fonts/standard_fonts/trebucbi.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Verdana Family === */
+        @font-face {
+            font-family: 'Verdana';
+            src: url('../fonts/standard_fonts/verdana.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Verdana';
+            src: url('../fonts/standard_fonts/verdanab.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Verdana';
+            src: url('../fonts/standard_fonts/verdanai.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Verdana';
+            src: url('../fonts/standard_fonts/verdanaz.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        /* === Roboto Family === */
+        /* Usando fuentes del sistema como fallback para Roboto */
+        /* Si necesitas las fuentes locales, descomenta las definiciones @font-face */
+        /*
+        @font-face {
+            font-family: 'Roboto';
+            src: url('../fonts/Roboto-Regular.ttf') format('truetype');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Roboto';
+            src: url('../fonts/Roboto-Bold.ttf') format('truetype');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Roboto';
+            src: url('../fonts/Roboto-Italic.ttf') format('truetype');
+            font-weight: 400;
+            font-style: italic;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Roboto';
+            src: url('../fonts/Roboto-BoldItalic.ttf') format('truetype');
+            font-weight: 700;
+            font-style: italic;
+            font-display: swap;
+        }
+        */
+
+        /* ============================================================
+           THEME MODAL CLOSE BUTTON HOVER EFFECT
+           ============================================================ */
+        #theme-modal button:hover {
+            background: var(--primary) !important;
+            color: white !important;
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+        }
+
+        /* ============================================================
+           PREMIUM COMPONENT STYLES (Glassmorphism & Modern UI)
+           ============================================================ */
+
+        /* Ribbon / Toolbar Area */
+        .toolbar-area {
+            background: var(--glass-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            -webkit-backdrop-filter: blur(var(--glass-blur));
+            border-bottom: 1px solid var(--glass-border);
+            padding: 4px 4px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .tool-section {
+            border-right: none;
+            margin-right: 1px;
+            padding-right: 1px;
+        }
+
+        .tool-btn {
+            border-radius: 10px !important;
+            transition: background 0.14s ease, border-color 0.14s ease !important;
+            background: transparent !important;
+            border: 1px solid transparent !important;
+            margin: 1px;
+        }
+
+        .tool-btn:hover {
+            background: rgba(255, 255, 255, 0.2) !important;
+            border-color: rgba(255, 255, 255, 0.15) !important;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .tool-btn:active {
+            transform: translateY(0);
+            background: rgba(255, 255, 255, 0.15) !important;
+        }
+
+        .group-title {
+            font-size: 6px !important;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-dim) !important;
+            opacity: 0.7;
+            margin-top: 4px;
+        }
+
+        /* Sidebar Glass Styling — cristal removido, usa color de tema */
+        .sidebar-container {
+            border-right: 1px solid var(--glass-border);
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .sidebar-header-row {
+            border-bottom: 1px solid var(--glass-border) !important;
+            padding: 10px 15px !important;
+        }
+
+        .sidebar-item {
+            margin: 8px 12px !important;
+            border-radius: 12px !important;
+            transition: all 0.2s ease !important;
+            border: 1px solid transparent !important;
+        }
+
+        .sidebar-item:hover {
+            background: rgba(255, 255, 255, 0.08) !important;
+            transform: translateX(3px);
+        }
+
+        .sidebar-item.active {
+            background: var(--glass-bg-accent) !important;
+            border-color: var(--glass-border-accent) !important;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+        }
+
+        /* Workspace & Viewer */
+        .workspace {
+            background: var(--bg-app);
+            background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+
+        .view-panel {
+            background: var(--bg-app) !important;
+        }
+
+        .panel-header {
+            border-bottom: 1px solid var(--glass-border) !important;
+            border-radius: 12px 12px 0 0 !important;
+            margin: 8px 8px 0 8px !important;
+        }
+
+        /* Empty State Premium */
+        #workspace-empty-msg {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 24px;
+            padding: 48px !important;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+            max-width: 800px !important;
+            color: rgba(255, 255, 255, 0.85) !important;
+        }
+
+        #workspace-empty-msg h3 {
+            color: rgba(255, 255, 255, 0.9) !important;
+            font-weight: 700;
+        }
+
+        /* Custom Scrollbar Premium */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+
+        .anim-float { /* float animation removed */ }
