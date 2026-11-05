@@ -18,6 +18,7 @@ from _browser_migration import browser_migration
 from _file_origin import explorer_paths, resolve_file_origin
 from _windows_integration import install_certificate, register_pdf, integration_status, initialize_once
 from _process_lifecycle import reap_inactive_hosts
+from _system_fonts import resolve_font
 
 if getattr(sys, 'frozen', False):
     bundle_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
@@ -2652,6 +2653,12 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._check_origin():
             return
+        font_path = urllib.parse.unquote(self.path.split('?')[0])
+        if font_path.startswith('/fonts/standard_fonts/'):
+            target = resolve_font(font_path.removeprefix('/fonts/standard_fonts/'), bundle_dir)
+            if target is None:
+                return self._send_error(404, 'Fuente no disponible')
+            return self._send_raw(200, target.read_bytes(), 'font/ttf')
         if self.path.split('?')[0] == '/js/preferences.js':
             with open(os.path.join(bundle_dir, 'js', 'preferences.js'), encoding='utf-8') as script:
                 source = script.read()
@@ -5693,29 +5700,29 @@ INSTRUCCIONES:
         self._send_json(code, {'error': {'message': msg}})
 
 ALIOTH_ROOT_CERT_BASE64 = (
-    "MIIFFTCCAv2gAwIBAgIQYEOZN56nbLdMRDYOKMNYtzANBgkqhkiG9w0BAQsFADAjMSEwHwYDVQQD"
-    "DBhBbGlvdGggUERGIExvY2FsIFJvb3QgQ0EwHhcNMjYwODI3MTMyNTE4WhcNNDEwODI3MTMzNTE3"
-    "WjAjMSEwHwYDVQQDDBhBbGlvdGggUERGIExvY2FsIFJvb3QgQ0EwggIiMA0GCSqGSIb3DQEBAQUA"
-    "A4ICDwAwggIKAoICAQDDXU8jw618JQOzkfLmLtl7Y5Hq/5/5APdNDugHLi99O8SB2rHpiyELIWIr"
-    "W87qayAE7BBAORJQ7flAvfVp2ZV5MLcrONnCMhg6NK1z+wIkSJgEiU1QvRlS44mHBXGS9luLr0rKu"
-    "FE4yh6viBiU1skA+l+/aDHs/XMmtM/e/rH/jVn3zo0EkmXfKcr/9DZMGCv/iejZjDgK0H8n30WC"
-    "3AFmqq8W0Pw5CB1aq95bwIaNUCH7VTk58MsLYfKwVhDx0JS07ma7UmByySNRQpNC2NZKvNxfjBju"
-    "tZ75YP5JgcZMiFY86Z+AVa4Rh7sr/rG3wu9n/uuv5JCxLXeNO49CL6bG8LZ0ZUEVKdp31XYJEKEV"
-    "/1TqQSbjzkPODJkwWsUhIwtuSI9NnYDxoD9wd8KGA2zmFUnvctxqfrZbMIBZjL2g1pmO2Muc04RS"
-    "LkkI3yLv8rIYGIjWTQf2rY8Pm3CrsG1PHPcjmz82i3BJTQeBx6/LP0A3HutItFZI840PpxbX4SZ8"
-    "0A/Xz4EHvCa3RVcDqB2JYlvMjlLCS6KYe5V6GCCE9JcIEyqoYC40IboQFWnB45Cm/m1VMusqaFFS"
-    "r09EQjKlQtCvbbNxyTvNdbBHUjrOUQcGNO5iv2cyaX/uXL9E5gjG3yWcTUr1AVBKwfORpnX2Zx3F"
-    "ssXW6+JvoXt9M6AyAQIDAQABo0UwQzAOBgNVHQ8BAf8EBAMCAYYwEgYDVR0TAQH/BAgwBgEB/wIB"
-    "ADAdBgNVHQ4EFgQUDCA/o51dJNoKTEyWJoTbC812WowwDQYJKoZIhvcNAQELBQADggIBACU9hDBB"
-    "moeVgopRVCtSd1chNao6nAYrGZ8jFeOeEv9nGV+Yng3p4S6U1oD+7hbLbM4c4D3trkbkDCweb0rr"
-    "FUotywi+PvkKwylGla/iwuu3V0TonwF/6KKkQ0l5/adz9EObYIP4HhM8zS+EUrMxalTTvrx+cXi6"
-    "MgvgxDpt9WovxyTTzvPrrrGgxO9gAxnyNLDmbG+mi/70twsOfbdHOJQUBejWXH3wtCCKcGoVuF9H"
-    "6hmOHK6eJ4Zdm61JxzGkYpPWg/vZzIv9tcfW1cv5sie9oICYC1kcgwAn5ddmmbqYzDB17vz+N+Sg"
-    "TZo0fmMMs+aBHcDLONaZ3HWHKbAdxDe8WsEdOldm5GVGqpjf5flpOaPVmlFT4EEq1QN+4CaLbiFL"
-    "d3xirEj6ZVRg09NoEl1TVGsrG3qAf/TD6qFlkv7FU2V6kUSaxkSm3JXMVv851vhTUfHn/N2FDJni"
-    "/3l1gb7+fIrrwiVEhol6HordQlyEHchopXHXJjwc63JEY7D2QKsAUPRZ+jK4Vsoy3I/k++CJd4RL"
-    "7LI+GBocEnkrrh/GAg8sN5xOUdA5VSRjWaWG5ECvCT4Zz1ro5skm1S+9COwnZe2fIvAplyrm1nac"
-    "+q2GmcpQs70EK31QL0091GJ9fQAqctNeCb2L4UWulN/HScntJtmuWyq9+32MJHVfCwGt"
+    "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"
 )
 
 

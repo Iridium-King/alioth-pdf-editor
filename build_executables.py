@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RELEASE_DIR = os.path.join(BASE_DIR, 'RELEASE')
@@ -13,8 +14,11 @@ PRODUCT_NAME = 'ALIOTH PDF EDITOR'
 
 DATA_FOLDERS = [
     ('BASE.html', '.'), ('ICONO 1.ico', '.'), ('favicon.ico', '.'), ('ICONOS', 'ICONOS'), ('css', 'css'),
-    ('fonts', 'fonts'), ('fonts_cache', 'fonts_cache'), ('js', 'js'), ('libs', 'libs'),
-    ('LICENSE', '.'), ('LEGAL_NOTICES.txt', '.'), ('SOURCE_CODE_NOTICE.txt', '.'),
+    ('fonts/Montserrat-Regular.woff2', 'fonts'), ('fonts/Montserrat-Bold.woff2', 'fonts'),
+    ('fonts/fontkit.umd.min.js', 'fonts'), ('fonts/fallback', 'fonts/fallback'),
+    ('fonts/licenses', 'fonts/licenses'), ('js', 'js'), ('libs', 'libs'),
+    ('LICENSE', '.'), ('COPYING', '.'), ('LEGAL_NOTICES.txt', '.'), ('SOURCE_CODE_NOTICE.txt', '.'),
+    ('Alioth-PDF-Local-Root.cer', '.'),
     ('browser-migration.html', '.'),
     ('native_host/bin/AliothPDFHost.exe', 'native_host'),
     ('native_host/bin/Microsoft.Web.WebView2.Core.dll', 'native_host'),
@@ -162,16 +166,30 @@ def clean_release_directory(directory):
 
 
 def build_exe(output_name, include_personal_config, package_name):
-    subprocess.check_call([os.path.join(BASE_DIR, '_python', 'python.exe'),
+    os.environ.setdefault('SOURCE_DATE_EPOCH', '1793836800')
+    os.environ['PYTHONHASHSEED'] = '0'
+    subprocess.check_call([sys.executable,
                            os.path.join(BASE_DIR, 'native_host', 'build.py')], cwd=BASE_DIR)
+    if os.environ.get('ALIOTH_SIGN_LOCAL') == '1':
+        subprocess.check_call([shutil.which('pwsh') or 'powershell.exe', '-NoProfile', '-File',
+                               os.path.join(BASE_DIR, 'sign_release.ps1'), '-Edition', 'host'], cwd=BASE_DIR)
     version_info_path = write_version_info()
     spec_path = generate_spec(output_name, include_personal_config, version_info_path)
-    subprocess.check_call([os.path.join(BASE_DIR, '_python', 'python.exe'), '-m', 'PyInstaller', '--clean', '-y', spec_path], cwd=BASE_DIR)
+    subprocess.check_call([sys.executable, '-m', 'PyInstaller', '--clean', '-y', spec_path], cwd=BASE_DIR)
     source = os.path.join(BASE_DIR, 'dist', f'{output_name}.exe')
     destination_dir = os.path.join(RELEASE_DIR, package_name)
     os.makedirs(destination_dir, exist_ok=True)
     destination = os.path.join(destination_dir, f'{output_name}.exe')
     shutil.copy2(source, destination)
+    if not include_personal_config:
+        from PyInstaller.archive.readers import CArchiveReader
+        names = CArchiveReader(destination).toc
+        forbidden = [name for name in names if (
+            Path(name.replace('\\', '/')).name.lower() in ('config.ini', 'preferences.json') or
+            'personal' in name.lower() or name.replace('\\', '/').lower().startswith('fonts/standard_fonts/') or
+            Path(name).suffix.lower() in ('.pfx', '.p12', '.key', '.jks', '.keystore'))]
+        if forbidden:
+            raise RuntimeError(f'Distribution contains prohibited files: {forbidden}')
     clean_release_directory(destination_dir)
     return destination
 
@@ -180,9 +198,14 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--release-dir', default=RELEASE_DIR)
-    RELEASE_DIR = os.path.abspath(parser.parse_args().release_dir)
-    personal = build_exe('Alioth_PDF_Editor_Personal', True, 'Personal')
+    parser.add_argument('--edition', choices=('Distribucion', 'Personal', 'both'), default='Distribucion')
+    args = parser.parse_args()
+    RELEASE_DIR = os.path.abspath(args.release_dir)
+    if args.edition in ('Personal', 'both'):
+        personal = build_exe('Alioth_PDF_Editor_Personal', True, 'Personal')
+        print(f'Personal: {personal}')
+    if args.edition == 'Personal':
+        sys.exit(0)
     distribution = build_exe('Alioth_PDF_Editor_Distribucion', False, 'Distribucion')
-    print(f'Personal: {personal}')
     print(f'Distribucion: {distribution}')
 

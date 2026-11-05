@@ -53,3 +53,8 @@ __pycache__/
 **/Personal/
 **/config.ini
 **/preferences.json
+/.build-python/
+/HERRAMIENTAS_DEV/compiler/
+/HERRAMIENTAS_DEV/reference-assemblies/
+/HERRAMIENTAS_DEV/build-inputs/
+/ICONOS/OTROS/

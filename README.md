@@ -1,99 +1,51 @@
 # Alioth PDF Editor
 
-Editor de PDF para Windows de ALIOTH TDAH LABS. Interfaz local en JavaScript,
-servidor en Python y ventana nativa basada en Microsoft Edge WebView2.
+Editor portable de PDF para Windows, de ALIOTH TDAH LABS. Versión 3.2.36.
+Código propio: GNU AGPL-3.0-or-later. Consulta LICENSE y COPYING.
 
-Versión del código: **3.2.35**. Licencia del proyecto: **AGPL-3.0-or-later**.
+## Construcción pública
 
-## Estado de publicación
+```powershell
+python HERRAMIENTAS_DEV/bootstrap_build.py
+```
 
-Este repositorio contiene el código fuente propio del proyecto. La preparación
-de una compilación pública completa y la firma de código están en curso.
-Todavía no se ofrecen descargas públicas verificadas ni ejecutables firmados.
+El bootstrap verifica un archivo de insumos por SHA-256, restaura Python y
+dependencias fijadas, y genera únicamente Distribución. Se puede usar sin red
+con `--inputs C:\ruta\alioth-build-inputs-3.2.36.zip`.
+Consulta [la documentación de construcción](HERRAMIENTAS_DEV/REPRODUCIBLE_BUILD.md)
+y [el inventario de dependencias](DEPENDENCIAS.md).
 
-La edición **Personal permanece privada**. Sólo la edición **Distribución**
-se publicará como portable, una vez resueltos los requisitos de publicación.
-Consulta `PUBLICACION.md` para las reglas de exclusión de secretos.
-
-Los binarios de terceros, los archivos de fuentes y los runtimes no se incluyen
-en esta primera publicación de código. Su obtención, versiones y licencias
-deben terminar de documentarse antes de automatizar una versión pública.
-Consulta `DEPENDENCIAS.md` y `DEPENDENCIES_SNAPSHOT.json`.
+La edición Personal, config.ini, preferencias, perfiles, API keys y claves
+privadas permanecen fuera de la publicación. Los ejecutables se distribuyen
+mediante Releases; no se guardan en el historial del código. Actions publica
+exclusivamente el portable de Distribución como artefacto, sin claves de firma.
 
 ## Funciones
 
-- Abrir, combinar, insertar y reorganizar páginas PDF.
-- Editar texto, anotaciones y campos de formulario.
-- Guardado nativo y conservación de la ruta de los archivos abiertos.
-- OCR y conversión de documentos mediante componentes adicionales.
-- Herramientas opcionales de IA y traducción con las claves del usuario.
+- Abrir, insertar, combinar, organizar y editar documentos PDF.
+- Editar texto, imágenes, anotaciones y formularios; imprimir y exportar.
+- OCR, conversión de Office y herramientas opcionales de IA con claves propias.
+- Guardado nativo y conservación de la ruta del primer archivo abierto.
 
-Algunas conversiones dependen de Office u otros programas disponibles en el
-equipo. Los proveedores de IA son servicios externos con sus propias condiciones.
+Algunas conversiones requieren Office u otro software compatible en el equipo.
+Los servicios de IA reciben los datos necesarios solo al utilizar esas funciones.
+Nunca publiques documentos ni credenciales personales al contribuir.
 
-## Arquitectura
+## Windows y firma
 
-| Ruta | Contenido |
-| --- | --- |
-| `BASE.html`, `js/`, `css/` | Interfaz y operaciones del editor |
-| `_proxy.py` y módulos `_*.py` | Servidor local, archivos y servicios nativos |
-| `native_host/` | Código del host WebView2 y su compilación |
-| `build_executables.py` | Empaquetado con PyInstaller |
-| `HERRAMIENTAS_DEV/tests/` | Pruebas automatizadas |
+El portable comprueba una vez por usuario, certificado y ubicación la instalación
+de su raíz de firma local y el registro como opción para abrir PDF. No fuerza
+el visor predeterminado. Los rechazos de políticas se recuerdan. El aviso y las
+instrucciones para retirar esta integración están dentro de
+**About → Legal → Windows y firma local**.
 
-## Desarrollo
+La firma actual es propia; no confiere confianza pública de una autoridad
+certificadora ni garantiza ausencia de alertas corporativas o de SmartScreen.
+Las claves de firma permanecen en el almacén privado del mantenedor.
 
-El entorno de referencia usa Windows x64, Python 3.14 y Node.js 25. Necesita
-WebView2 Runtime y el compilador de .NET Framework para el host nativo.
+Las fuentes Microsoft se leen de Windows y no se redistribuyen. Si faltan se
+utilizan fuentes libres Liberation, que pueden presentar diferencias visuales.
+El monitor solo puede cerrar hosts propios huérfanos y sin ventana tras comprobar
+su identidad y propietario.
 
-Después de proporcionar los recursos descritos en `DEPENDENCIAS.md`, se puede
-iniciar el servidor de desarrollo con:
-
-```powershell
-python -m pip install -r HERRAMIENTAS_DEV/requirements.txt
-python _proxy.py --launch-browser
-```
-
-El empaquetador actual espera el intérprete en `_python/python.exe` y el SDK
-WebView2 en `HERRAMIENTAS_DEV/webview2-sdk-1.0.4258.31.nupkg`. Estas rutas
-corresponden al entorno original; el bootstrap reproducible está pendiente.
-
-## Configuración y privacidad
-
-No publiques `config.ini`, `preferences.json`, perfiles del navegador, registros,
-documentos de usuarios, claves API ni certificados con clave privada.
-Cada usuario configura sus claves desde Preferencias. La edición básica se
-realiza localmente; al activar una función externa, se envían al proveedor
-elegido los datos necesarios para esa operación.
-
-## Cambios de Windows al iniciar
-
-La versión 3.2.35 intenta, una vez por usuario, instalar la raíz local incluida
-en el almacén del usuario actual y registrar Alioth para abrir PDF. No fuerza
-el visor predeterminado. Guarda el resultado en
-`%LOCALAPPDATA%/AliothPDFEditor/startup-integration.json`.
-
-El monitor puede terminar hosts de Alioth sin ventana que se hayan quedado
-huérfanos. Comprueba identidad, propietario y un margen de arranque de dos minutos.
-
-La revisión del aviso previo y del procedimiento de desinstalación de estos
-cambios es un pendiente para la distribución pública y la solicitud a SignPath.
-Instalar una raíz local no proporciona una firma pública reconocida.
-
-## Validación
-
-La revisión local 3.2.35 pasó 356 pruebas JavaScript y 127 pruebas Python.
-Las pruebas requieren las dependencias locales; no constituyen un workflow de
-CI listo en un clon nuevo. Una prueba histórica adicional de conversión a Word
-agotó la espera de COM en el entorno original.
-
-## Licencia y contribuciones
-
-El código propio se ofrece bajo AGPL-3.0-or-later. Consulta `LICENSE` y `COPYING`.
-Las dependencias conservan sus licencias. No se incluye una licencia de
-redistribución de fuentes comerciales por el hecho de utilizar Windows.
-
-Antes de contribuir, evita incluir datos personales o secretos. Describe el
-problema, la solución y las comprobaciones realizadas.
-
-Contacto del proyecto: aliothgm@gmail.com.
+Contacto: aliothgm@gmail.com.

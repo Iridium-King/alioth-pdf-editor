@@ -1,37 +1,30 @@
-# Recursos externos pendientes de preparar para una compilación pública
+# Insumos fijados para la construcción
 
-Este primer repositorio publica las fuentes propias. No incluye los siguientes
-recursos del entorno local. La aplicación no se reconstruye de forma completa
-desde un clon hasta que se provean y documenten estos recursos.
+`HERRAMIENTAS_DEV/build-inputs.lock.json` contiene la lista exacta de archivos,
+sus tamaños y SHA-256. Se conservan los motores locales existentes para evitar
+cambios funcionales por actualizar bibliotecas durante esta revisión.
 
-| Recurso | Uso / estado |
+| Componente | Versión / fijación |
 | --- | --- |
-| `_python/` | Intérprete y paquetes Python del entorno original. Dependencias directas en `HERRAMIENTAS_DEV/requirements.txt`; faltan lock completo y bootstrap. |
-| `libs/*.js` | PDF.js y worker, pdf-lib, Dexie, jsPDF, Interact, Lucide, FileSaver, herramientas Office, OCR y códigos. Versiones/orígenes y licencias deben fijarse antes del CI. |
-| `libs/python_engine/` | Pyodide y paquetes WASM. No incluidos en este repositorio inicial. |
-| `libs/poppler/` | Herramientas y bibliotecas nativas. Mantener su licencia y las obligaciones de código fuente aplicables a la versión distribuida. |
-| `fonts/fontkit.umd.min.js` | Bundle de fontkit; falta recuperar su fuente/versionado y el aviso de licencia correspondiente. |
-| `fonts/*.woff2`, `fonts_cache/` | Fuentes no incluidas mientras se completa la revisión de procedencia y licencias. |
-| `fonts/standard_fonts/` | Archivos Arial, Calibri, Segoe UI y otras fuentes de Windows. Su redistribución requiere derechos que no se presumen aquí. |
-| SDK WebView2 1.0.4258.31 | Obtener del paquete oficial `Microsoft.Web.WebView2` en NuGet y conservar su licencia. |
-| `native_host/bin/` | Artefactos generados, no fuentes. Se generan con `native_host/build.py`. |
+| Python x64 embebido | 3.14.5, python.org |
+| pip | 26.1.2, wheel fijado por SHA-256 |
+| Paquetes Python | 47 wheels, incluidas dependencias de construcción, fijados en requirements.lock |
+| Compilador C# Roslyn | Microsoft.Net.Compilers.Toolset 4.14.0, NuGet |
+| Referencias .NET | Microsoft.NETFramework.ReferenceAssemblies.net462 1.0.3, NuGet |
+| SDK WebView2 | Microsoft.Web.WebView2 1.0.4258.31 |
+| Motores JS, Pyodide y Poppler | Archivos existentes fijados individualmente por SHA-256 |
+| Liberation | 2.1.5 (OFL), Sans Narrow 1.07.6 (GPL con excepción de fuentes) |
+| Montserrat | Archivos WOFF2 existentes fijados por hash; licencia OFL incluida |
+| Fuentes Microsoft | Excluidas del portable, insumos y repositorio; lectura del Windows del usuario |
+| Caché de fuentes del usuario | Excluida de la construcción |
 
-`DEPENDENCIES_SNAPSHOT.json` identifica mediante SHA-256 los bundles JavaScript
-presentes en el entorno original. Los hashes sirven como inventario de origen;
-no sustituyen la licencia ni una URL de descarga verificada.
+El archivo de insumos permite reconstruir sin buscar versiones nuevas en CDNs.
+`libs/third_party/npm-origins.json` registra los paquetes consultados, sus licencias
+y qué archivos coinciden byte por byte. Las entradas sin coincidencia no afirman
+identificar la versión de un bundle local: el hash del inventario es su identidad
+de construcción. Los originales se mantienen, sin sustituir bibliotecas durante
+esta revisión. Conserva los avisos incluidos con los componentes.
 
-Antes de la primera release pública:
-
-1. Fijar versiones y descargas oficiales, con hashes, de cada dependencia.
-2. Resolver las fuentes sin retirar funciones ni alterar la apariencia por accidente.
-3. Completar avisos y licencias de terceros y el código fuente correspondiente.
-4. Construir en un agente Windows hospedado y ejecutar las pruebas.
-5. Revisar los cambios de Windows de primer uso y su desinstalación.
-6. Solicitar SignPath y configurar su política de firma si el proyecto es aceptado.
-
-Referencias:
-
-- [Condiciones de SignPath Foundation](https://signpath.org/terms)
-- [Verificación del origen de compilación](https://docs.signpath.io/origin-verification/)
-- [Integración de SignPath con GitHub](https://docs.signpath.io/trusted-build-systems/github)
-- [Fuentes de Windows y redistribución](https://learn.microsoft.com/en-us/typography/fonts/font-faq)
+El bootstrap nunca crea certificados, instala la integración de Windows ni abre
+la aplicación. La firma local se realiza después de verificar el resultado.
+Consulta HERRAMIENTAS_DEV/REPRODUCIBLE_BUILD.md para uso y pruebas.

@@ -1,5 +1,6 @@
 param(
-    [string]$ReleasePath = (Join-Path $PSScriptRoot 'RELEASE')
+    [string]$ReleasePath = (Join-Path $PSScriptRoot 'RELEASE'),
+    [ValidateSet('Distribucion','Personal','both','host')][string]$Edition = 'Distribucion'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,9 +15,14 @@ $signer = Get-ChildItem Cert:\CurrentUser\My | Where-Object {
 } | Select-Object -First 1
 if (-not $signer) { throw 'No se encontró el certificado de firma existente.' }
 
-foreach ($package in @('Personal', 'Distribucion')) {
-    $name = "Alioth_PDF_Editor_$package.exe"
-    $exePath = Join-Path (Join-Path $ReleasePath $package) $name
+$paths = @()
+if ($Edition -eq 'host') {
+    $paths += Join-Path $PSScriptRoot 'native_host/bin/AliothPDFHost.exe'
+} else {
+    $packages = if ($Edition -eq 'both') { @('Personal','Distribucion') } else { @($Edition) }
+    foreach ($package in $packages) { $paths += Join-Path (Join-Path $ReleasePath $package) "Alioth_PDF_Editor_$package.exe" }
+}
+foreach ($exePath in $paths) {
     if (-not (Test-Path -LiteralPath $exePath)) { throw "Falta $exePath" }
     $signed = Set-AuthenticodeSignature -LiteralPath $exePath -Certificate $signer -HashAlgorithm SHA256
     if ($signed.Status -ne 'Valid') { throw "La firma no fue válida: $exePath ($($signed.Status))" }
