@@ -1,0 +1,34 @@
+ALIOTH PDF EDITOR — AVISOS LEGALES Y DE TERCEROS
+
+Proyecto: ALIOTH TDAH LABS - OPEN SOURCE PROJECT
+Contacto: aliothgm@gmail.com
+Versión: 13.21
+
+LICENCIA DEL PROYECTO
+El código de Alioth PDF Editor se publica bajo GNU AGPL-3.0-or-later. Consulta
+LICENSE y la versión oficial en https://www.gnu.org/licenses/agpl-3.0.html.
+
+COMPONENTES PRINCIPALES
+- Poppler / pdftotext: GNU GPL-2.0-or-later. Licencias y datos en libs/poppler.
+  https://poppler.freedesktop.org/
+- PyMuPDF / MuPDF: GNU AGPL o licencia comercial de Artifex.
+  https://pymupdf.readthedocs.io/en/latest/faq/index.html
+- PDF.js: Apache License 2.0.
+  https://github.com/mozilla/pdf.js/blob/master/LICENSE
+- Pyodide: Mozilla Public License 2.0.
+  https://github.com/pyodide/pyodide/blob/main/LICENSE
+- pdf-lib: MIT License.
+  https://github.com/Hopding/pdf-lib/blob/master/LICENSE
+- Dexie.js: Apache License 2.0.
+  https://github.com/dexie/Dexie.js/blob/master/LICENSE
+
+Cada dependencia conserva sus propios avisos y condiciones. La lista completa
+de dependencias empaquetadas y sus textos de licencia debe mantenerse junto al
+código fuente de la versión publicada.
+
+SERVICIOS DE TERCEROS E IA
+Las funciones que usan Gemini, Groq, Azure, Mistral, Hugging Face, OpenRouter,
+NVIDIA NIM, Fish Audio u otros proveedores envían los datos necesarios al
+proveedor elegido con las API keys del usuario. Alioth no proporciona esas
+claves ni controla sus precios, retención, regiones, términos o respuestas.
+Consulta las condiciones del proveedor antes de enviar contenido.

@@ -1,0 +1,55 @@
+/build/
+/dist/
+/RELEASE/
+/_python/
+/libs/
+/fonts_cache/
+/backups/
+/logs/
+*.zip
+*.log
+__pycache__/
+*.pyc
+/.mcp_artifacts/
+/preferences.json
+
+# Configuración privada y credenciales
+/config.ini
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.key
+*.pem
+
+# Artefactos locales; no publicar perfiles, documentos o ejecutables personales
+/_qa_*/
+/alioth-chrome-qa-*/
+/HERRAMIENTAS_DEV/backups/
+/HERRAMIENTAS_DEV/qa-runtime/
+/HERRAMIENTAS_DEV/publicacion/
+/HERRAMIENTAS_DEV/node-v*/
+**/node_modules/
+/native_host/bin/
+*.nupkg
+*.spec
+/Alioth_PDF_Editor.version
+/alioth.pid
+/alioth.port
+
+# Revisar derechos de redistribución antes de incluir archivos de fuentes
+/fonts/standard_fonts/
+
+# Los ejecutables se publican por Releases; Personal nunca se publica
+*.exe
+*.pyd
+*.p8
+*.pk8
+*.keystore
+*.jks
+*.7z
+*.rar
+**/Personal/
+**/config.ini
+**/preferences.json

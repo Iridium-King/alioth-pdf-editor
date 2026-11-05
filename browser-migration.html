@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ALIOTH PDF EDITOR</title>
+<script>
+try {
+    const parameters = new URLSearchParams(location.search);
+    const target = parameters.get('target') || '/BASE.html';
+    if (parameters.get('mode') !== 'export' && /^\/BASE\.html(?:\?|$)/.test(target) &&
+            localStorage.getItem('alioth_native_storage_ready') === '1') {
+        location.replace(target);
+        document.documentElement.dataset.migrationReady = '1';
+    }
+} catch (_) {}
+</script>
+<style>
+body{margin:0;background:#1d1e25;color:#e2e8f0;font:14px system-ui;display:grid;place-items:center;min-height:100vh}
+main{display:none;max-width:430px;padding:28px;border:1px solid #475569;border-radius:12px;background:#273649}
+h1{font-size:18px;margin:0 0 14px}p{line-height:1.5;color:#cbd5e1}button{border:1px solid #64748b;border-radius:7px;padding:8px 12px;background:#334155;color:white;cursor:pointer}
+#actions{display:none;gap:8px;margin-top:18px}
+</style></head><body><main><h1>ALIOTH PDF EDITOR</h1><p id="status" role="status">Conservando tus datos locales…</p><div id="actions"><button id="retry">Reintentar</button><button id="legacy">Abrir interfaz anterior</button></div></main>
+<script>
+if (document.documentElement.dataset.migrationReady !== '1') {
+    document.querySelector('main').style.display = 'block';
+    const script = document.createElement('script');
+    script.src = 'js/browser_migration.js';
+    document.head.appendChild(script);
+}
+</script></body>
+</html>

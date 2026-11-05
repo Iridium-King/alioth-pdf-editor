@@ -1,0 +1,6 @@
+ALIOTH PDF EDITOR — CÓDIGO FUENTE CORRESPONDIENTE
+
+Código propio: GNU AGPL-3.0-or-later.
+Repositorio público: https://github.com/Iridium-King/alioth-pdf-editor
+No se publican binarios en esta instantánea inicial.
+Consulta LICENSE, COPYING, LEGAL_NOTICES.txt y DEPENDENCIAS.md.

@@ -1,0 +1,110 @@
+[
+  {
+    "path": "libs/dexie.min.js",
+    "bytes": 95850,
+    "sha256": "4937847a3abb01c14ebecb336f38020cbf36023ca96cb2e30f93bab540727ee0",
+    "included": false
+  },
+  {
+    "path": "libs/FileSaver.min.js",
+    "bytes": 3168,
+    "sha256": "07558293418077b163fdc64a22467c15caa27111a35af5ecb39116d5018167e2",
+    "included": false
+  },
+  {
+    "path": "libs/interact.min.js",
+    "bytes": 98204,
+    "sha256": "99b2bd3bd05261b0fdffdb811e6035a28d80b8b81e67cf9a228e77828f46c326",
+    "included": false
+  },
+  {
+    "path": "libs/JsBarcode.all.min.js",
+    "bytes": 66420,
+    "sha256": "e11355f2e9f644d1486d5778d27f96d2bbac41a68e31c966596db3a0ba722b1d",
+    "included": false
+  },
+  {
+    "path": "libs/jspdf.min.js",
+    "bytes": 364463,
+    "sha256": "98ccf17aa10c20bb1301762618fcc9b6ab3a4e7f26b6071d64d0b41154df3875",
+    "included": false
+  },
+  {
+    "path": "libs/jsqr.min.js",
+    "bytes": 130601,
+    "sha256": "1f76f91f977bba2c44998e9929b3bfff0e102c90044c4fcfb3ebf52322fe4c99",
+    "included": false
+  },
+  {
+    "path": "libs/lucide.min.js",
+    "bytes": 386702,
+    "sha256": "534813d1da2f4d4550383d5db0879aedb2f74c2d0b8951ade277e8bcaea6df52",
+    "included": false
+  },
+  {
+    "path": "libs/mammoth.browser.min.js",
+    "bytes": 642194,
+    "sha256": "deb07bf230d1cb3e190bc5adc6743f35c6531b6571d1e5469b24f452a7f0f4ab",
+    "included": false
+  },
+  {
+    "path": "libs/pdf-lib.min.js",
+    "bytes": 525099,
+    "sha256": "0f9a5cad07941f0826586c94e089d89b918c46e5c17cf2d5a3c6f666e3bc694f",
+    "included": false
+  },
+  {
+    "path": "libs/pdf.js",
+    "bytes": 568294,
+    "sha256": "d83766f20a4c31fbce5a29d98789cdfbef781b147441da45be1d1079e8e0f81c",
+    "included": false
+  },
+  {
+    "path": "libs/pdf.worker.js",
+    "bytes": 1981637,
+    "sha256": "e3f005b22146f290af16ac0dc16ab45f0df898173de1cc539d6e4092832da9d8",
+    "included": false
+  },
+  {
+    "path": "libs/qrcode.min.js",
+    "bytes": 24310,
+    "sha256": "6d8bf40e2625473d8c8c634671ed7a93b50882dac9386088f5bb39b7ae831417",
+    "included": false
+  },
+  {
+    "path": "libs/TESSERACT.JS",
+    "bytes": 472,
+    "sha256": "31cfe2940d0fc6c788f1d6709521f8ae3ae89eaef620b63bac52ed1171a88eb9",
+    "included": false
+  },
+  {
+    "path": "libs/tesseract.min.js",
+    "bytes": 66695,
+    "sha256": "a8e29918d098b2b06e1012bdaeffb4aec0445c5d5654709023e0bd1f442a80e8",
+    "included": false
+  },
+  {
+    "path": "libs/tesseract.worker.min.js",
+    "bytes": 123724,
+    "sha256": "aca1229639fc9907d86f96e825955a2b7c5716d17f3bc3acd71f9c7ab66181fc",
+    "included": false
+  },
+  {
+    "path": "libs/xlsx.full.min.js",
+    "bytes": 881727,
+    "sha256": "c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99",
+    "included": false
+  },
+  {
+    "path": "libs/zxing.min.js",
+    "bytes": 362150,
+    "sha256": "3ede94153fb0c5b67a12d7adff6decd827c2b22714fdc6faecf27a8f20937ea6",
+    "included": false
+  },
+  {
+    "path": "fonts/fontkit.umd.min.js",
+    "bytes": 758440,
+    "sha256": "d8df561b9fba98e24f2e5130e40948809281bbbc55a20c412359f1a0a5eb35a6",
+    "included": false
+  }
+]
