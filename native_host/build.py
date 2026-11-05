@@ -17,13 +17,18 @@ def build(qa=False):
                        'lib/net462/Microsoft.Web.WebView2.WinForms.dll',
                        'runtimes/win-x64/native/WebView2Loader.dll', 'LICENSE.txt'):
             (BIN / Path(source).name).write_bytes(package.read(source))
-    compiler = Path(os.environ['WINDIR']) / 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-    arguments = [str(compiler), '/nologo', '/target:winexe', '/platform:x64', '/optimize+',
+    compiler = ROOT / 'HERRAMIENTAS_DEV/compiler/tasks/net472/csc.exe'
+    references = ROOT / 'HERRAMIENTAS_DEV/reference-assemblies/build/.NETFramework/v4.6.2'
+    if not compiler.is_file() or not references.is_dir():
+        raise RuntimeError('Restore pinned build inputs with HERRAMIENTAS_DEV/bootstrap_build.py first')
+    arguments = [str(compiler), '/nologo', '/noconfig', '/nostdlib+', '/deterministic+',
+                 '/pathmap:' + str(ROOT) + '=/_/Alioth', '/target:winexe', '/platform:x64', '/optimize+',
                  '/out:' + str(BIN / ('AliothPDFHost.Test.exe' if qa else 'AliothPDFHost.exe')), '/win32icon:' + str(ROOT / 'ICONO 1.ico'),
-                 '/r:System.Net.Http.dll', '/r:System.Web.Extensions.dll', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll',
                  '/r:' + str(BIN / 'Microsoft.Web.WebView2.Core.dll'),
                  '/r:' + str(BIN / 'Microsoft.Web.WebView2.WinForms.dll'),
                  str(Path(__file__).with_name('AliothPDFHost.cs'))]
+    arguments.extend('/r:' + str(references / (name + '.dll')) for name in
+                     ['mscorlib', 'System', 'System.Core', 'System.Net.Http', 'System.Web.Extensions', 'System.Windows.Forms', 'System.Drawing'])
     if qa:
         arguments.extend(['/define:QA', str(ROOT / 'HERRAMIENTAS_DEV/tests/WebViewHostVerification.cs')])
     subprocess.run(arguments, check=True, cwd=ROOT)
