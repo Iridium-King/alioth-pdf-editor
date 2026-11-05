@@ -1,0 +1,8 @@
+pypdfium2
+pymupdf
+Pillow
+pytesseract
+openpyxl
+python-pptx
+pywin32
+certifi

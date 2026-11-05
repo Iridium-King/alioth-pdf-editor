@@ -1,0 +1,19 @@
+{
+  "name": "alioth-pdf-editor",
+  "version": "13.11",
+  "description": "Alioth PDF Editor",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "node -c js/*.js",
+    "test": "node --test regression.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "AGPL-3.0-or-later",
+  "devDependencies": {
+    "vite": "^8.0.14"
+  }
+}
