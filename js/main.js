@@ -1,0 +1,33 @@
+// main.js — Entry point para la aplicación Alioth PDF Editor
+import './version.js?v=3.2.33';
+import './i18n.js?v=capture-i18n-1';
+import './app.lazy.js?v=3.2.18';
+import './app.core.js?v=3.2.25';
+import './app.render.js?v=3.2.33';
+import './app.pdf.js?v=3.2.33';
+import './app.annotations.js?v=3.2.18';
+import './app.tools.js?v=3.2.23';
+import './app.document_state.js?v=3.2.23';
+import './app.native_save.js?v=3.2.23';
+import './app.agentic.js?v=3.2.18';
+import './app.ai.js?v=3.2.18';
+import './search_normalization.js?v=3.2.21';
+import './app.ui.js?v=3.2.23';
+import './app.panels.js';
+import './app.pdf_ops.js?v=3.2.23';
+import './app.bootstrap.js?v=3.2.18';
+import './first_run_api_notice.js';
+import './about.js?v=3.2.33';
+import './context_menu.js';
+import './menu_position.js';
+import './ai_functions.js';
+import './color_picker.js';
+import './ai_float_btn.js?v=3.2.28';
+import './zoom_widget.js';
+import './office_conversion.js';
+import './bookmark_manager.js';
+import './shortcut_manager.js?v=3.2.18';
+import './search_widget.js?v=3.2.18';
+import './app.chrome.js?v=3.2.33';
+
+export default window.app;
