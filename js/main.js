@@ -1,9 +1,9 @@
 // main.js — Entry point para la aplicación Alioth PDF Editor
-import './version.js?v=3.2.39';
-import './i18n.js?v=capture-i18n-1';
+import './version.js?v=3.2.40';
+import './i18n.js?v=3.2.40';
 import './app.lazy.js?v=3.2.37';
-import './app.core.js?v=3.2.37';
-import './app.render.js?v=3.2.39';
+import './app.core.js?v=3.2.40';
+import './app.render.js?v=3.2.40';
 import './app.pdf.js?v=3.2.39';
 import './app.annotations.js?v=3.2.37';
 import './app.tools.js?v=3.2.37';
@@ -22,12 +22,12 @@ import './context_menu.js';
 import './menu_position.js';
 import './ai_functions.js';
 import './color_picker.js';
-import './ai_float_btn.js?v=3.2.28';
-import './zoom_widget.js';
+import './ai_float_btn.js?v=3.2.40';
+import './zoom_widget.js?v=3.2.40';
 import './office_conversion.js?v=3.2.38';
 import './bookmark_manager.js';
 import './shortcut_manager.js?v=3.2.18';
-import './search_widget.js?v=3.2.18';
+import './search_widget.js?v=3.2.40';
 import './app.chrome.js?v=3.2.38';
 
 export default window.app;

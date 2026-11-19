@@ -155,17 +155,6 @@ body.compact-chrome:not(.h-layout):not(.reading-mode) #bookmark-panel,
 body.compact-chrome:not(.h-layout):not(.reading-mode) #attach-panel-sidebar,
 body.compact-chrome:not(.h-layout):not(.reading-mode) #fields-panel-sidebar,
 body.compact-chrome:not(.h-layout):not(.reading-mode) #layers-panel-sidebar { top: 63px; }
-body.compact-chrome #zoom-float-widget {
-    width: var(--chrome-zoom-width) !important; box-sizing: border-box !important;
-    right: 6px !important; padding: 0; gap: 3px; border-radius: 0;
-    background: transparent; border: 0; box-shadow: none; backdrop-filter: none;
-    align-items: stretch; opacity: .25; transition: opacity .2s;
-}
-body.compact-chrome #zoom-float-widget:hover,
-body.compact-chrome #zoom-float-widget:focus-within { opacity: 1; }
-body.compact-chrome #zoom-controls-col { width: 33px; min-width: 33px; flex: 0 0 33px; box-sizing: border-box; height: 152px; padding: 4px 3px; border-radius: 5px; }
-body.compact-chrome #zoom-slider-col { width: 15px; min-width: 15px; flex: 0 0 15px; box-sizing: border-box; height: 152px; padding: 5px 0; border-radius: 5px; }
-body.compact-chrome #zoomSlider { width: 13px; height: 136px; margin: 0; }
 body.compact-chrome #reading-mode-float-widget {
     width: var(--chrome-zoom-width) !important; height: 26px !important; right: 6px !important;
     bottom: 181px !important; box-sizing: border-box !important; padding: 0; border-radius: 5px;

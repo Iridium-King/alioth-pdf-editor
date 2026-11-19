@@ -454,7 +454,7 @@ Object.assign(app, {
                 mainView.onscroll = null;
             },
 
-            renderPanelContent: function (panelId) {
+            renderPanelContent: function (panelId, framePage = null) {
                 const panelState = this.splitView[panelId];
                 const elements = this.getPanelElements(panelId);
 
@@ -495,7 +495,7 @@ Object.assign(app, {
                 if (elements.emptyMsg) elements.emptyMsg.style.display = 'none';
 
                 if (this.viewMode === 'continuous') {
-                    return this.renderContinuousContent(panelId);
+                    return this.renderContinuousContent(panelId, framePage);
                 } else {
                     // Saliendo del modo continuo: usar helper que rescata el canvas y limpia el stack
                     this._rescueCanvasFromContinuous(panelId);
@@ -5416,7 +5416,7 @@ Object.assign(app, {
                 return true;
             },
 
-            zoomPanel: function (delta, panelId, pointer = null) {
+            zoomPanel: function (delta, panelId, pointer = null, framePage = null) {
                 const targetPanel = panelId || this.splitView.activePanel;
                 const panelState = this.splitView[targetPanel];
                 if (!panelState) return;
@@ -5424,11 +5424,12 @@ Object.assign(app, {
                 const docId = panelState.docId || this.activeDocId;
                 const doc = this.docs.find(d => d.id === docId);
                 if (!doc) return;
+                this._pendingZoomFrame = framePage;
 
                 // Capture current page NOW before any async work
                 // Only update target page if we don't already have a pending zoom
                 if (!this._zoomDebounceTimer) {
-                    this._zoomTargetPage  = doc.currentIndex;
+                    this._zoomTargetPage  = panelState.pageIndex ?? doc.currentIndex;
                     this._zoomTargetPanel = targetPanel;
                     this._zoomBaseScale   = panelState.scale || 1.0;
                     this._pendingZoomAnchor = pointer
@@ -5477,12 +5478,14 @@ Object.assign(app, {
                 if (targetPanel === this.splitView.activePanel) {
                     this.currentScale = newScale;
                     doc.scale = newScale;
-                    const zi = document.getElementById('zoomInput');
-                    if (zi) zi.value = Math.round(newScale * 100) + '%';
+                    const pct = Math.round(newScale * 100);
+                    const input = document.getElementById('zoomInput');
+                    const slider = document.getElementById('zoomSlider');
+                    if (input) input.value = pct + '%';
+                    if (slider) slider.value = pct;
                 }
 
                 // Immediate CSS transform for smooth real-time zoom preview
-                const panelSuffixNow = targetPanel === 'secondary' ? 'Secondary' : 'Primary';
                 const containerNow = document.getElementById('canvas-container' + (targetPanel === 'secondary' ? '-secondary' : ''));
                 if (containerNow && this._zoomBaseScale > 0) {
                     const ratio = newScale / this._zoomBaseScale;
@@ -5507,8 +5510,10 @@ Object.assign(app, {
                     const page  = this._zoomTargetPage;
                     const panel = this._zoomTargetPanel;
                     const zoomAnchor = this._pendingZoomAnchor;
+                    const frame = this._pendingZoomFrame;
                     const zoomDiag = this._zoomDiagBatch;
                     this._zoomDiagBatch = null;
+                    this._pendingZoomFrame = null;
                     window.__aliothDiag?.trace('ZOOM-TRACE', 'render-start', {
                         id: zoomDiag?.id,
                         targetScale: panelState.scale,
@@ -5526,8 +5531,9 @@ Object.assign(app, {
                         // Remove temporary transform before re-render
                         const containerEnd = document.getElementById('canvas-container' + (panel === 'secondary' ? '-secondary' : ''));
                         if (containerEnd) { containerEnd.classList.remove('zooming'); containerEnd.style.transform = ''; containerEnd.style.transformOrigin = ''; }
-                        await this.renderPanelContent(panel);
-                        if (zoomAnchor) this._restoreZoomAnchor(zoomAnchor);
+                        await this.renderPanelContent(panel, frame);
+                        if (frame) frame();
+                        else if (zoomAnchor) this._restoreZoomAnchor(zoomAnchor);
                         window.__aliothDiag?.trace('ZOOM-TRACE', 'render-finish', {
                             id: zoomDiag?.id,
                             elapsedMs: zoomDiag ? Math.round((performance.now() - zoomDiag.startedAt) * 10) / 10 : null,
@@ -5563,7 +5569,9 @@ Object.assign(app, {
                         if (containerEnd) { containerEnd.classList.remove('zooming'); containerEnd.style.transform = ''; containerEnd.style.transformOrigin = ''; }
                         this.loadPage(page, panel).then(() => {
                             // Solo restaurar scroll proporcional si no hubo navegación manual durante el zoom
-                            if (zoomAnchor) {
+                            if (frame) {
+                                frame();
+                            } else if (zoomAnchor) {
                                 this._restoreZoomAnchor(zoomAnchor);
                             } else if (mainView && !this._userNavigating) {
                                 mainView.scrollLeft = scrollRatioX * mainView.scrollWidth - mainView.clientWidth / 2;
@@ -5693,7 +5701,7 @@ Object.assign(app, {
                 document.getElementById('continuous-preview-container').innerHTML = '';
             },
 
-            renderContinuousContent: async function (panelId) {
+            renderContinuousContent: async function (panelId, framePage = null) {
                 const elements = this.getPanelElements(panelId);
                 const panelState = this.splitView[panelId];
                 const docId = panelState?.docId || this.activeDocId;
@@ -5939,7 +5947,7 @@ Object.assign(app, {
                 requestAnimationFrame(() => {
                     if (this._scrollRestoreToken !== scrollRestoreToken) return;
                     if (this._layoutChanging) return;
-                    if (pointerZoomAnchor) return;
+                    if (pointerZoomAnchor || framePage) return;
                     const targetWrapper = document.getElementById(`page-wrapper-${panelId}-${activeIdxBeforeZoom}`);
                     if (!targetWrapper) return;
                     const isH = document.body.classList.contains('h-layout');
@@ -5966,7 +5974,7 @@ Object.assign(app, {
                 requestAnimationFrame(() => {
                     if (this._scrollRestoreToken !== scrollRestoreToken) return;
                     if (this._layoutChanging) return;
-                    if (pointerZoomAnchor) return;
+                    if (pointerZoomAnchor || framePage) return;
                     const targetWrapper = document.getElementById(`page-wrapper-${panelId}-${activeIdxBeforeZoom}`);
                     if (!targetWrapper) return;
                     const isH = document.body.classList.contains('h-layout');
@@ -5988,7 +5996,7 @@ Object.assign(app, {
                 setTimeout(() => {
                     if (this._scrollRestoreToken !== scrollRestoreToken) return;
                     if (this._layoutChanging) return;
-                    if (pointerZoomAnchor) return;
+                    if (pointerZoomAnchor || framePage) return;
                     const targetWrapper = document.getElementById(`page-wrapper-${panelId}-${activeIdxBeforeZoom}`);
                     if (!targetWrapper) return;
                     const isH = document.body.classList.contains('h-layout');

@@ -1,27 +1,29 @@
 /**
  * Alioth PDF Editor - Search Float Widget
- * Controla el widget flotante de búsqueda centrado en el borde inferior de la ventana,
- * con animación suave de expansión/colapso y atajo rápido Ctrl+F.
+ * Gestiona la expansión y el foco del widget de búsqueda junto al panel IA.
  */
 (function () {
+    let initialized = false;
+
     function initSearchWidget() {
+        const widget = document.getElementById('search-float-widget');
+        const input = document.getElementById('searchInput');
+        const toggle = document.getElementById('search-widget-toggle-btn');
+        if (initialized || !widget || !input || !toggle) return;
+        initialized = true;
+
         if (!window.app) window.app = {};
+        let openedOnHover = false;
 
         window.app.expandSearchWidget = function (focusAndSelect = true) {
-            const widget = document.getElementById('search-float-widget');
-            if (!widget) return;
-
+            openedOnHover = false;
             widget.classList.remove('collapsed');
             widget.classList.add('expanded');
+            toggle.setAttribute('aria-expanded', 'true');
 
             if (focusAndSelect) {
-                setTimeout(() => {
-                    const input = document.getElementById('searchInput');
-                    if (input) {
-                        input.focus();
-                        input.select();
-                    }
-                }, 100);
+                input.focus({ preventScroll: true });
+                input.select();
             }
         };
 
@@ -30,34 +32,36 @@
                 e.preventDefault();
                 e.stopPropagation();
             }
-            const widget = document.getElementById('search-float-widget');
-            if (!widget) return;
-
+            openedOnHover = false;
             widget.classList.remove('expanded');
             widget.classList.add('collapsed');
-
-            const input = document.getElementById('searchInput');
-            if (input) input.blur();
+            toggle.setAttribute('aria-expanded', 'false');
+            input.blur();
         };
 
         window.app.toggleSearchWidget = function (e) {
             if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
-            const widget = document.getElementById('search-float-widget');
-            if (!widget) return;
-
-            if (widget.classList.contains('expanded')) {
+            if (widget.classList.contains('expanded') && !openedOnHover) {
                 window.app.collapseSearchWidget(e);
             } else {
                 window.app.expandSearchWidget(true);
             }
         };
 
+        widget.addEventListener('pointerenter', (event) => {
+            if (event.pointerType !== 'mouse' || event.buttons) return;
+            if (widget.classList.contains('collapsed')) {
+                window.app.expandSearchWidget();
+                openedOnHover = true;
+            } else if (document.activeElement !== input) {
+                input.focus({ preventScroll: true });
+            }
+        });
+        widget.addEventListener('pointerleave', () => { openedOnHover = false; });
+
         // Cerrar al hacer clic o tocar fuera de la cápsula
         const handleOutsideClick = (e) => {
-            const widget = document.getElementById('search-float-widget');
-            if (!widget || !widget.classList.contains('expanded')) return;
-
-            if (!widget.contains(e.target)) {
+            if (widget.classList.contains('expanded') && !widget.contains(e.target)) {
                 window.app.collapseSearchWidget();
             }
         };

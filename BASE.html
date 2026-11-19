@@ -38,9 +38,9 @@
     <link rel="preload" href="fonts/standard_fonts/ARIALN.TTF" as="font" type="font/ttf" crossorigin>
     <link rel="preload" href="fonts/standard_fonts/ARIALNB.TTF" as="font" type="font/ttf" crossorigin>
     <link rel="stylesheet" href="css/fonts.css?v=3.2.29">
-    <link rel="stylesheet" href="css/app.css?v=3.2.23">
-    <link rel="stylesheet" href="css/components.css?v=3.2.29">
-    <link rel="stylesheet" href="css/app.chrome.css?v=3.2.38">
+    <link rel="stylesheet" href="css/app.css?v=3.2.40">
+    <link rel="stylesheet" href="css/components.css?v=3.2.40">
+    <link rel="stylesheet" href="css/app.chrome.css?v=3.2.40">
     <style>
         /* Zoom bajo paneles en h-layout — paneles tienen z-index:9999 */
         body.h-layout #zoom-float-widget { z-index: 8000 !important; }
@@ -3152,9 +3152,9 @@ Arrastra para seleccionar el área · Esc para cancelar">
                             </h5>
                             <p style="margin:0 0 12px 0; font-size:11px; color:#94a3b8;" data-i18n="pref_default_zoom_desc">Nivel de escala inicial al cargar cualquier documento PDF.</p>
                             <select id="pref-default-zoom" style="width:100%; background:var(--bg-panel); border:1px solid rgba(255,255,255,0.12); color:#fff; font-size:11px; border-radius:4px; padding:4px 6px;">
+                                <option value="1.0" selected>Escala Real (100%)</option>
                                 <option value="page-fit">Ajustar a Página</option>
                                 <option value="page-width">Ajustar a Ancho</option>
-                                <option value="1.0">Escala Real (100%)</option>
                                 <option value="1.25">125%</option>
                                 <option value="1.5">150%</option>
                             </select>
@@ -5086,7 +5086,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
               Añade entrada al INICIO de ALIOTH_CHANGELOG.
          ═══════════════════════════════════════════════════════════════ -->
     <script>window.i18n.setLanguage(window.i18n.getCurrentLanguage());</script>
-    <script type="module" src="js/main.js?v=3.2.39"></script>
+    <script type="module" src="js/main.js?v=3.2.40"></script>
     <!-- MODAL PROPIEDADES CAMPO -->
     <div id="properties-modal"
         style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
@@ -6175,15 +6175,15 @@ Arrastra para seleccionar el área · Esc para cancelar">
             </button>
             <div style="position:relative;">
                 <button id="ai-font-size-btn" onclick="app.toggleAIFontSlider()" title="Tamaño de fuente del chat" data-i18n-title="tit_203405"
-                    style="width:32px;height:32px;border-radius:50%;border:2px solid var(--accent,#8b5cf6);background:rgba(139,92,246,0.15);color:#ffffff;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background 0.15s,border-color 0.15s;font-family:inherit;">F</button>
-                <div id="ai-font-slider-popup" style="display:none;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1e2232;border:1px solid rgba(139,92,246,0.4);border-radius:8px;padding:10px 8px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+                    style="width:32px;height:32px;border-radius:50%;border:2px solid var(--ai-accent);background:color-mix(in srgb,var(--ai-accent) 15%,transparent);color:#ffffff;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background 0.15s,border-color 0.15s;font-family:inherit;">F</button>
+                <div id="ai-font-slider-popup" style="display:none;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1e2232;border:1px solid color-mix(in srgb,var(--ai-accent) 40%,transparent);border-radius:8px;padding:10px 8px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
                     <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
-                        <span style="font-size:13px;color:#a78bfa;">A</span>
+                        <span style="font-size:13px;color:var(--ai-accent);">A</span>
                         <input type="range" id="ai-font-size-slider" min="5" max="20" value="13" step="1"
                             oninput="app.applyAIFontSize(this.value)"
-                            style="writing-mode:vertical-lr;direction:rtl;height:90px;width:20px;accent-color:var(--accent,#8b5cf6);cursor:pointer;">
-                        <span style="font-size:9px;color:#a78bfa;">A</span>
-                        <span id="ai-font-size-label" style="font-size:10px;color:#c4b5fd;text-align:center;">13px</span>
+                            style="writing-mode:vertical-lr;direction:rtl;height:90px;width:20px;accent-color:var(--ai-accent);cursor:pointer;">
+                        <span style="font-size:9px;color:var(--ai-accent);">A</span>
+                        <span id="ai-font-size-label" style="font-size:10px;color:var(--ai-accent);text-align:center;">13px</span>
                     </div>
                 </div>
             </div>
@@ -6244,7 +6244,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <!-- Welcome Message -->
             <div class="ai-message ai" id="ai-welcome-msg">
                 <p style="margin: 0 0 8px 0; font-weight: 600; display:flex; align-items:center; gap:6px;">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#a78bfa; flex-shrink:0;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ai-accent); flex-shrink:0;">
                         <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
                     </svg>
                     <span data-i18n="ai_greeting">¡Hola! Soy tu asistente de IA.</span>
@@ -6641,15 +6641,15 @@ Arrastra para seleccionar el área · Esc para cancelar">
 
     <!-- Widget flotante de Búsqueda -->
     <div id="search-float-widget" class="collapsed" title="Buscar en documento (Ctrl+F)" onclick="if(this.classList.contains('collapsed')) app.expandSearchWidget(true);">
-        <button class="search-float-icon-btn" id="search-widget-toggle-btn" onclick="app.toggleSearchWidget(event)" title="Buscar (Ctrl+F)">
+        <button class="search-float-icon-btn" id="search-widget-toggle-btn" onclick="app.toggleSearchWidget(event)" title="Buscar (Ctrl+F)" aria-expanded="false" aria-controls="search-float-content">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
         </button>
-        <div class="search-float-content">
+        <div class="search-float-content" id="search-float-content">
             <input type="text" id="searchInput" placeholder="Buscar..." data-i18n-placeholder="ph_470684"
-                onkeydown="if(event.key==='Enter') app.searchText(!event.shiftKey); if(event.key==='Escape') app.collapseSearchWidget();"
+                onkeydown="if(event.key==='Enter') app.searchText(!event.shiftKey); if(event.key==='Escape') { event.stopPropagation(); app.collapseSearchWidget(); }"
                 autocomplete="off" spellcheck="false">
             <span id="searchStatusMini" class="search-match-info"></span>
             <div class="search-divider"></div>
@@ -6670,16 +6670,30 @@ Arrastra para seleccionar el área · Esc para cancelar">
 
     <!-- Widget flotante de Zoom -->
     <div id="zoom-float-widget">
-        <div id="zoom-controls-col">
-            <button class="zoom-float-btn" id="zoomBtnPlus" title="Acercar" data-i18n-title="tit_829722">+</button>
-            <input type="text" id="zoomInput" class="zoom-float-input" value="100%" title="Zoom" data-i18n-title="tit_264014">
+        <div class="zoom-wing zoom-wing-start" inert>
             <button class="zoom-float-btn" id="zoomBtnMinus" title="Alejar" data-i18n-title="tit_51676">−</button>
-            <button class="zoom-float-btn" id="zoomBtnReset" title="Restablecer 100%" data-i18n-title="tit_656288">↺</button>
-            <button class="zoom-float-btn" id="zoomBtnFit" title="Ajustar al ancho" data-i18n-title="tit_668486">⊡</button>
-        </div>
-        <div id="zoom-slider-col">
-            <input type="range" id="zoomSlider" min="20" max="500" value="100" step="5" orient="vertical"
+            <input type="range" id="zoomSlider" min="20" max="500" value="100" step="1"
                 title="Deslizar para hacer zoom" data-i18n-title="tit_531429">
+        </div>
+        <div class="zoom-center">
+            <button class="zoom-float-btn" id="zoomBtnFit" title="Ajustar al ancho" data-i18n-title="tit_668486">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 5v14m18-14v14M6 12h12m-9-3-3 3 3 3m6-6 3 3-3 3"/>
+                </svg>
+            </button>
+            <input type="text" id="zoomInput" class="zoom-float-input" value="100%" inputmode="decimal"
+                   autocomplete="off" spellcheck="false" title="Zoom" data-i18n-title="tit_264014">
+        </div>
+        <div class="zoom-wing zoom-wing-end" inert>
+            <button class="zoom-float-btn" id="zoomBtnPlus" title="Acercar" data-i18n-title="tit_829722">+</button>
+            <button class="zoom-float-btn" id="zoomBtnReset" title="Restablecer" data-i18n-title="tit_656288">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/>
+                    <rect x="9" y="7" width="6" height="10" rx="1"/>
+                </svg>
+            </button>
         </div>
     </div>
 

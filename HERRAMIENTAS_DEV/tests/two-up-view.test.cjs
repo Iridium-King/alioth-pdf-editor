@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const baseHtmlPath = path.resolve(__dirname, '../../BASE.html');
 const appCssPath = path.resolve(__dirname, '../../css/app.css');
@@ -42,11 +43,54 @@ test('Two-Up View: Methods and layout integration in app.render.js', () => {
     assert.ok(render.includes('two-up-cover-standalone'), 'standalone cover must be assigned');
 });
 
-test('Two-Up View: Zoom widget adjusts width for 2-page spread', () => {
-    const zoom = fs.readFileSync(zoomWidgetPath, 'utf8');
+test('Two-Up View: Fit width uses the actual spread sizes, leaving the cover on its own', async () => {
+    const listeners = new Map();
+    const stack = {};
+    const bounds = { left: 0, right: 1000, top: 0, bottom: 800 };
+    const mainView = {
+        clientWidth: 1000,
+        clientHeight: 800,
+        getBoundingClientRect: () => bounds,
+        querySelector: () => stack
+    };
+    const doc = {
+        sources: {},
+        pages: [{ width: 500 }, { width: 600 }, { width: 300, height: 400, rotation: 90 }]
+    };
+    const state = { pageIndex: 1, scale: 1 };
+    let scale;
+    const app = {
+        splitView: { activePanel: 'primary', primary: state },
+        viewMode: 'continuous',
+        isTwoUpView: true,
+        twoUpCoverAlone: true,
+        getDoc: () => doc,
+        getPanelElements: () => ({ mainView }),
+        zoomPanel: delta => { scale = state.scale + delta; }
+    };
+    const document = {
+        body: { classList: { contains: () => false } },
+        getElementById: id => ({
+            addEventListener: (event, listener) => listeners.set(id + ':' + event, listener),
+            getBoundingClientRect: () => bounds,
+            querySelectorAll: () => []
+        })
+    };
+    function getComputedStyle(element) {
+        return element === stack
+            ? { paddingLeft: '20px', paddingRight: '20px', columnGap: '24px' }
+            : { paddingLeft: '10px', paddingRight: '10px', paddingTop: '10px', paddingBottom: '10px' };
+    }
+    vm.runInNewContext(fs.readFileSync(zoomWidgetPath, 'utf8'), {
+        window: { __appReady: true }, document, app, getComputedStyle
+    });
 
-    assert.ok(zoom.includes('app.isTwoUpView'), 'zoom_widget.js must check app.isTwoUpView');
-    assert.ok(zoom.includes('actualWidth * 2 + 24'), 'zoom_widget.js must calculate spread width');
+    const fit = listeners.get('zoomBtnFit:click');
+    await fit();
+    assert.equal(scale, (1000 - 20 - 40 - 24 - 2) / (600 + 400));
+    state.pageIndex = 0;
+    await fit();
+    assert.equal(scale, (1000 - 20 - 40 - 2) / 500);
 });
 
 test('Two-Up View: Command Palette and i18n are registered', () => {

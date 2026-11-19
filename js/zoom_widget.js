@@ -1,110 +1,146 @@
-        (function () {
-            var _widgetReady = false;
+(function () {
+    function initZoomWidget() {
+        const widget = document.getElementById('zoom-float-widget');
+        const slider = document.getElementById('zoomSlider');
+        const input = document.getElementById('zoomInput');
+        if (!widget || !slider || !input) return;
 
-            function initZoomWidget() {
-                if (_widgetReady) return;
-                if (!window.app || typeof app.zoom !== 'function' || typeof app.zoomPanel !== 'function') return;
-                _widgetReady = true;
+        const wings = widget.querySelectorAll('.zoom-wing');
+        let hovered = false;
+        let fitRequest = 0;
 
-                var slider = document.getElementById('zoomSlider');
-                var input = document.getElementById('zoomInput');
+        function syncExpansion() {
+            const expanded = hovered || document.activeElement === input || !!widget.querySelector(':focus-visible');
+            widget.classList.toggle('expanded', expanded);
+            for (const wing of wings) wing.inert = !expanded;
+        }
 
-                var zoomWidgetEl = document.getElementById('zoom-widget') || slider?.closest('[id*="zoom"]');
-                if (zoomWidgetEl) {
-                    var _zStyle = window.getComputedStyle(zoomWidgetEl);
-                }                /* Slider → zoom */
-                slider.addEventListener('input', function () {
-                    app.zoom(parseInt(this.value) / 100 - app.currentScale);
+        widget.addEventListener('pointerenter', (event) => {
+            if (event.pointerType === 'touch') return;
+            hovered = true;
+            syncExpansion();
+        });
+        widget.addEventListener('pointerleave', () => {
+            hovered = false;
+            syncExpansion();
+        });
+        widget.addEventListener('focusin', syncExpansion);
+        widget.addEventListener('focusout', () => queueMicrotask(syncExpansion));
+        widget.addEventListener('pointerdown', (event) => {
+            if (event.pointerType !== 'touch' || event.target.closest('button, input')) return;
+            input.focus({ preventScroll: true });
+        });
+
+        function changeZoom(delta) {
+            fitRequest++;
+            app.zoom(delta);
+        }
+
+        slider.addEventListener('input', () => changeZoom(Number(slider.value) / 100 - app.currentScale));
+        input.addEventListener('focus', () => input.select());
+        input.addEventListener('change', () => {
+            const raw = input.value.trim().replace(/%$/, '').trim().replace(',', '.');
+            const pct = Number(raw);
+            if (raw && Number.isFinite(pct) && pct > 0) changeZoom(pct / 100 - app.currentScale);
+            input.value = Math.round(app.currentScale * 100) + '%';
+        });
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                if (event.key === 'Escape') input.value = Math.round(app.currentScale * 100) + '%';
+                input.blur();
+            }
+        });
+
+        document.getElementById('zoomBtnPlus').addEventListener('click', () => changeZoom(0.1));
+        document.getElementById('zoomBtnMinus').addEventListener('click', () => changeZoom(-0.1));
+        document.getElementById('zoomBtnFit').addEventListener('click', () => fitPage(false));
+        document.getElementById('zoomBtnReset').addEventListener('click', () => fitPage(true));
+
+        async function pageSize(doc, record) {
+            if (record.canvas) return { width: record.canvas.width, height: record.canvas.height };
+            const source = doc.sources[record.sourceId];
+            const rotation = record.rotation || 0;
+            if (source && !record._blank) {
+                const pdf = await app.loadSourcePdf(source);
+                const page = await pdf.getPage(record.pageIndex + 1);
+                return page.getViewport({ scale: 1, rotation: page.rotate + rotation });
+            }
+            const width = record.width || 612;
+            const height = record.height || 792;
+            return Math.abs(rotation % 180) === 90 ? { width: height, height: width } : { width, height };
+        }
+
+        async function fitPage(fullPage) {
+            const request = ++fitRequest;
+            const panelId = app.splitView.activePanel;
+            const state = app.splitView[panelId];
+            const doc = app.getDoc();
+            const index = state.pageIndex ?? doc?.currentIndex;
+            const record = doc?.pages[index];
+            const { mainView, canvasContainer } = app.getPanelElements(panelId);
+            if (!record || !mainView?.clientWidth || !mainView.clientHeight) return;
+
+            const horizontal = document.body.classList.contains('h-layout');
+            const continuous = app.viewMode === 'continuous';
+            const cover = app.twoUpCoverAlone ? 1 : 0;
+            const spread = continuous && !horizontal && app.isTwoUpView && index >= cover;
+            const partner = spread ? index + ((index - cover) % 2 === 0 ? 1 : -1) : -1;
+            const otherIndex = partner >= 0 && doc.pages[partner] ? partner : -1;
+            const current = () => request === fitRequest && app.getDoc() === doc
+                && panelId === app.splitView.activePanel && state.pageIndex === index;
+            let size, otherSize;
+            try {
+                [size, otherSize] = await Promise.all([
+                    pageSize(doc, record),
+                    otherIndex >= 0 ? pageSize(doc, doc.pages[otherIndex]) : null
+                ]);
+            } catch (error) {
+                console.warn('No se pudo medir la página para ajustar el zoom.', error);
+                return;
+            }
+            if (!current()) return;
+
+            const view = mainView.getBoundingClientRect();
+            const capsule = widget.getBoundingClientRect();
+            const padding = getComputedStyle(mainView);
+            const left = parseFloat(padding.paddingLeft);
+            const right = parseFloat(padding.paddingRight);
+            const top = continuous ? 12 : parseFloat(padding.paddingTop);
+            const bottom = Math.max(parseFloat(padding.paddingBottom),
+                view.left < capsule.right && view.right > capsule.left ? view.bottom - capsule.top + 3 : 0);
+            const stack = continuous ? mainView.querySelector('.scroll-stack') : null;
+            const stackStyle = stack && getComputedStyle(stack);
+            const gap = otherSize ? parseFloat(stackStyle?.columnGap) || 0 : 0;
+            const stackPaddingX = stackStyle && !horizontal
+                ? parseFloat(stackStyle.paddingLeft) + parseFloat(stackStyle.paddingRight) : 0;
+            const width = mainView.clientWidth - left - right - gap - stackPaddingX - 2;
+            const height = mainView.clientHeight - top - bottom - 2;
+            const widthScale = width / (size.width + (otherSize?.width || 0));
+            const scale = fullPage ? Math.min(widthScale, height / Math.max(size.height, otherSize?.height || 0)) : widthScale;
+
+            function framePage() {
+                if (!current()) return;
+                const wrapper = pageIndex => document.getElementById(`page-wrapper-${panelId}-${pageIndex}`);
+                const target = continuous ? wrapper(index) : canvasContainer;
+                if (!target) return;
+                const page = target.getBoundingClientRect();
+                const other = otherIndex >= 0 ? wrapper(otherIndex)?.getBoundingClientRect() : null;
+                const centerX = (Math.min(page.left, other?.left ?? page.left) + Math.max(page.right, other?.right ?? page.right)) / 2;
+                const centerY = (Math.min(page.top, other?.top ?? page.top) + Math.max(page.bottom, other?.bottom ?? page.bottom)) / 2;
+                const viewport = mainView.getBoundingClientRect();
+                mainView.scrollTo({
+                    left: mainView.scrollLeft + centerX - viewport.left - mainView.clientWidth / 2,
+                    top: fullPage ? mainView.scrollTop + centerY - viewport.top - (mainView.clientHeight + top - bottom) / 2 : mainView.scrollTop,
+                    behavior: 'instant'
                 });
-
-                /* Input → zoom */
-                function applyInput() {
-                    var n = parseInt((input.value || '').replace('%', ''));
-                    if (!isNaN(n) && n > 0) app.zoom(n / 100 - app.currentScale);
-                }
-                input.addEventListener('change', applyInput);
-                input.addEventListener('keydown', function (e) {
-                    if (e.key === 'Enter') { applyInput(); this.blur(); }
-                });
-
-                /* Botones */
-                document.getElementById('zoomBtnPlus').addEventListener('click', function () { app.zoom(0.1); });
-                document.getElementById('zoomBtnMinus').addEventListener('click', function () { app.zoom(-0.1); });
-                document.getElementById('zoomBtnReset').addEventListener('click', function () { app.zoom(1.0 - app.currentScale); });
-                document.getElementById('zoomBtnFit').addEventListener('click', function () {
-                    var panelId = (app.splitView && app.splitView.activePanel) || 'primary';
-                    var doc = app.getDoc();
-                    if (!doc || !doc.pages.length) return;
-                    var suffix = panelId === 'secondary' ? 'Secondary' : 'Primary';
-                    var mainView = document.getElementById('mainView' + suffix);
-                    if (!mainView) return;
-
-                    var isH = document.body.classList.contains('h-layout');
-                    var containerW = mainView.clientWidth - 32;
-                    var containerH = mainView.clientHeight - 48; // padding/margin
-                    var pData = doc.pages[doc.currentIndex];
-                    var src = doc.sources[pData.sourceId];
-
-                    if (src && src.doc) {
-                        src.doc.getPage(pData.pageIndex + 1).then(function (page) {
-                            var rot = (page.rotate + pData.rotation) % 360;
-                            var vp = page.getViewport({ scale: 1.0, rotation: rot });
-                            var isRotated = rot === 90 || rot === 270;
-                            var actualWidth = isRotated ? vp.height : vp.width;
-                            var actualHeight = isRotated ? vp.width : vp.height;
-
-                            var totalWidth = (app.isTwoUpView && !isH) ? (actualWidth * 2 + 24) : actualWidth;
-                            var scaleTarget = isH
-                                ? Math.max(0.2, Math.min(5.0, containerH / actualHeight))
-                                : Math.max(0.2, Math.min(5.0, containerW / totalWidth));
-
-                            var delta = scaleTarget - app.currentScale;
-                            if (Math.abs(delta) > 0.001) app.zoom(delta);
-                            // Centrar horizontalmente en modo vertical tras el render
-                            if (!isH) {
-                                setTimeout(function () {
-                                    if (mainView) mainView.scrollLeft = Math.max(0, (mainView.scrollWidth - mainView.clientWidth) / 2);
-                                }, 350);
-                            }
-                        });
-                    } else {
-                        var cvsSuffix = panelId === 'secondary' ? '-secondary' : '';
-                        var cvs = document.getElementById('the-canvas' + cvsSuffix);
-                        if (!cvs) return;
-
-                        var isTwoUp = app.isTwoUpView && !isH;
-                        var targetDim = isH ? containerH : containerW;
-                        var cvsDim = isH ? (cvs.height / app.currentScale) : ((cvs.width / app.currentScale) * (isTwoUp ? 2 : 1) + (isTwoUp ? 24 : 0));
-                        var delta = (targetDim / cvsDim) - app.currentScale;
-                        if (Math.abs(delta) > 0.001) app.zoom(delta);
-                        // Centrar horizontalmente en modo vertical tras el render
-                        if (!isH) {
-                            setTimeout(function () {
-                                if (mainView) mainView.scrollLeft = Math.max(0, (mainView.scrollWidth - mainView.clientWidth) / 2);
-                            }, 350);
-                        }
-                    }
-                });
-
-                /* Sincronizar widget tras cada zoom — hook via app.zoom only */
-                var _origZoom = app.zoom.bind(app);
-                app.zoom = function (delta) {
-                    _origZoom(delta);
-                    syncWidget();
-                };
-
-                function syncWidget() {
-                    var pct = Math.round(app.currentScale * 100);
-                    slider.value = Math.max(20, Math.min(500, pct));
-                    input.value = pct + '%';
-                }
-                syncWidget();
             }
 
-            /* Esperar a que app esté lista via evento app:ready */
-            if (window.__appReady) {
-                initZoomWidget();
-            } else {
-                window.addEventListener('app:ready', initZoomWidget, { once: true });
-            }
-        })();
+            if (Number.isFinite(scale)) app.zoomPanel(scale - state.scale, panelId, null, framePage);
+        }
+    }
+
+    if (window.__appReady) initZoomWidget();
+    else window.addEventListener('app:ready', initZoomWidget, { once: true });
+})();

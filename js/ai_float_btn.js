@@ -2,8 +2,17 @@
     const btn = document.getElementById('ai-floating-btn');
     if (!btn) return;
     btn.addEventListener('click', () => app.toggleAIPanel());
+    const search = document.getElementById('search-float-widget');
+    const zoom = document.getElementById('zoom-float-widget');
+    const viewer = document.getElementById('splitContainer');
 
     function syncPosition() {
+        if (zoom && viewer) {
+            const view = viewer.getBoundingClientRect();
+            zoom.style.setProperty('--zoom-anchor-x', (view.left + view.width / 2) + 'px');
+            zoom.style.setProperty('--zoom-anchor-bottom', Math.max(12, window.innerHeight - view.bottom + 12) + 'px');
+            zoom.style.setProperty('--zoom-view-width', view.width + 'px');
+        }
         const visibleRect = id => {
             const element = document.getElementById(id);
             if (!element || getComputedStyle(element).display === 'none' || getComputedStyle(element).visibility === 'hidden') return null;
@@ -30,6 +39,10 @@
             btn.style.bottom = 'auto';
             rect = btn.getBoundingClientRect();
         }
+        if (search) {
+            search.style.setProperty('--search-widget-right', (window.innerWidth - rect.left + 2) + 'px');
+            search.style.setProperty('--search-widget-center', (rect.top + rect.height / 2) + 'px');
+        }
         topBtn.style.transform = bottomBtn.style.transform = 'none';
         topBtn.style.top = (rect.top - 4 - topSize) + 'px';
         bottomBtn.style.top = (rect.bottom + 4) + 'px';
@@ -39,13 +52,26 @@
     }
 
     let positionFrame;
+    let dockTransition = false;
     function schedulePosition() {
         if (positionFrame) return;
-        positionFrame = requestAnimationFrame(() => { positionFrame = null; syncPosition(); });
+        positionFrame = requestAnimationFrame(() => {
+            positionFrame = null;
+            syncPosition();
+            if (dockTransition) schedulePosition();
+        });
+    }
+    function syncDockTransition(event) {
+        if (event.target !== btn || event.propertyName !== 'right') return;
+        dockTransition = event.type === 'transitionrun';
+        schedulePosition();
+    }
+    for (const event of ['transitionrun', 'transitionend', 'transitioncancel']) {
+        btn.addEventListener(event, syncDockTransition);
     }
     if (typeof ResizeObserver === 'function') {
         const observer = new ResizeObserver(schedulePosition);
-        for (const id of ['ai-floating-btn', 'ribbonContainer', 'reading-mode-float-widget', 'zoom-float-widget']) {
+        for (const id of ['ai-floating-btn', 'ribbonContainer', 'reading-mode-float-widget', 'zoom-float-widget', 'splitContainer']) {
             const element = document.getElementById(id);
             if (element) observer.observe(element);
         }

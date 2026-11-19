@@ -194,53 +194,7 @@
         }
 
 /* === L49035–49145 === */
-        #zoom-float-widget {
-            position: fixed;
-            bottom: 18px;
-            right: 18px;
-            left: auto;
-            z-index: 9000;
-            display: flex;
-            flex-direction: row;
-            align-items: flex-end;
-            gap: 4px;
-            opacity: 0.25;
-            transition: opacity 0.25s ease;
-        }
-
-        #zoom-float-widget:hover {
-            opacity: 1;
-        }
-
-        /* Panel botones: ancho fijo 34px, altura fija */
-        #zoom-controls-col {
-            display: flex;
-            flex-direction: column;
-            align-items: stretch;
-            justify-content: space-evenly;
-            gap: 0;
-            background: rgba(30, 30, 45, 0.65);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.13);
-            border-radius: 10px;
-            padding: 6px 4px;
-            width: 34px;
-            box-sizing: border-box;
-            height: 158px;
-        }
-
-        .zoom-float-btn,
-        .zoom-float-input {
-            width: 100%;
-            height: 24px;
-            min-height: 24px;
-            max-height: 24px;
-            flex-shrink: 0;
-            box-sizing: border-box;
-        }
-
-        .zoom-float-btn {
+        #btn-reading-mode {
             background: rgba(255, 255, 255, 0.10);
             border: 1px solid rgba(255, 255, 255, 0.18);
             color: #e2e8f0;
@@ -255,54 +209,12 @@
             transition: background 0.15s;
         }
 
-        .zoom-float-btn:hover {
+        #btn-reading-mode:hover {
             background: rgba(255, 255, 255, 0.22);
         }
 
-        .zoom-float-btn:active {
+        #btn-reading-mode:active {
             background: rgba(100, 140, 255, 0.40);
-        }
-
-        .zoom-float-input {
-            text-align: center;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            border-radius: 5px;
-            color: #e2e8f0;
-            font-size: 10px;
-            padding: 0;
-            outline: none;
-        }
-
-        .zoom-float-input:focus {
-            background: rgba(255, 255, 255, 0.16);
-            border-color: rgba(100, 160, 255, 0.6);
-        }
-
-        /* Panel slider: ancho fijo 18px, misma altura que panel botones */
-        #zoom-slider-col {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(30, 30, 45, 0.65);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.13);
-            border-radius: 10px;
-            padding: 5px 0;
-            width: 18px;
-            height: 158px;
-            box-sizing: border-box;
-        }
-
-        #zoomSlider {
-            writing-mode: vertical-lr;
-            direction: rtl;
-            width: 14px;
-            height: 138px;
-            cursor: pointer;
-            accent-color: var(--accent);
-            flex-shrink: 0;
         }
 
 /* === L50428–50495 === */
@@ -328,13 +240,6 @@
         }
 
         /* Horizontal Layout Widget Dock Overrides */
-        body.h-layout #zoom-float-widget {
-            right: 18px !important;
-            bottom: 110px !important;
-            left: auto !important;
-            z-index: 8000 !important;
-        }
-
         body.h-layout #autoscroll-widget {
             left: 78px !important;
             bottom: 110px !important;

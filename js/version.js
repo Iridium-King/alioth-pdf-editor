@@ -1,6 +1,15 @@
-const ALIOTH_VERSION = '3.2.39';
+const ALIOTH_VERSION = '3.2.40';
         window.ALIOTH_VERSION = ALIOTH_VERSION;
         const ALIOTH_CHANGELOG = [
+            {
+                version: '3.2.40',
+                date: '2026-11-18',
+                items: [
+                    { type: 'new', text: '<strong>Zoom:</strong> Cápsula horizontal expandible con porcentaje editable. Restablecer ajusta la página completa y la escala inicial predeterminada es 100%.' },
+                    { type: 'fix', text: '<strong>Búsqueda:</strong> La cápsula está junto al panel IA y enfoca el campo al pasar el ratón.' },
+                    { type: 'new', text: '<strong>Panel IA:</strong> Los controles se adaptan al tema seleccionado.' }
+                ]
+            },
             {
                 version: '3.2.39',
                 date: '2026-11-18',

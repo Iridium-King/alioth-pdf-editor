@@ -3067,7 +3067,7 @@ _result
                 // Sync General Preferences
                 const autosaveEnabled = localStorage.getItem('alioth_autosave_enabled') === 'true';
                 const autosaveInterval = localStorage.getItem('alioth_autosave_interval') || '5';
-                const defaultZoom = localStorage.getItem('alioth_default_zoom') || 'page-fit';
+                const defaultZoom = localStorage.getItem('alioth_default_zoom') || '1.0';
                 const defaultPageMode = localStorage.getItem('alioth_default_page-mode') || 'continuous';
                 const defaultAiProvider = localStorage.getItem('alioth_default_ai_provider') || 'gemini';
                 const defaultOpenMode = localStorage.getItem('alioth_default_open_mode') || 'tab';
