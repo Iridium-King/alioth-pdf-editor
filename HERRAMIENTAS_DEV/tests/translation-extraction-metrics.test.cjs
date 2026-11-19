@@ -8,7 +8,7 @@ const context = { jobId: 'translation-job_measurement123', sourceIndex: 0 };
 function fixture(extraModules = []) {
   let clock = 0;
   const records = [], consoleRecords = [];
-  const h = loadAppModules(['js/app.agentic.js', ...extraModules], {
+  const h = loadAppModules(['js/app.agentic.js', 'js/app.ocr.js', ...extraModules], {
     AbortController, AbortSignal, TextEncoder, performance: { now: () => clock += 7 },
     console: { info: (...args) => consoleRecords.push(args), log() {}, warn() {}, error() {} }
   });
@@ -150,7 +150,7 @@ test('native unavailability reports WASM initialization and converts kernel call
   assert.equal(JSON.stringify(h.records).includes('Private'), false);
 });
 
-test('the note-copy workflow uses its job ID through snapshot, sources, grouping and hashing', async () => {
+test('the notes workflow uses its job ID through snapshot, sources, grouping and hashing', async () => {
   const h = fixture(['js/app.pdf.js']), metrics = h.context.fetch, nodes = new Map();
   h.documentObject.getElementById = id => {
     if (!nodes.has(id)) nodes.set(id, { style: {}, hidden: false, disabled: false, textContent: '',
@@ -177,8 +177,10 @@ test('the note-copy workflow uses its job ID through snapshot, sources, grouping
   h.app.closeAllModals = () => {};
   h.app.switchTab = async id => { h.app.activeDocId = id; };
   h.app.showToast = () => {};
-  await h.app.createTranslationNotesCopyFromModal();
-  assert.equal(h.app.docs.length, 3, nodes.get('translation-review-status').textContent);
+  await h.app.createTranslationNotesFromModal();
+  assert.equal(h.app.docs.length, 2, nodes.get('translation-review-status').textContent);
+  assert.equal(h.first.pages[0].objects.filter(object => object.translationNote).length, 1);
+  assert.ok(Number.isFinite(h.records.find(record => record.event === 'notes_completed').applyMs));
   const job = h.records.find(x => x.event === 'job_started').jobId;
   assert.equal(extractionContext.jobId, job);
   assert.equal(extractionContext.sourceIndex, 0);

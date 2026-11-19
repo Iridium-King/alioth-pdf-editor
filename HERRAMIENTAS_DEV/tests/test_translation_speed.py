@@ -1,8 +1,11 @@
 import contextlib
 import importlib.util
 import io
+import json
 import sys
+import threading
 import unittest
+import urllib.error
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +16,105 @@ sys.path.insert(0, str(ROOT))
 spec = importlib.util.spec_from_file_location('translation_speed_proxy', ROOT / '_proxy.py')
 proxy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(proxy)
+
+
+class TranslationModelTests(unittest.TestCase):
+    key = 'test-groq'
+    endpoint = 'https://api.groq.com/openai/v1/chat/completions'
+    models = ('openai/gpt-oss-20b', 'openai/gpt-oss-120b')
+    complete = '[{"unitId":"u0","translatedText":"Texto de prueba"}]'
+
+    def setUp(self):
+        self.enterContext(patch.multiple(
+            proxy, _TRANSLATION_GROQ_CATALOGUES={}, _TRANSLATION_GROQ_REFRESHING=set(),
+            _TRANSLATION_MODEL_RESULTS={}, _TRANSLATION_MODEL_STATES={},
+            _TRANSLATION_CREDENTIAL_STATES={}, _TRANSLATION_PROVIDER_COOLDOWNS={},
+            _TRANSLATION_PROVIDER_RATE_LIMITS={}, _TRANSLATION_PROVIDER_PROBES={},
+            _TRANSLATION_PROVIDER_QUOTA_STRIKES={}
+        ))
+
+    def test_groq_translation_parameters_do_not_reach_panel_chat(self):
+        payload = {'choices': [{'message': {'content': self.complete}}]}
+        captured = []
+
+        def send(request, **kwargs):
+            captured.append(json.loads(request.data))
+            return io.BytesIO(json.dumps(payload).encode())
+
+        with patch.object(proxy.urllib.request, 'urlopen', side_effect=send), \
+                patch.object(proxy, '_translation_groq_models', return_value=self.models) as catalogue, \
+                patch.object(proxy, '_TEXT_PROVIDER_SPECS', (('groq', [self.key], self.endpoint, self.models),)), \
+                patch.object(proxy, 'GEMINI_KEYS', []):
+            budget = proxy._TranslationGenerationBudget()
+            budget.expected_translation_ids = {'u0'}
+            self.assertEqual(proxy._generate_text_json_with_fallback('Prueba', budget=budget)[2], self.models[0])
+            self.assertEqual(proxy._generate_chat_with_fallback('Pregunta', [], 'groq'), self.complete)
+            catalogue.assert_called_once()
+        self.assertEqual(captured[0]['reasoning_effort'], 'low')
+        self.assertEqual(captured[0]['max_completion_tokens'], 4096)
+        self.assertNotIn('reasoning_effort', captured[1])
+        self.assertNotIn('max_completion_tokens', captured[1])
+        self.assertEqual(captured[1]['messages'], [{'role': 'user', 'content': 'Pregunta'}])
+
+    def test_catalogue_refresh_is_background_and_key_specific(self):
+        started = threading.Event()
+        release = threading.Event()
+        actual = proxy._refresh_translation_groq_catalogue
+        finished = threading.Event()
+
+        def fetch(key, timeout):
+            started.set()
+            self.assertTrue(release.wait(5))
+            return [{'id': self.models[0], 'active': False}, {'id': self.models[1], 'active': True},
+                    {'id': 'unknown-unverified-model', 'active': True}]
+
+        def refresh(*args):
+            try:
+                actual(*args)
+            finally:
+                finished.set()
+
+        with patch.object(proxy, '_read_groq_catalogue', side_effect=fetch) as catalogue, \
+                patch.object(proxy, '_refresh_translation_groq_catalogue', side_effect=refresh):
+            try:
+                self.assertEqual(proxy._translation_groq_models(self.key, self.models), self.models)
+                self.assertTrue(started.wait(5))
+                self.assertEqual(proxy._translation_groq_models(self.key, self.models), self.models)
+            finally:
+                release.set()
+                self.assertTrue(finished.wait(5))
+            self.assertEqual(proxy._translation_groq_models(self.key, self.models), [self.models[1]])
+            catalogue.assert_called_once_with(self.key, 3)
+        self.assertNotIn(proxy._translation_model_identity('groq', 'another-key', ''), proxy._TRANSLATION_GROQ_CATALOGUES)
+
+    def test_retired_model_skips_next_attempt_without_quota_delay(self):
+        payload = {'choices': [{'message': {'content': self.complete}}]}
+        attempted = []
+
+        def send(request, **kwargs):
+            model = json.loads(request.data)['model']
+            attempted.append(model)
+            if model == self.models[0]:
+                raise urllib.error.HTTPError(request.full_url, 410, 'retired', {}, io.BytesIO())
+            return io.BytesIO(json.dumps(payload).encode())
+
+        def generate():
+            return proxy._openai_generate_json('groq', [self.key], self.endpoint, self.models, 'Prueba', 0,
+                                               budget=proxy._TranslationGenerationBudget(), translation=True)
+
+        with patch.object(proxy.urllib.request, 'urlopen', side_effect=send), \
+                patch.object(proxy, '_translation_groq_models', return_value=self.models) as catalogue:
+            self.assertEqual(generate()[2], self.models[1])
+            self.assertEqual(generate()[2], self.models[1])
+            catalogue.assert_any_call(self.key, self.models, refresh=True)
+        self.assertEqual(attempted, [self.models[0], self.models[1], self.models[1]])
+
+    def test_verified_coverage_dominates_a_fast_incomplete_response(self):
+        for _ in range(2):
+            proxy._translation_record_model_result('groq', self.key, self.models[0], {'u0'}, '[]', 0.1)
+            proxy._translation_record_model_result('groq', self.key, self.models[1], {'u0'}, self.complete, 0.4)
+        self.assertEqual(proxy._order_translation_models('groq', self.key, self.models), list(reversed(self.models)))
+        self.assertEqual(proxy._order_translation_models('groq', 'another-key', self.models), list(self.models))
 
 
 class TranslationSpeedTests(unittest.TestCase):

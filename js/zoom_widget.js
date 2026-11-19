@@ -5,14 +5,14 @@
         const input = document.getElementById('zoomInput');
         if (!widget || !slider || !input) return;
 
-        const wings = widget.querySelectorAll('.zoom-wing');
+        const extraControls = widget.querySelectorAll('.zoom-extra');
         let hovered = false;
         let fitRequest = 0;
 
         function syncExpansion() {
             const expanded = hovered || document.activeElement === input || !!widget.querySelector(':focus-visible');
             widget.classList.toggle('expanded', expanded);
-            for (const wing of wings) wing.inert = !expanded;
+            for (const group of extraControls) group.inert = !expanded;
         }
 
         widget.addEventListener('pointerenter', (event) => {
@@ -102,6 +102,9 @@
             }
             if (!current()) return;
 
+            const sideMargin = document.getElementById('ai-floating-btn')?.getBoundingClientRect().width || 1;
+            if (!fullPage) mainView.style.setProperty('--fit-width-margin', sideMargin + 'px');
+            mainView.classList.toggle('fit-width', !fullPage);
             const view = mainView.getBoundingClientRect();
             const capsule = widget.getBoundingClientRect();
             const padding = getComputedStyle(mainView);
@@ -115,7 +118,8 @@
             const gap = otherSize ? parseFloat(stackStyle?.columnGap) || 0 : 0;
             const stackPaddingX = stackStyle && !horizontal
                 ? parseFloat(stackStyle.paddingLeft) + parseFloat(stackStyle.paddingRight) : 0;
-            const width = mainView.clientWidth - left - right - gap - stackPaddingX - 2;
+            const horizontalSpace = fullPage ? left + right + stackPaddingX + 2 : sideMargin * 2;
+            const width = mainView.clientWidth - horizontalSpace - gap;
             const height = mainView.clientHeight - top - bottom - 2;
             const widthScale = width / (size.width + (otherSize?.width || 0));
             const scale = fullPage ? Math.min(widthScale, height / Math.max(size.height, otherSize?.height || 0)) : widthScale;
@@ -137,7 +141,7 @@
                 });
             }
 
-            if (Number.isFinite(scale)) app.zoomPanel(scale - state.scale, panelId, null, framePage);
+            if (Number.isFinite(scale) && scale > 0) app.zoomPanel(scale - state.scale, panelId, null, framePage);
         }
     }
 

@@ -1,6 +1,6 @@
 """Autorizaciones efímeras para destinos elegidos por Windows."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dataclasses import replace
 from functools import wraps
 from pathlib import Path
@@ -45,6 +45,7 @@ class SaveUpload:
     temp_root: Path
     temp_path: Path
     redaction_verification: tuple = ()
+    verification_password: str | None = field(default=None, repr=False)
     redaction_result: dict | None = None
     committed_identity: str | None = None
     received: int = 0
@@ -181,7 +182,7 @@ class NativeSaveStore:
         return tuple(normalized)
 
     @staticmethod
-    def _verify_redaction_output(path, occurrences):
+    def _verify_redaction_output(path, occurrences, password=None):
         import fitz
 
         def simple_image_target(document, page, clip):
@@ -233,6 +234,8 @@ class NativeSaveStore:
 
         document = fitz.open(path)
         try:
+            if document.needs_pass and not (password and document.authenticate(password)):
+                raise ValueError('REDACTION_VERIFICATION_UNAVAILABLE')
             treated, rejected = [], []
             for occurrence in occurrences:
                 page_index = occurrence['pageIndex']
@@ -264,7 +267,8 @@ class NativeSaveStore:
         return result
 
     @synchronized
-    def begin_save(self, session_id, token, operation_id, length, sha256, expected_fingerprint, redaction_verification=None):
+    def begin_save(self, session_id, token, operation_id, length, sha256, expected_fingerprint,
+                   redaction_verification=None, verification_password=None):
         self.cleanup()
         grant = self.resolve_grant(session_id, token)
         if not isinstance(length, int) or not 0 < length <= 512 * 1024 * 1024:
@@ -276,6 +280,9 @@ class NativeSaveStore:
         if sum(upload.status == 'uploading' for upload in self._uploads.values()) >= 8:
             raise ValueError('Too many pending saves')
         verification = self._normalize_redaction_verification(redaction_verification)
+        if verification_password is not None:
+            if not verification or not isinstance(verification_password, str) or len(verification_password.encode('utf-8')) > 127:
+                raise ValueError('INVALID_VERIFICATION_PASSWORD')
         temp_root = self._temp_root or grant.path.parent
         temp_root.mkdir(parents=True, exist_ok=True)
         reserved = sum(max(0, upload.length - upload.received) for upload in self._uploads.values()
@@ -284,7 +291,9 @@ class NativeSaveStore:
             raise OSError('Insufficient temporary disk space')
         handle = tempfile.NamedTemporaryFile(prefix='upload-', suffix='.part', dir=temp_root, delete=False)
         handle.close()
-        upload = SaveUpload(secrets.token_urlsafe(24), operation_id, session_id, grant, length, sha256.lower(), expected_fingerprint, temp_root, Path(handle.name), verification)
+        upload = SaveUpload(secrets.token_urlsafe(24), operation_id, session_id, grant, length,
+                            sha256.lower(), expected_fingerprint, temp_root, Path(handle.name),
+                            verification, verification_password)
         upload.touched_at = self.clock()
         with self._lock:
             self._uploads[upload.upload_id] = upload
@@ -321,13 +330,25 @@ class NativeSaveStore:
             raise ValueError('Upload hash mismatch')
         try:
             import fitz
-            pdf = fitz.open(upload.temp_path)
-            if pdf.page_count < 1:
-                raise ValueError('Invalid PDF')
-            pdf.close()
+            with fitz.open(upload.temp_path) as pdf:
+                if not pdf.is_pdf or pdf.page_count < 1:
+                    raise ValueError('Invalid PDF')
+                encrypted = pdf.needs_pass or pdf.xref_get_key(-1, 'Encrypt')[0] != 'null'
         except Exception as error:
             raise ValueError('Invalid PDF') from error
-        verification_result = self._verify_redaction_output(upload.temp_path, upload.redaction_verification) if upload.redaction_verification else None
+        if not encrypted and upload.expected_fingerprint is not None:
+            try:
+                destination = fitz.open(upload.grant.path)
+            except (OSError, ValueError, RuntimeError):
+                pass  # A confirmed destination may be an empty or invalid file.
+            else:
+                with destination:
+                    if destination.is_pdf and (destination.needs_pass or destination.xref_get_key(-1, 'Encrypt')[0] != 'null'):
+                        raise ValueError('PROTECTION_REQUIRED')
+        verification_args = (upload.redaction_verification,)
+        if upload.verification_password is not None:
+            verification_args += (upload.verification_password,)
+        verification_result = self._verify_redaction_output(upload.temp_path, *verification_args) if upload.redaction_verification else None
         if verification_result and verification_result['rejected']:
             raise ValueError('REDACTION_VERIFICATION_FAILED')
         if self._fingerprint(upload.grant.path) != upload.expected_fingerprint:
@@ -340,13 +361,15 @@ class NativeSaveStore:
         upload.touched_at = self.clock()
         try:
             if verification_result:
-                final_result = self._verify_redaction_output(upload.grant.path, upload.redaction_verification)
+                final_result = self._verify_redaction_output(upload.grant.path, *verification_args)
                 if final_result['rejected']:
                     raise OSError('REDACTION_REOPEN_FAILED')
             upload.committed_identity = self._identity_for_path(upload.grant.path)
         except Exception:
             upload.status = 'verification_failed'
             return self.get_save_status(session_id, operation_id)
+        finally:
+            upload.verification_password = None
         upload.status = 'committed'
         upload.redaction_result = final_result if verification_result else None
         return self._committed_result(upload)
@@ -376,5 +399,6 @@ class NativeSaveStore:
         if temp_path.exists():
             temp_path.unlink()
         upload.status = 'aborted'
+        upload.verification_password = None
         upload.touched_at = self.clock()
         return {'status': 'aborted'}

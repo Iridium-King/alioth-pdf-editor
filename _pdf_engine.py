@@ -4,6 +4,7 @@ This module does not import the MCP SDK, start a server or change cwd.
 """
 from __future__ import annotations
 
+import hashlib
 import inspect
 import io
 import math
@@ -11,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 from typing import Any, Dict, List, Optional, Union, get_args, get_origin, get_type_hints
 
 _ROOT_DIR = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
@@ -64,12 +66,43 @@ def _open_pdf(path, password=""):
     try:
         if not doc.is_pdf:
             raise PDFOperationError("Input is not a PDF document.", "INVALID_PDF")
-        if doc.needs_pass and (not password or not doc.authenticate(password)):
+        # On MuPDF 1.28, querying needs_pass again after authentication clears the
+        # active decryption key. Record it before authenticating.
+        doc._alioth_requires_password = bool(doc.needs_pass)
+        if doc._alioth_requires_password and (not password or not doc.authenticate(password)):
             raise PDFOperationError("PDF is password protected. Provide a valid password.", "PASSWORD_REQUIRED")
         return doc
     except Exception:
         doc.close()
         raise
+
+
+def _is_protected_pdf(document):
+    # Owner-only protection may permit opening without a password.
+    return document.xref_get_key(-1, 'Encrypt')[0] != 'null'
+
+
+def _save_pdf_output(document, output_path, password):
+    protected = _is_protected_pdf(document)
+    expected_streams = None
+    if protected:
+        expected_streams = [hashlib.sha256(page.read_contents()).digest() for page in document]
+    with tempfile.NamedTemporaryFile(dir=Path(output_path).parent, suffix='.pdf', delete=False) as output:
+        temporary = Path(output.name)
+    try:
+        document.save(temporary, garbage=3, deflate=True, encryption=fitz.PDF_ENCRYPT_KEEP, no_new_id=protected)
+        with _open_pdf(temporary, password) as saved:
+            _require(len(saved) == len(document), 'The output page count changed.', 'PDF_OUTPUT_INVALID')
+            if protected:
+                _require(_is_protected_pdf(saved) and saved._alioth_requires_password == document._alioth_requires_password
+                         and saved.permissions == document.permissions
+                         and saved.metadata.get('encryption') == document.metadata.get('encryption'),
+                         'The PDF protection could not be preserved.', 'PROTECTION_REQUIRED')
+                _require([hashlib.sha256(page.read_contents()).digest() for page in saved] == expected_streams,
+                         'The encrypted output failed a content integrity check.', 'PDF_OUTPUT_INVALID')
+        os.replace(temporary, output_path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _pdf_get_info_impl(filepath: str, password: str='') -> Dict[str, Any]:
@@ -86,7 +119,7 @@ def _pdf_get_info_impl(filepath: str, password: str='') -> Dict[str, Any]:
                 pages_info.append({'page_number': i + 1, 'width_pt': round(r.width, 2), 'height_pt': round(r.height, 2), 'rotation': page.rotation, 'has_text': len(page.get_text().strip()) > 0})
             toc = doc.get_toc()
             outline = [{'level': item[0], 'title': item[1], 'page': item[2]} for item in toc] if toc else []
-            return {'filepath': path, 'filename': os.path.basename(path), 'filesize_bytes': os.path.getsize(path), 'page_count': len(doc), 'is_encrypted': bool(doc.needs_pass), 'metadata': {'format': doc.metadata.get('format', ''), 'title': doc.metadata.get('title', ''), 'author': doc.metadata.get('author', ''), 'subject': doc.metadata.get('subject', ''), 'keywords': doc.metadata.get('keywords', ''), 'creator': doc.metadata.get('creator', ''), 'producer': doc.metadata.get('producer', ''), 'creationDate': doc.metadata.get('creationDate', ''), 'modDate': doc.metadata.get('modDate', '')}, 'outline': outline, 'pages': pages_info}
+            return {'filepath': path, 'filename': os.path.basename(path), 'filesize_bytes': os.path.getsize(path), 'page_count': len(doc), 'is_encrypted': _is_protected_pdf(doc), 'metadata': {'format': doc.metadata.get('format', ''), 'title': doc.metadata.get('title', ''), 'author': doc.metadata.get('author', ''), 'subject': doc.metadata.get('subject', ''), 'keywords': doc.metadata.get('keywords', ''), 'creator': doc.metadata.get('creator', ''), 'producer': doc.metadata.get('producer', ''), 'creationDate': doc.metadata.get('creationDate', ''), 'modDate': doc.metadata.get('modDate', '')}, 'outline': outline, 'pages': pages_info}
     except Exception as e:
         return _operation_error(e)
 
@@ -168,93 +201,103 @@ def _pdf_search_text_impl(filepath: str, query: str, page_number: int=0, case_se
         return _operation_error(e)
 
 
+def _replacement_font(name):
+    name = name.lower()
+    if 'bold' in name:
+        return 'hebi' if 'italic' in name or 'oblique' in name else 'hebo'
+    if 'italic' in name or 'oblique' in name:
+        return 'heit'
+    if 'times' in name or 'roman' in name:
+        return 'tiro'
+    if 'courier' in name:
+        return 'cour'
+    return 'helv'
+
+
+def _replacement_locations(page, needle, replacement, font_name, font_size, color_hex):
+    pattern = re.compile(re.escape(needle), re.IGNORECASE)
+    locations = []
+    blocks = page.get_text('rawdict', flags=fitz.TEXTFLAGS_RAWDICT & ~fitz.TEXT_PRESERVE_IMAGES)['blocks']
+    for block in blocks:
+        for line in block.get('lines', []):
+            entries = [(char, span) for span in line['spans'] for char in span['chars']]
+            text = ''.join(char['c'] for char, _ in entries)
+            for match in pattern.finditer(text):
+                _require(line['dir'] == (1.0, 0.0), 'This text direction cannot be replaced safely.', 'UNSUPPORTED_LAYOUT')
+                selected = entries[match.start():match.end()]
+                first, style = selected[0]
+                origin = fitz.Point(first['origin'])
+                rect = fitz.Rect(first['bbox'])
+                for char, _ in selected[1:]:
+                    rect |= fitz.Rect(char['bbox'])
+                font = font_name or _replacement_font(style['font'])
+                size = font_size or style['size']
+                typeface = fitz.Font(fontname=font)
+                _require(all(typeface.has_glyph(ord(char)) for char in replacement),
+                         'The font cannot represent all replacement characters.', 'UNSUPPORTED_FONT')
+                right_edge = (page.rect * page.derotation_matrix).x1
+                for char, _ in entries[match.end():]:
+                    if not char['c'].isspace():
+                        right_edge = char['origin'][0]
+                        break
+                available = right_edge - origin.x
+                width = typeface.text_length(replacement, fontsize=size)
+                if width > available and not font_size and available >= width * 0.8:
+                    size *= available / width
+                    width = available
+                _require(width <= available + 0.1,
+                         'The replacement would overlap adjacent text or the page edge.', 'UNSUPPORTED_LAYOUT')
+                color = int(color_hex.lstrip('#'), 16) if color_hex else style['color']
+                rgb = tuple(((color >> shift) & 255) / 255 for shift in (16, 8, 0))
+                locations.append((rect, origin, font, size, rgb))
+    return locations
+
+
 def _pdf_splice_text_impl(filepath: str, page_number: int, old_text: str, new_text: str, output_path: str='', font_name: str='', font_size: float=0.0, color_hex: str='', password: str='') -> Dict[str, Any]:
-    """
-    Surgically replace text in a PDF page while preserving the original layout,
-    clean background, and font styling without breaking the document stream.
-    """
+    """Replace each safely identified occurrence and preserve unrelated page content."""
     path = _normalize_path(filepath)
     if not os.path.exists(path):
         return {'error': f'File not found: {path}'}
     if not old_text:
         return {'error': 'old_text cannot be empty.'}
-    if not output_path:
-        stem = Path(path).stem
-        output_path = str(_safe_temp_dir() / f'{stem}_spliced.pdf')
-    else:
-        output_path = _normalize_path(output_path)
+    output_path = _normalize_path(output_path) if output_path else str(_safe_temp_dir() / f'{Path(path).stem}_spliced.pdf')
     try:
         with _open_pdf(path, password) as doc:
             if page_number < 1 or page_number > len(doc):
                 return {'error': f'Invalid page_number {page_number}. Document has {len(doc)} pages.'}
             page = doc[page_number - 1]
-            rects = page.search_for(old_text)
-            if not rects:
-                rects = page.search_for(old_text.strip())
-            if not rects:
+            _require('\r' not in new_text and '\n' not in new_text,
+                     'A replacement must fit on a single line.', 'UNSUPPORTED_LAYOUT')
+            needle = old_text
+            locations = _replacement_locations(page, needle, new_text, font_name, font_size, color_hex)
+            if not locations and needle.strip() and needle.strip() != needle:
+                needle = needle.strip()
+                locations = _replacement_locations(page, needle, new_text, font_name, font_size, color_hex)
+            matches = page.search_for(needle)
+            if not locations and not matches:
                 return {'status': 'not_found', 'message': f"Text '{old_text}' was not found on page {page_number}.", 'replaced_count': 0}
-            detected_font = 'helv'
-            detected_size = 11.0
-            detected_color = (0.0, 0.0, 0.0)
-            page_dict = page.get_text('dict')
-            for b in page_dict.get('blocks', []):
-                if b.get('type') == 0:
-                    for l in b.get('lines', []):
-                        for s in l.get('spans', []):
-                            stext = s.get('text', '')
-                            if old_text in stext or stext in old_text:
-                                detected_size = float(s.get('size', 11.0))
-                                font_val = s.get('font', '').lower()
-                                if 'bold' in font_val and 'italic' in font_val:
-                                    detected_font = 'hebi'
-                                elif 'bold' in font_val:
-                                    detected_font = 'hebo'
-                                elif 'italic' in font_val or 'oblique' in font_val:
-                                    detected_font = 'heit'
-                                elif 'times' in font_val or 'roman' in font_val:
-                                    detected_font = 'tiro'
-                                elif 'courier' in font_val:
-                                    detected_font = 'cour'
-                                else:
-                                    detected_font = 'helv'
-                                raw_col = s.get('color', 0)
-                                if isinstance(raw_col, int):
-                                    r = (raw_col >> 16 & 255) / 255.0
-                                    g = (raw_col >> 8 & 255) / 255.0
-                                    b_val = (raw_col & 255) / 255.0
-                                    detected_color = (r, g, b_val)
-                                break
-            final_font = font_name if font_name else detected_font
-            final_size = font_size if font_size > 0 else detected_size
-            final_color = detected_color
-            if color_hex:
-                c = color_hex.lstrip('#')
-                if len(c) == 6:
-                    final_color = (int(c[0:2], 16) / 255.0, int(c[2:4], 16) / 255.0, int(c[4:6], 16) / 255.0)
-            bg_fill = (1.0, 1.0, 1.0)
-            try:
-                sample_rect = fitz.Rect(rects[0].x0, max(0, rects[0].y0 - 4), rects[0].x0 + 4, rects[0].y0)
-                pix = page.get_pixmap(clip=sample_rect, dpi=72)
-                if pix.width > 0 and pix.height > 0:
-                    pixel = pix.pixel(0, 0)
-                    bg_fill = (pixel[0] / 255.0, pixel[1] / 255.0, pixel[2] / 255.0)
-            except Exception:
-                bg_fill = (1.0, 1.0, 1.0)
-            for r in rects:
-                erase_rect = fitz.Rect(r.x0 - 0.5, r.y0 - 0.5, r.x1 + 0.5, r.y1 + 0.5)
-                page.add_redact_annot(erase_rect, fill=bg_fill)
-            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-            first_r = rects[0]
-            baseline_y = first_r.y1 - final_size * 0.18
-            insert_pt = fitz.Point(first_r.x0, baseline_y)
-            rc = page.insert_text(insert_pt, new_text, fontname=final_font, fontsize=final_size, color=final_color)
-            doc.save(output_path, garbage=3, deflate=True)
-            return {'status': 'success', 'message': f"Successfully spliced '{old_text}' -> '{new_text}' on page {page_number}.", 'output_path': output_path, 'replaced_instances': len(rects), 'font_used': final_font, 'font_size': final_size, 'coordinates': [round(first_r.x0, 2), round(first_r.y0, 2), round(first_r.x1, 2), round(first_r.y1, 2)]}
-    except Exception as e:
-        return _operation_error(e)
+            _require(locations and all(any(rect.intersects(match) for rect, *_ in locations) for match in matches),
+                     'A match spans text that cannot be replaced safely.', 'UNSUPPORTED_LAYOUT')
+            for rect, *_ in locations:
+                inset = min(0.05, rect.width / 4)
+                margin = rect.height / 4
+                page.add_redact_annot(
+                    fitz.Rect(rect.x0 + inset, rect.y0 + margin, rect.x1 - inset, rect.y1 - margin), fill=False)
+            page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_NONE)
+            for _, origin, font, size, color in locations:
+                if new_text:
+                    _require(page.insert_text(origin, new_text, fontname=font, fontsize=size, color=color) == 1,
+                             'A replacement could not be written.', 'PDF_OUTPUT_INVALID')
+            _save_pdf_output(doc, output_path, password)
+            first_rect, _, first_font, first_size, _ = locations[0]
+            return {'status': 'success', 'message': f'Replaced {len(locations)} occurrences on page {page_number}.',
+                    'output_path': output_path, 'replaced_instances': len(locations), 'font_used': first_font,
+                    'font_size': first_size, 'coordinates': [round(value, 2) for value in first_rect]}
+    except Exception as error:
+        return _operation_error(error)
 
 
-def _pdf_redact_sensitive_data_impl(filepath: str, patterns: List[str], page_number: int=0, fill_color: str='black', output_path: str='', password: str='') -> Dict[str, Any]:
+def _pdf_redact_sensitive_data_impl(filepath: str, patterns: List[str], page_number: int=0, fill_color: str='black', output_path: str='', password: str='', sanitize: bool=False) -> Dict[str, Any]:
     """Permanently censor/redact sensitive patterns or text from a PDF."""
     path = _normalize_path(filepath)
     if not os.path.exists(path):
@@ -288,8 +331,14 @@ def _pdf_redact_sensitive_data_impl(filepath: str, patterns: List[str], page_num
                 if page_redacted > 0:
                     page.apply_redactions()
                     total_redactions += page_redacted
-            doc.save(output_path, garbage=3, deflate=True)
-            return {'status': 'success', 'message': f'Successfully redacted {total_redactions} instances.', 'total_redactions': total_redactions, 'output_path': output_path}
+            if sanitize:
+                doc.scrub(remove_links=False, reset_fields=False, reset_responses=False, redactions=False)
+            _save_pdf_output(doc, output_path, password)
+            result = {'status': 'success', 'message': f'Redacted {total_redactions} page-text matches.',
+                      'total_redactions': total_redactions, 'output_path': output_path, 'sanitized': sanitize}
+            if not sanitize:
+                result['warning'] = 'Page text only. Metadata, attachments and other hidden data may remain.'
+            return result
     except Exception as e:
         return _operation_error(e)
 
@@ -339,7 +388,7 @@ def _pdf_organize_pages_impl(filepath: str, output_path: str, rotations: Optiona
                     p_idx = p - 1
                     if 0 <= p_idx < len(doc) and len(doc) > 1:
                         doc.delete_page(p_idx)
-            doc.save(output_path, garbage=3, deflate=True)
+            _save_pdf_output(doc, output_path, password)
             final_count = len(doc)
             return {'status': 'success', 'message': f'Organized PDF successfully. New page count: {final_count}.', 'output_path': output_path, 'final_page_count': final_count}
     except Exception as e:
@@ -575,6 +624,17 @@ def _validate_sources_and_outputs(name, arguments):
     for path in paths:
         _require(Path(path).is_file(), f'File not found: {path}', 'FILE_NOT_FOUND')
         with _open_pdf(path, arguments.get('password', '')) as document:
+            if _is_protected_pdf(document):
+                if name in ('pdf_merge', 'pdf_split'):
+                    raise PDFOperationError('This operation cannot preserve the protection of its input PDFs.', 'PROTECTION_REQUIRED')
+                permission = {
+                    'pdf_splice_text': fitz.PDF_PERM_MODIFY,
+                    'pdf_redact_sensitive_data': fitz.PDF_PERM_MODIFY,
+                    'pdf_organize_pages': fitz.PDF_PERM_ASSEMBLE,
+                }.get(name)
+                if permission and not document.permissions & permission:
+                    authorization = document.authenticate(arguments.get('password', ''))
+                    _require(authorization & 4, 'This operation requires the PDF owner password.', 'PERMISSION_REQUIRED')
             if not page_count:
                 page_count = len(document)
             if name != 'pdf_merge':

@@ -405,7 +405,7 @@ Object.assign(app, {
                             <h3 style="margin:0; font-size:15px; font-weight:600; color:#fff; display:flex; align-items:center; gap:8px;">
                                 📑 Insertar en "${window.escapeHTML(docTitle)}"
                             </h3>
-                            <span id="_ipm-close" style="cursor:pointer; font-size:16px; color:rgba(255,255,255,0.5); padding:2px 6px;">✕</span>
+                            <button type="button" id="_ipm-close" class="app-close-button" aria-label="Cerrar"></button>
                         </div>
                         <p style="margin:0 0 16px; font-size:12px; color:rgba(200,215,255,0.75);">
                             Se insertará(n) <strong>${pagesCount} página(s)</strong>. Selecciona la posición de destino:
@@ -1836,7 +1836,7 @@ _result
                         const popup = document.createElement('div');
                         popup.id = pid;
                         popup.className = 'pdf-annot-popup';
-                        popup.style.cssText = 'position:fixed;background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:12px;max-width:280px;box-shadow:0 4px 16px rgba(0,0,0,0.25);z-index:99999;color:var(--text-main);white-space:pre-wrap;line-height:1.5;';
+                        popup.style.cssText = 'position:fixed;background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;padding:10px 48px 10px 14px;min-height:42px;box-sizing:border-box;font-size:12px;max-width:280px;box-shadow:0 4px 16px rgba(0,0,0,0.25);z-index:99999;color:var(--text-main);white-space:pre-wrap;line-height:1.5;';
                         if (popupAuthor) {
                             const a = document.createElement('div');
                             a.style.cssText = 'font-weight:600;margin-bottom:5px;font-size:11px;opacity:0.7;';
@@ -1847,8 +1847,10 @@ _result
                         b.textContent = popupContent;
                         popup.appendChild(b);
                         const x = document.createElement('button');
-                        x.textContent = '✕';
-                        x.style.cssText = 'position:absolute;top:4px;right:6px;background:none;border:none;cursor:pointer;font-size:12px;opacity:0.5;';
+                        x.className = 'app-close-button';
+                        x.type = 'button';
+                        x.setAttribute('aria-label', 'Cerrar');
+                        x.style.cssText = 'position:absolute;top:4px;right:6px;';
                         x.onclick = (ev) => { ev.stopPropagation(); popup.remove(); delete annotSection.dataset.popupId; };
                         popup.appendChild(x);
                         document.body.appendChild(popup);
@@ -2666,12 +2668,12 @@ _result
                 }
             },
 
-            showToast: function (msg, duration = 3000, type = null) {
+            showToast: function (msg, duration = 1500, type = null) {
                 const toast = document.getElementById('toast');
                 if (!toast) return;
                 if (typeof duration === 'string') {
                     type = duration;
-                    duration = 3000;
+                    duration = 1500;
                 }
                 if (this._toastTimeout) clearTimeout(this._toastTimeout);
 
@@ -2758,7 +2760,8 @@ _result
                 toast.classList.add(`toast--${tone}`, 'show');
                 toast.setAttribute('role', tone === 'error' || tone === 'warning' ? 'alert' : 'status');
                 toast.setAttribute('aria-live', tone === 'error' ? 'assertive' : 'polite');
-                const visibleMs = Number.isFinite(Number(duration)) && Number(duration) > 0 ? Number(duration) : 3000;
+                const requestedMs = Number(duration);
+                const visibleMs = Number.isFinite(requestedMs) && requestedMs > 0 ? requestedMs : 1500;
                 this._toastTimeout = setTimeout(() => toast.classList.remove('show'), visibleMs);
             },
 

@@ -984,6 +984,12 @@ Object.assign(app, {
                         return;
                     }
 
+                    const outlineIcon = shape => `<svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shape}</svg>`;
+                    const dateIcon = outlineIcon('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>');
+                    const timeIcon = outlineIcon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>');
+                    const countIcon = outlineIcon('<path d="M18 20V10M12 20V4M6 20v-6"/>');
+                    const sizeIcon = outlineIcon('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8m0-18v5h8"/>');
+
                     list.innerHTML = docs.map(doc => {
                         const date = new Date(doc.lastOpened || doc.cachedDate);
                         const dateStr = date.toLocaleDateString('es-MX', {
@@ -1009,10 +1015,10 @@ Object.assign(app, {
                                         ${isCached ? '💾 ' : '📄 '}${escapedName}
                                     </div>
                                     <div class="recent-doc-meta">
-                                        <span>📅 ${dateStr}</span>
-                                        <span>🕐 ${timeStr}</span>
-                                        ${doc.count ? `<span>📊 ${doc.count} ${doc.count === 1 ? 'vez' : 'veces'}</span>` : ''}
-                                        ${sizeStr ? `<span>💾 ${sizeStr}</span>` : ''}
+                                        <span>${dateIcon} ${dateStr}</span>
+                                        <span>${timeIcon} ${timeStr}</span>
+                                        ${doc.count ? `<span>${countIcon} ${doc.count} ${doc.count === 1 ? 'vez' : 'veces'}</span>` : ''}
+                                        ${sizeStr ? `<span>${sizeIcon} ${sizeStr}</span>` : ''}
                                     </div>
                                 </div>
                                 <div class="recent-doc-star" onclick="app.toggleFavorite('${escapedName.replace(/'/g, "\\'")}', event)">

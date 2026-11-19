@@ -3,6 +3,7 @@
 if (!window.app) window.app = {};
 const app = window.app;
 const fileNameFromPath = path => path.split(/[\\/]/).pop();
+const documentEncryption = new WeakMap();
 
 const ensureSha256 = async function (bytes, candidate) {
     if (typeof candidate === 'string' && /^[0-9a-f]{64}$/i.test(candidate)) return candidate.toLowerCase();
@@ -60,7 +61,8 @@ app.nativeSaveTransport = app.nativeSaveTransport || {
             length: payload.length,
             sha256: payload.sha256,
             expected_fingerprint: payload.expectedFingerprint ?? null,
-            redaction_verification: payload.redactionVerification || null
+            redaction_verification: payload.redactionVerification || null,
+            verification_password: payload.verificationPassword || null
         })
     }).then(result => ({ uploadId: result.upload_id, redactionVerification: result.redaction_verification === true })),
     chunk: (uploadId, index, offset, bytes) => saveRequest(
@@ -79,6 +81,18 @@ app.nativeSaveTransport = app.nativeSaveTransport || {
 };
 
 Object.assign(app, {
+    getNativeSaveEncryption: function (doc) {
+        return documentEncryption.get(doc);
+    },
+
+    resolveNativeSaveEncryption: function (doc, requested) {
+        const encryption = requested || documentEncryption.get(doc);
+        if (!encryption && this.ensureDocumentState(doc).outputProtectionRequired) {
+            throw new Error('SAVE_PROTECTION_PASSWORD_REQUIRED');
+        }
+        return encryption;
+    },
+
     rememberNativeSaveTarget: function (docId, target) {
         const doc = this.getDocumentById(docId);
         if (!doc || !target?.token) return null;
@@ -108,8 +122,9 @@ Object.assign(app, {
 
     saveDocument: function (docId, options = {}) {
         return this.withDocumentOperation(docId, 'saving', async (doc, lifecycleEpoch) => {
+            const encryption = this.resolveNativeSaveEncryption(doc, options.encryption);
             const snapshot = await this.captureDocumentSnapshot(docId);
-            const prepared = await this.prepareDocumentPdf(snapshot, options, options.signal);
+            const prepared = await this.prepareDocumentPdf(snapshot, { ...options, encryption }, options.signal);
             const transport = this.nativeSaveTransport;
             if (!transport || !options.token) throw new Error('SAVE_TARGET_REQUIRED');
             const redactionVerification = normalizeRedactionVerification(options.redactionVerification || this.ensureDocumentState(doc).redactionVerification);
@@ -126,7 +141,8 @@ Object.assign(app, {
                     length: bytes.byteLength,
                     sha256,
                     expectedFingerprint: options.expectedFingerprint || null,
-                    redactionVerification
+                    redactionVerification,
+                    verificationPassword: redactionVerification && encryption?.ownerPassword || undefined
                 });
                 uploadId = begin.uploadId;
                 if (redactionVerification && !begin.redactionVerification) throw new Error('REDACTION_VERIFICATION_UNAVAILABLE');
@@ -137,8 +153,9 @@ Object.assign(app, {
                 let committed;
                 try {
                     committed = await transport.commit(begin.uploadId, options.operationId || ('save_' + snapshot.snapshotId));
-                } catch (_) {
-                    committed = await transport.status(options.operationId || ('save_' + snapshot.snapshotId));
+                } catch (error) {
+                    committed = await transport.status(options.operationId || ('save_' + snapshot.snapshotId)).catch(() => { throw error; });
+                    if (committed.status === 'uploading') throw error;
                 }
                 if (committed.status !== 'committed') throw new Error(committed.error || 'SAVE_COMMIT_UNCERTAIN');
                 if (redactionVerification && (!committed.redaction || committed.redaction.rejected?.length || committed.redaction.treated?.length !== redactionVerification.occurrences.length)) throw new Error('REDACTION_OUTPUT_UNVERIFIED');
@@ -146,6 +163,10 @@ Object.assign(app, {
                 if (current && this.ensureDocumentState(current).lifecycleEpoch === lifecycleEpoch) {
                     const state = this.ensureDocumentState(current);
                     state.savedRevision = snapshot.revision;
+                    if (encryption) {
+                        documentEncryption.set(current, encryption);
+                        state.outputProtectionRequired = true;
+                    }
                     this.rememberNativeSaveTarget(docId, {
                         token: options.token,
                         fingerprint: committed.sha256 || sha256,
@@ -174,6 +195,7 @@ Object.assign(app, {
 
     saveCopyDocument: function (docId, options = {}) {
         return this.withDocumentOperation(docId, 'copying', async (doc) => {
+            const encryption = this.resolveNativeSaveEncryption(doc, options.encryption);
             let originalState = this.ensureDocumentState(doc);
             if (!originalState.baselineSnapshot && typeof this.setDocumentBaseline === 'function') {
                 await this.setDocumentBaseline(docId);
@@ -186,7 +208,7 @@ Object.assign(app, {
             )) throw new Error('TARGET_ALREADY_OPEN');
             const editedSnapshot = await this.captureDocumentSnapshot(docId);
             const baselineSnapshot = await this.cloneDocumentSnapshot(originalState.baselineSnapshot);
-            const prepared = await this.prepareDocumentPdf(editedSnapshot, options, options.signal);
+            const prepared = await this.prepareDocumentPdf(editedSnapshot, { ...options, encryption }, options.signal);
             const bytes = prepared.bytes instanceof Uint8Array ? prepared.bytes : new Uint8Array(prepared.bytes);
             const sha256 = await ensureSha256(bytes, prepared.sha256);
             const redactionVerification = normalizeRedactionVerification(options.redactionVerification || originalState.redactionVerification);
@@ -200,7 +222,8 @@ Object.assign(app, {
             try {
                 const begin = await this.nativeSaveTransport.begin({
                     token: options.token, operationId, length: bytes.byteLength,
-                    sha256, expectedFingerprint: options.expectedFingerprint || null, redactionVerification
+                    sha256, expectedFingerprint: options.expectedFingerprint || null, redactionVerification,
+                    verificationPassword: redactionVerification && encryption?.ownerPassword || undefined
                 });
                 uploadId = begin.uploadId;
                 if (redactionVerification && !begin.redactionVerification) throw new Error('REDACTION_VERIFICATION_UNAVAILABLE');
@@ -210,7 +233,10 @@ Object.assign(app, {
                 }
                 let committed;
                 try { committed = await this.nativeSaveTransport.commit(uploadId, operationId); }
-                catch (_) { committed = await this.nativeSaveTransport.status(operationId); }
+                catch (error) {
+                    committed = await this.nativeSaveTransport.status(operationId).catch(() => { throw error; });
+                    if (committed.status === 'uploading') throw error;
+                }
                 if (committed.status !== 'committed') throw new Error('SAVE_COMMIT_UNCERTAIN');
                 if (redactionVerification && (!committed.redaction || committed.redaction.rejected?.length || committed.redaction.treated?.length !== redactionVerification.occurrences.length)) throw new Error('REDACTION_OUTPUT_UNVERIFIED');
                 writtenFingerprint = committed.sha256 || sha256;
@@ -243,6 +269,10 @@ Object.assign(app, {
             copyState.baselineSnapshot = await this.cloneDocumentSnapshot(copySnapshot);
             copyState.baselineSnapshotId = copySnapshot.snapshotId;
             copyState.savedRevision = editedSnapshot.revision;
+            if (encryption) {
+                documentEncryption.set(copy, encryption);
+                copyState.outputProtectionRequired = true;
+            }
             this.rememberNativeSaveTarget(copyId, {
                 token: options.token,
                 fingerprint: writtenFingerprint,

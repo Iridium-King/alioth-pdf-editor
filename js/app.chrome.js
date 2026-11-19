@@ -154,7 +154,7 @@ function mount() {
     mountTabNavigation(titlebar);
     const search = document.querySelector('.command-palette-trigger-btn');
     search.parentElement.classList.add('chrome-search-tools');
-    for (const id of ['darkToggle', 'themeBtn', 'preferencesBtn']) search.parentElement.appendChild(byId(id));
+    for (const id of ['themeBtn', 'preferencesBtn']) search.parentElement.appendChild(byId(id));
     const toggles = document.querySelector('.links-bar-right');
     toggles.id = 'view-toggle-widget';
     byId('ribbon-capsule-wrapper').appendChild(toggles);

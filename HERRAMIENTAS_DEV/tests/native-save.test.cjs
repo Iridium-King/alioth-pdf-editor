@@ -273,6 +273,20 @@ test('native modal save writes only after a selected opaque target', async () =>
   assert.equal(button.disabled, false);
 });
 
+test('the save shortcut uses the same native path as the header button', async () => {
+  const { app } = loadAppModules();
+  app.nativeSaveTransport = {};
+  const button = { disabled: false };
+  loadPdfModal(app, { 'btn-header-save': button }, {
+    window: { app, __aliothWindowId: 'session-test', location: { protocol: 'http:' } }
+  });
+  const calls = [];
+  app.saveFromHeader = async (mode, control) => calls.push([mode, control]);
+  app.savePDFInternal = () => { throw new Error('The download path bypasses native protection'); };
+  await app.savePDF();
+  assert.deepEqual(calls, [['save', button]]);
+});
+
 test('header save writes directly after selecting an opaque target', async () => {
   const { app, first } = loadAppModules();
   loadPdfModal(app, {});

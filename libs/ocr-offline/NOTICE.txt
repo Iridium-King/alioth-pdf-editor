@@ -1,0 +1,16 @@
+Tesseract.js Core 5.0.0 and Tesseract trained data
+
+The WASM files in this directory are browser builds of the Tesseract OCR engine
+from tesseract.js-core. The Spanish and English models are the 4.0.0_best_int
+trained data distributed by the Tesseract.js project.
+
+The engine and the Tesseract models are licensed under the Apache License,
+Version 2.0, reproduced in LICENSE.
+
+Upstream projects:
+https://github.com/naptha/tesseract.js-core
+https://github.com/tesseract-ocr/tesseract
+https://github.com/tesseract-ocr/tessdata_best
+https://github.com/naptha/tessdata
+
+origins.json records the exact package versions and SHA-256 checksums.

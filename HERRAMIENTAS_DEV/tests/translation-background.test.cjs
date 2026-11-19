@@ -53,11 +53,16 @@ test('review continues after hiding the dialog and can be reopened from its sour
   await pending;
   assert.equal(app._translationReviewDocId, first.id);
   assert.equal(app._translationReviewPhase, 'ready');
+  assert.equal(node('translation-review-apply').textContent, 'Crear copia traducida');
   assert.equal(app.activeDocId, second.id);
   app.restoreTextTranslationModal();
   assert.equal(app.activeDocId, first.id);
   assert.equal(node('modal-overlay').style.display, 'flex');
   assert.equal(node('translation-review-modal').style.display, 'flex');
+  node('translation-review-language').value = 'Francés';
+  app.resetTextTranslationReview();
+  assert.equal(app._activeTranslationReviewId, null);
+  assert.equal(node('translation-review-apply').textContent, 'Traducir con comentarios');
 });
 
 test('a copy finished in the background does not steal the active tab or close another dialog', async () => {
@@ -108,7 +113,10 @@ test('closing the visible review cancels its job rather than leaving a hidden or
   app._translationReviewPhase = 'working';
   app._translationReviewAbortController = new AbortController();
   const controller = app._translationReviewAbortController;
+  app._translationNotesAbortController = new AbortController();
+  const notesController = app._translationNotesAbortController;
   app.closeAllModals();
   assert.equal(controller.signal.aborted, true);
+  assert.equal(notesController.signal.aborted, true);
   assert.equal(app._translationReviewDocId, null);
 });

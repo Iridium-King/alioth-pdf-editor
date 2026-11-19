@@ -102,38 +102,23 @@ const app = window.app;
 
         // Auto-resize textarea del chat de IA
         document.addEventListener('DOMContentLoaded', () => {
-            // Auto-apply round close button to all static glass-box and properties modals
+            // Add a close control only when the modal does not supply its own.
             const modals = [...document.querySelectorAll('.glass-box'), ...document.querySelectorAll('#properties-modal > div')];
             modals.forEach(modal => {
-                if (modal.id === 'drop-modal-content' || modal.id === 'loading-overlay' || modal.id === 'loader' || modal.id === 'command-palette-modal' || modal.closest('#theme-modal') || modal.querySelector('.modal-close-btn-round')) return;
-
-                // Remove existing top-right corner close buttons to avoid duplicates
-                const potentialCloses = modal.querySelectorAll('button, span');
-                potentialCloses.forEach(btn => {
-                    const txt = btn.textContent.trim();
-                    const style = btn.getAttribute('style') || '';
-                    if (btn.classList.contains('iem-close-btn') || 
-                        txt === '✕' || 
-                        txt === '✕' ||
-                        (btn.onclick && (btn.onclick.toString().includes('closeAllModals') || btn.onclick.toString().includes('closeShapeProperties') || btn.onclick.toString().includes('ttf-props-dialog')) && 
-                         (style.includes('position:absolute') || style.includes('right:') || style.includes('background:none') || style.includes('background:transparent')))) {
-                        // Avoid removing standard bottom buttons like "Cerrar" or "Cancelar"
-                        if (!btn.classList.contains('capsule-btn')) {
-                            btn.remove();
-                        }
-                    }
-                });
+                if (modal.id === 'drop-modal-content' || modal.id === 'loading-overlay' || modal.id === 'loader' || modal.id === 'command-palette-modal' || modal.closest('#theme-modal')) return;
+                const hasClose = [...modal.querySelectorAll('.app-close-button, .modal-close-btn-round')]
+                    .some(button => button.closest('.glass-box, [role="dialog"], #properties-modal > div') === modal);
+                if (hasClose) return;
 
                 // Ensure the modal has position relative for absolute positioning of the close button
-                const currentStyle = modal.getAttribute('style') || '';
-                if (!currentStyle.includes('position:relative') && !currentStyle.includes('position: relative')) {
+                if (getComputedStyle(modal).position === 'static') {
                     modal.style.position = 'relative';
                 }
 
                 // Create round close button
                 const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
                 closeBtn.className = 'modal-close-btn-round';
-                closeBtn.innerHTML = '✕';
                 closeBtn.title = 'Cerrar';
                 
                 // Specific handlers for some modals

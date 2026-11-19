@@ -80,6 +80,28 @@ test('reading mode without toggles uses the ribbon as the upper boundary', () =>
   assert.equal(h.topArrow.getBoundingClientRect().top, h.elements.get('ribbonContainer').getBoundingClientRect().bottom + 4);
 });
 
+test('opening Auto and hiding zoom during playback keep the AI tab and both arrows in place', () => {
+  const h = harness();
+  h.window.innerHeight = 600;
+  const reading = h.elements.get('reading-mode-float-widget');
+  const zoom = h.elements.get('zoom-float-widget');
+  const dock = h.elements.get('autoscroll-widget');
+  reading.style.top = '500px';
+  zoom.style.top = '350px';
+  h.window.emit('resize');
+  h.flush();
+  const positions = () => [h.btn, h.topArrow, h.bottomArrow].map(node => node.getBoundingClientRect());
+  const before = positions();
+  assert.equal(before[0].top, 267);
+  for (const [display, zoomVisibility] of [['flex', 'visible'], ['flex', 'hidden'], ['flex', 'visible'], ['none', 'visible']]) {
+    dock.css.display = display;
+    zoom.css.visibility = zoomVisibility;
+    h.window.emit('app:dock-layout');
+    h.flush();
+    assert.deepEqual(positions(), before);
+  }
+});
+
 test('the dock respects reading and zoom widgets when the viewport grows', () => {
   const h = harness();
   h.window.innerHeight = 1600;

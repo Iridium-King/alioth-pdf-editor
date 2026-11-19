@@ -80,7 +80,7 @@
         notice.style.cssText = 'position:fixed;inset:0;z-index:30000;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(7,10,20,.64);backdrop-filter:blur(5px);';
         notice.innerHTML = `
             <section style="position:relative;width:min(460px,100%);padding:28px;border:1px solid rgba(255,255,255,.18);border-radius:18px;background:rgba(25,31,51,.92);box-shadow:0 24px 70px rgba(0,0,0,.5);color:#e8edf9;font-family:inherit;">
-                <button type="button" aria-label="Cerrar" data-close style="position:absolute;top:12px;right:12px;width:30px;height:30px;border:1px solid rgba(255,255,255,.2);border-radius:50%;background:transparent;color:#d8e0f2;font-size:18px;cursor:pointer;line-height:1;">×</button>
+                <button class="app-close-button" type="button" aria-label="Cerrar" data-close style="position:absolute;top:12px;right:12px;"></button>
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;color:#a5b4fc;"><span style="display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:rgba(99,102,241,.18);font-size:18px;">🔑</span><strong id="alioth-api-keys-welcome-title" style="font-size:17px;">Configura tus API Keys</strong></div>
                 <p style="margin:0 0 10px;color:#cbd5e1;line-height:1.55;font-size:13px;">Esta versión no incluye claves. Para usar las funciones de IA, agrega tus propias API Keys en Preferencias → API Keys.</p>
                 <p style="margin:0 0 20px;color:#94a3b8;line-height:1.5;font-size:12px;">Ahí encontrarás las instrucciones y enlaces para obtener una clave de cada proveedor.</p>
@@ -98,12 +98,12 @@
             const counts = response.ok ? (await response.json()).counts || {} : {};
             hasConfiguredKeys = Object.values(counts).some(Boolean);
             if (!window.aliothLegal?.getNoticeState(localStorage)) showLegalNotice();
-            else if (!hasConfiguredKeys) showNotice();
+            else if (!hasConfiguredKeys && window.aliothLegal.isAiEnabled(localStorage)) showNotice();
         } catch (_) {
             if (!window.aliothLegal?.getNoticeState(localStorage)) showLegalNotice();
         }
     }
 
-    window.addEventListener('alioth:legal-ready', () => { if (!hasConfiguredKeys) showNotice(); });
+    window.addEventListener('alioth:legal-ready', ({ detail }) => { if (detail.state === 'ai' && !hasConfiguredKeys) showNotice(); });
     document.addEventListener('DOMContentLoaded', () => setTimeout(checkStatus, 300));
 })();

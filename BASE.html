@@ -38,9 +38,9 @@
     <link rel="preload" href="fonts/standard_fonts/ARIALN.TTF" as="font" type="font/ttf" crossorigin>
     <link rel="preload" href="fonts/standard_fonts/ARIALNB.TTF" as="font" type="font/ttf" crossorigin>
     <link rel="stylesheet" href="css/fonts.css?v=3.2.29">
-    <link rel="stylesheet" href="css/app.css?v=3.2.40">
-    <link rel="stylesheet" href="css/components.css?v=3.2.40">
-    <link rel="stylesheet" href="css/app.chrome.css?v=3.2.40">
+    <link rel="stylesheet" href="css/app.css?v=3.2.45">
+    <link rel="stylesheet" href="css/components.css?v=3.2.46">
+    <link rel="stylesheet" href="css/app.chrome.css?v=3.2.41">
     <style>
         /* Zoom bajo paneles en h-layout — paneles tienen z-index:9999 */
         body.h-layout #zoom-float-widget { z-index: 8000 !important; }
@@ -48,6 +48,7 @@
 
     <!-- Local Core JavaScript Libraries (Fast & Essential) -->
     <script src="libs/pdf.js"></script>
+    <script src="js/pdfjs-safety.js"></script>
     <script src="libs/pdf-lib.min.js"></script>
     <script src="fonts/fontkit.umd.min.js"></script>
     <script src="libs/FileSaver.min.js"></script>
@@ -59,7 +60,7 @@
     <!-- ============================================================
          i18n - Motor de Internacionalización (9 idiomas)
          ============================================================ -->
-    <script src="js/i18n.js?v=capture-i18n-1"></script>
+    <script src="js/i18n.js?v=ribbon-image-1"></script>
     <script src="js/legal.js"></script>
 
     <!-- ============================================================
@@ -73,7 +74,7 @@
          ============================================================ -->
     <script src="js/pdf_link_cleanup.js"></script>
     <script src="js/pdf-engine.js"></script>
-    <script src="js/python_manager.js"></script>
+    <script src="js/python_manager.js?v=ribbon-image-1"></script>
 
 <body class="compact-chrome">
 <!-- ═══════════════════════════════════════════
@@ -207,6 +208,7 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
             <button class="tab-btn" onclick="app.switchRibbon('form')" id="tab-btn-form" data-i18n="tab_inputs">INPUTS</button>
             <button class="tab-btn" onclick="app.switchRibbon('ai')" id="tab-btn-ai" aria-label="Inteligencia artificial" data-i18n="btn_ai">IA</button>
             <button class="tab-btn" onclick="app.switchRibbon('magic')" id="tab-btn-magic" data-i18n="tab_others">OTROS</button>
+            <button class="dark-toggle-btn" id="darkToggle" type="button" onclick="app.toggleTheme()" title="Modo oscuro/claro" data-i18n-title="tit_513795"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="theme-icon-sun"><circle cx="12" cy="12" r="4" fill="#fbbf24" fill-opacity="0.3" stroke="#f59e0b"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></button>
         </div>
 
         <div class="header-right">
@@ -359,7 +361,6 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                         <line x1="12" y1="2" x2="12" y2="22"/><polyline points="18 16 12 22 6 16"/><polyline points="6 8 12 2 18 8"/>
                     </svg>
                 </button>
-                <button class="dark-toggle-btn" id="darkToggle" onclick="app.toggleTheme()" title="Modo oscuro/claro" data-i18n-title="tit_513795"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="theme-icon-sun"><circle cx="12" cy="12" r="4" fill="#fbbf24" fill-opacity="0.3" stroke="#f59e0b"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></button>
                 <button class="dark-toggle-btn" id="themeBtn"
                     onclick="document.getElementById('theme-modal').style.display='flex'; app._loadToggles && app._loadToggles(); app.renderThemeCollection && app.renderThemeCollection();" title="Temas y Colores" data-i18n-title="tit_341649">
                     <svg viewBox="0 0 24 24" width="18" height="18">
@@ -460,7 +461,7 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                         <rect x="17" y="2" width="5" height="5" style="fill: #10b981 !important; stroke: none !important;" rx="0.5"/>
                     </svg>
                 </button>
-                <button class="reading-btn" id="btn-translate-reading" onclick="app.showTextTranslationModal()" title="Traducir nota" data-i18n-title="tit_translate_note">
+                <button class="reading-btn" id="btn-translate-reading" onclick="app.showTextTranslationModal()" title="Traducir documento" data-i18n-title="tit_904237">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h10M9 3v2m0 0c0 5-2.2 8.4-5 10.5M5 9c1.2 1.9 2.8 3.5 4.8 4.8M14 19l3-7 3 7m-5-2h4"/><path d="M3 19h8"/></svg>
                 </button>
                 <div class="reading-btn-sep"></div>
@@ -686,15 +687,15 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
 
             <div class="tool-section">
                 <div class="tool-group-vertical" style="min-width: 155px;">
-                    <div class="group-row" style="align-items: center;">
-                        <button class="tool-btn" onclick="app.addText()" style="max-height: 44px;">
+                    <div class="group-row home-text-actions" style="align-items: center;">
+                        <button class="tool-btn" onclick="app.addText()">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <polyline points="4 7 4 4 20 4 20 7" />
                                 <line x1="9" y1="20" x2="15" y2="20" />
                                 <line x1="12" y1="4" x2="12" y2="20" />
                             </svg><span data-i18n="btn_add_txt">Añadir</span>
                         </button>
-                        <button class="tool-btn" onclick="app.extractText()" style="max-height: 44px;">
+                        <button class="tool-btn" onclick="app.extractText()">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                 <polyline points="14 2 14 8 20 8" />
@@ -705,7 +706,7 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                         </button>
                         <!-- Editar Texto Real -->
                         <button class="tool-btn" id="btn-smart-patch" onclick="app.activateRealTextEditor()"
-                            style="max-height: 44px;" title="Editar texto real del PDF" data-i18n-title="tit_730884">
+                            title="Editar texto real del PDF" data-i18n-title="tit_730884">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                 stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
@@ -714,7 +715,7 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                         </button>
 
 
-                        <button class="tool-btn" onclick="app.showPageNumModal()" style="max-height: 44px;"
+                        <button class="tool-btn" onclick="app.showPageNumModal()"
                             title="Numerar Páginas" data-i18n-title="tit_72599">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -1006,7 +1007,7 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                         </label>
                         <button class="tool-btn" id="btn-edit-image" onclick="app.enableImageEdit()"
                             title="Convertir imagen del PDF a objeto movible" data-i18n-title="tit_760996">
-                            <svg viewBox="0 0 28 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display: block !important; margin: 0 auto -2px auto !important; width: 28px !important; height: 17px !important;">
+                            <svg viewBox="0 0 28 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display: block !important; width: 28px !important; height: 17px !important;">
                                 <!-- Marco de Imagen Centrado -->
                                 <rect x="2" y="2" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" />
                                 <circle cx="7" cy="6" r="1.4" fill="none" stroke="currentColor" stroke-width="1.2" />
@@ -1063,6 +1064,11 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                         <div class="slider-item"><span data-i18n="dyn_t_1032">Blur</span> <input type="range" id="imgBlur" min="0" max="10"
                                 value="0" step="0.5" oninput="app.updateImageStyle()"></div>
                     </div>
+                    <label class="image-sharpness-control">
+                        <span data-i18n="img_sharpness">Nitidez</span>
+                        <input type="range" id="imgSharpness" min="0" max="100" step="5" value="0" disabled
+                            aria-orientation="vertical" oninput="app.updateImageSharpness(this.valueAsNumber)">
+                    </label>
                     <div style="display:flex; flex-direction:column; gap:1px; margin-left:8px; justify-content:center;">
                         <label style="font-size:9px"><input type="checkbox" id="imgGrayscale"
                                 onchange="app.updateImageStyle()"> B/N</label>
@@ -1087,8 +1093,8 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                 </div>
             </div>
             <div class="tool-section">
-                <div class="tool-group-vertical" style="min-width: 50px;">
-                    <div class="group-row">
+                <div class="tool-group-vertical image-flip-group">
+                    <div class="group-row image-flip-controls">
                         <button class="style-btn" onclick="app.flipObject('h')" title="Espejo Horizontal" data-i18n-title="tit_5313">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M12 3v18"/>
@@ -1243,7 +1249,7 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
 
         <div class="toolbar-area" id="toolbar-draw" style="justify-content: center;">
             <div class="tool-section">
-                <div class="tool-group-vertical" style="flex-direction: row; padding: 0 4px;">
+                <div class="tool-group-vertical" style="flex-direction: row; padding: 0 4px 8px;">
                     <button class="tool-btn active" id="btn-select-tool" onclick="app.setDrawTool('none')" title="Seleccionar" data-i18n-title="btn_draw_sel">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M4 4l7.07 17 2.51-7.39L21 11.07 4 4z" />
@@ -1271,8 +1277,8 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                     </button>
                 </div>
             </div>
-            <div class="tool-section" style="gap:4px; padding: 0 4px;">
-                <div style="display:flex; align-items:center; gap:5px;">
+            <div class="tool-section" style="gap:4px; padding: 0 6px;">
+                <div style="display:flex; align-items:center; gap:8px; padding-inline-end:3px;">
                     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">
                         <span style="font-size:8.5px; font-weight:600; color:var(--text-main); line-height:1; position:relative; top:-2px;">Color</span>
                         <input type="color" class="color-picker-simple" id="drawColor" value="#000000"
@@ -1766,7 +1772,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
 
             <!-- AGRUPAR — Inputs -->
             <div class="tool-section">
-                <div class="tool-group-vertical" style="min-width:52px;">
+                <div class="tool-group-vertical form-object-group">
                     <div class="group-row" style="justify-content:center;">
                         <button class="tool-btn" id="btn-group-objects" onclick="app.multiObjectSelection&&app.multiObjectSelection.size>0?app.groupSelectedObjects():app.ungroupObject(app.selectedObj)" title="Agrupar selección / Desagrupar objeto" data-i18n-title="tit_190215">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1985,7 +1991,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                         </button>
                         <button id="btn-restore-color" class="tool-btn" onclick="app.restoreColorPDF()"
                             title="Restaura el documento a su versión original en color (Ctrl+Z)" data-i18n-title="tit_660077"
-                            style="display:none; color: var(--accent, #6366f1); outline: 2px solid var(--accent, #6366f1);">
+                            style="display:none;">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="12" cy="12" r="9" fill="none"/>
                                 <path d="M9 9l-3 3 3 3" fill="none"/>
@@ -2269,7 +2275,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <div class="tool-section">
                 <div class="tool-group-vertical">
                     <div class="group-row">
-                        <button class="tool-btn" id="btn-translate-review" onclick="app.showTextTranslationModal()" title="Traducir documento con revisión antes de crear una copia" data-i18n-title="tit_904237">
+                        <button class="tool-btn" id="btn-translate-review" onclick="app.showTextTranslationModal()" title="Traducir documento" data-i18n-title="tit_904237">
                             <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="2" y="3" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
                                 <path d="M5 6.5h7M8.5 4.5v2m0 0c0 2.5-.9 4.2-2.5 5.2m.8-2c.9 1 1.8 2 2.7 2.8" stroke="currentColor" stroke-width="1.3"/>
@@ -2311,6 +2317,101 @@ Arrastra para seleccionar el área · Esc para cancelar">
     </div>
     <!-- Pestaña de colapso del ribbon -->
     <div id="ribbonTab" onclick="app.toggleRibbon()" title="Contraer/Expandir cinta" data-i18n-title="tit_34454">▲</div>
+    <!-- Widget flotante de Lectura por Voz (TTS) -->
+    <div id="tts-widget" style="display:none;">
+        <!-- Barra principal: todo en una sola fila horizontal -->
+        <div id="tts-main-row">
+            <!-- Icono + título -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="11" height="11" style="flex-shrink:0;opacity:0.65;"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            <span id="tts-widget-title">Leer</span>
+            <div class="tts-vsep"></div>
+
+            <!-- Transport -->
+            <button class="tts-transport-btn" id="tts-btn-play" onclick="app.ttsPlay()" title="Reproducir" data-i18n-title="tit_932888">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><polygon points="5,3 19,12 5,21"/></svg>
+            </button>
+            <button class="tts-transport-btn" id="tts-btn-pause" onclick="app.ttsPause()" title="Pausar" data-i18n-title="tit_106405" style="display:none;">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            </button>
+            <button class="tts-transport-btn" id="tts-btn-stop" onclick="app.ttsStop()" title="Detener" data-i18n-title="tit_62108">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><rect x="4" y="4" width="16" height="16"/></svg>
+            </button>
+            <div class="tts-vsep"></div>
+
+            <!-- Scope -->
+            <button class="tts-pill tts-pill-active" id="tts-scope-sel" onclick="app.ttsSetScope('sel')" title="Leer texto seleccionado" data-i18n-title="tit_548136">Selección</button>
+            <button class="tts-pill" id="tts-scope-page" onclick="app.ttsSetScope('page')" title="Leer página actual" data-i18n-title="tit_641747"><span data-i18n="dyn_t_1076">PÁGINA</span></button>
+            <button class="tts-pill" id="tts-scope-doc" onclick="app.ttsSetScope('doc')" title="Leer documento completo" data-i18n-title="tit_588536">Documento</button>
+            <div class="tts-vsep"></div>
+
+            <!-- Velocidad -->
+            <span class="tts-label">Vel:</span>
+            <input type="range" id="tts-speed" min="0.5" max="2" step="0.1" value="1"
+                style="width:60px;accent-color:var(--accent);flex-shrink:0;"
+                oninput="app.ttsSetSpeed(this.value)">
+            <span id="tts-speed-val" style="font-size:9px;color:rgba(255,255,255,0.5);min-width:20px;flex-shrink:0;">1×</span>
+            <div class="tts-vsep"></div>
+
+            <!-- Filtros de voz -->
+            <button class="tts-filter-btn" id="tts-filter-online" onclick="app.ttsToggleFilter('online')" title="Solo voces online (Nube)" data-i18n-title="tit_544339" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg></button>
+            <button class="tts-filter-btn" id="tts-filter-m" onclick="app.ttsToggleFilter('m')" title="Voces masculinas" data-i18n-title="tit_98374" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="5"/><path d="M19 5h-5.5"/><path d="M19 5v5.5"/><path d="m13.5 10.5 5.5-5.5"/></svg></button>
+            <button class="tts-filter-btn" id="tts-filter-f" onclick="app.ttsToggleFilter('f')" title="Voces femeninas" data-i18n-title="tit_249391" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7"/><path d="M9 18h6"/></svg></button>
+
+            <!-- Selector de voz -->
+            <div id="tts-voice-picker">
+                <select id="tts-voice-sel" hidden aria-hidden="true"></select>
+                <button id="tts-voice-trigger" type="button" aria-label="Voz de lectura" aria-haspopup="listbox"
+                        aria-expanded="false" aria-controls="tts-voice-options"></button>
+                <div id="tts-voice-options" role="listbox" aria-label="Voces de lectura" hidden></div>
+            </div>
+
+            <!-- Status inline -->
+            <span id="tts-status" style="font-size:9px;color:rgba(255,255,255,0.38);white-space:nowrap;flex-shrink:0;">Listo</span>
+
+            <!-- Controles cabecera -->
+            <div class="tts-vsep"></div>
+            <button class="tts-hdr-btn" id="tts-apikey-btn" onclick="app.ttsToggleAPIKey()" title="API Key (voces AI)" data-i18n-title="tit_59478" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m11 12 7-7"/><path d="m15 5 3 3"/><path d="m18 8 2-2"/></svg></button>
+            <button class="tts-hdr-btn" onclick="app.toggleTTSWidget()" title="Cerrar" data-i18n-title="tit_933129" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+
+        <!-- Panel API Key (oculto por defecto) -->
+        <div id="tts-apikey-panel" style="display:none;padding:6px 10px;border-top:1px solid rgba(255,255,255,0.07);gap:5px;flex-direction:column;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+                <div style="font-size:9px;color:rgba(255,255,255,0.6);font-weight:600;display:flex;align-items:center;gap:4px;">
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m11 12 7-7"/><path d="m15 5 3 3"/><path d="m18 8 2-2"/></svg> Configuración de Voz AI (requiere internet)
+                </div>
+                <button class="tts-hdr-btn" onclick="app.ttsToggleAPIKey(false)" title="Ocultar panel de API Key" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+                <button class="tts-pill tts-pill-active" id="tts-api-native" onclick="app.ttsSetProvider('native')">Sistema</button>
+                <button class="tts-pill" id="tts-api-fishaudio" onclick="app.ttsSetProvider('fishaudio')">BigFish</button>
+                <button class="tts-pill" id="tts-api-openai" onclick="app.ttsSetProvider('openai')">OpenAI</button>
+                <button class="tts-pill" id="tts-api-eleven" onclick="app.ttsSetProvider('eleven')">ElevenLabs</button>
+            </div>
+            <form id="tts-apikey-row" autocomplete="off" onsubmit="return false;" style="display:none;flex-direction:column;gap:4px;">
+                <div style="display:flex;gap:4px;align-items:center;width:100%;">
+                    <input id="tts-apikey-input" type="password" placeholder="API Key…" data-i18n-placeholder="ph_404624"
+                        style="flex:1;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.18);border-radius:5px;color:rgba(255,255,255,0.85);font-size:10px;padding:3px 6px;outline:none;" autocomplete="new-password">
+                    <button class="tts-pill" type="button" style="background:rgba(99,102,241,0.5);color:#fff;" onclick="app.ttsSaveAPIKey()" title="Guardar clave">Guardar</button>
+                    <button class="tts-pill" type="button" onclick="app.ttsToggleAPIKey(false)" title="Ocultar sección de API Key">Ocultar</button>
+                </div>
+                <div id="tts-fishaudio-voice-row" style="display:none;flex-direction:column;gap:3px;margin-top:2px;">
+                    <div style="display:flex;gap:4px;align-items:center;">
+                        <span style="font-size:9px;color:rgba(255,255,255,0.45);">Catálogo:</span>
+                        <button class="tts-pill tts-pill-active" id="tts-fish-scope-community" onclick="app.ttsSetFishScope('community')" title="Voces de la comunidad de Fish Audio" data-i18n-title="tit_268640" style="display:inline-flex;align-items:center;gap:3px;"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Comunitarias</button>
+                        <button class="tts-pill" id="tts-fish-scope-self" onclick="app.ttsSetFishScope('self')" title="Tus voces personalizadas/clonadas" data-i18n-title="tit_857437" style="display:inline-flex;align-items:center;gap:3px;"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Propias</button>
+                    </div>
+                </div>
+                <div id="tts-openai-voice-row" style="display:none;gap:4px;flex-wrap:wrap;">
+                    <button class="tts-pill" id="tts-oai-alloy" onclick="app.ttsSetOAIVoice('alloy')">Alloy</button>
+                    <button class="tts-pill" id="tts-oai-echo" onclick="app.ttsSetOAIVoice('echo')">Echo</button>
+                    <button class="tts-pill" id="tts-oai-fable" onclick="app.ttsSetOAIVoice('fable')">Fable</button>
+                    <button class="tts-pill" id="tts-oai-nova" onclick="app.ttsSetOAIVoice('nova')">Nova</button>
+                    <button class="tts-pill" id="tts-oai-shimmer" onclick="app.ttsSetOAIVoice('shimmer')">Shimmer</button>
+                </div>
+            </form>
+        </div>
+    </div>
     </div><!-- /#ribbon-capsule-wrapper -->
 
     <div class="workspace" id="main-workspace">
@@ -2549,7 +2650,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 </div>
 
         </div>
-        <button id="sidebarGridCloseBtn" onclick="app.toggleSidebarGrid()" title="Cerrar vista de cuadrícula" data-i18n-title="tit_371110">✕</button>
+        <button type="button" class="app-close-button" id="sidebarGridCloseBtn" onclick="app.toggleSidebarGrid()" title="Cerrar vista de cuadrícula" data-i18n-title="tit_371110"></button>
 
         <!-- GRID VIEW TOOLBAR -->
         <div id="sidebarGridToolbar" style="display:none;position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:9101;
@@ -2685,6 +2786,22 @@ Arrastra para seleccionar el área · Esc para cancelar">
             </div>
         </div>
     </div>
+    <div id="autoscroll-widget" role="group" aria-label="Desplazamiento automático" style="display:none;">
+        <span data-i18n="dyn_t_3018">Auto</span>
+        <button type="button" id="as-btn-play" onclick="app.autoScrollPlayPause()" title="Reproducir / Pausar" aria-label="Reproducir / Pausar" aria-pressed="false">
+            <svg id="as-icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 14 9-14 9z"/></svg>
+            <svg id="as-icon-pause" viewBox="0 0 24 24" aria-hidden="true" style="display:none"><path d="M8 5v14M16 5v14"/></svg>
+        </button>
+        <button type="button" id="as-btn-dir" onclick="app.autoScrollToggleDir()" title="Cambiar dirección" aria-label="Cambiar dirección">
+            <svg id="as-icon-dir" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16m-6-6 6 6 6-6"/></svg>
+        </button>
+        <input type="range" id="as-speed" min="1" max="10" step="1" value="3"
+               aria-label="Velocidad de desplazamiento" title="Velocidad de desplazamiento" oninput="app.autoScrollSetSpeed(this.value)">
+        <button type="button" onclick="app.toggleAutoScrollWidget()" aria-label="Cerrar desplazamiento automático" title="Cerrar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+    </div>
+
     <div id="loader">
         <div class="alioth-spinner">
             <!-- Arco giratorio degradado (tipo Meta AI) -->
@@ -2722,7 +2839,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
         <div class="alioth-loader-text" id="loader-msg">Procesando...</div>
     </div>
     <div id="excel-ai-progress" aria-live="polite" style="display:none; position:fixed; right:18px; bottom:18px; z-index:100005; width:280px; padding:12px 14px; border:1px solid rgba(139,92,246,.55); border-radius:10px; background:rgba(15,22,41,.96); box-shadow:0 10px 28px rgba(0,0,0,.35);">
-        <button type="button" aria-label="Cerrar indicador" onclick="document.getElementById('excel-ai-progress').style.display='none'" style="position:absolute; top:8px; right:8px; width:20px; height:20px; padding:0; border:1px solid rgba(255,255,255,.2); border-radius:50%; background:transparent; color:#dbe4f2; font-size:15px; line-height:17px; cursor:pointer;">×</button>
+        <button class="app-close-button" type="button" aria-label="Cerrar indicador" onclick="document.getElementById('excel-ai-progress').style.display='none'" style="position:absolute;top:8px;right:8px;"></button>
         <div id="office-ai-progress-title" style="font-size:12px; font-weight:700; color:#e9d5ff;">Office con IA</div>
         <div style="height:5px; margin-top:8px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.16);">
             <div id="excel-ai-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#8b5cf6,#22c55e); transition:width .35s ease;"></div>
@@ -2737,12 +2854,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
         <!-- ══ PREFERENCES & CONFIGURATION MODAL ══ -->
         <div id="preferences-modal" class="preferences-modal-content" style="display:none;">
             <!-- Botón redondo X en esquina superior derecha -->
-            <button class="pref-modal-close-btn" onclick="app.closeAllModals()" title="Cerrar preferencias" aria-label="Cerrar preferencias">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-            </button>
+            <button type="button" class="app-close-button pref-modal-close-btn" onclick="app.closeAllModals()" title="Cerrar preferencias" aria-label="Cerrar preferencias"></button>
             <div class="preferences-sidebar">
                 <div class="preferences-logo">
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent, #818cf8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;">
@@ -3418,7 +3530,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
         <div id="iem-modal-content" class="glass-box" style="display:none; flex-direction:column; gap:0; padding:0; width:680px; max-width:96vw; max-height:90vh; overflow:hidden; box-sizing:border-box;">
             <div class="iem-header">
                 <h3 style="display:flex; align-items:center; gap:8px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg> Efectos de Imagen</h3>
-                <button class="iem-close-btn" onclick="app.closeAllModals()">✕</button>
+                <button aria-label="Cerrar" type="button" class="app-close-button iem-close-btn" onclick="app.closeAllModals()"></button>
             </div>
             <div class="iem-tabs" id="iem-tabs">
                 <button class="iem-tab active" data-tab="espejo" onclick="app.iemSwitchTab('espejo')" style="display:inline-flex; align-items:center; gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 3 12 8 7"/><polyline points="16 7 21 12 16 17"/><line x1="3" y1="12" x2="21" y2="12"/></svg> Espejo</button>
@@ -3927,7 +4039,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
                             Formularios Automáticos
                         </h3>
-                        <button onclick="app.closeAllModals()" style="background:none;border:none;color:#888;font-size:16px;cursor:pointer;padding:0 2px;line-height:1;">✕</button>
+                        <button aria-label="Cerrar" type="button" class="app-close-button" onclick="app.closeAllModals()"></button>
                     </div>
                     <div style="display:flex;gap:0;">
                         <button id="ttf-tab-table" onclick="app._ttfSetMode('table')"
@@ -4204,10 +4316,10 @@ Arrastra para seleccionar el área · Esc para cancelar">
             </div>
 
             <!-- Properties Dialog -->
-            <div id="ttf-props-dialog" style="display:none;position:fixed;z-index:100000;background:rgba(26,32,53,0.57);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.18);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.7);padding:16px;min-width:260px;max-width:320px;font-size:12px;">
+            <div id="ttf-props-dialog" role="dialog" aria-label="Propiedades del campo" style="display:none;position:fixed;z-index:100000;background:rgba(26,32,53,0.57);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.18);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.7);padding:16px;min-width:260px;max-width:320px;font-size:12px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
                     <span style="font-weight:700;font-size:13px;color:#e2e8f0;">Propiedades del campo</span>
-                    <button onclick="document.getElementById('ttf-props-dialog').style.display='none'" style="background:none;border:none;color:rgba(200,210,255,0.7);font-size:16px;cursor:pointer;line-height:1;">✕</button>
+                    <button aria-label="Cerrar" type="button" class="app-close-button" onclick="document.getElementById('ttf-props-dialog').style.display='none'"></button>
                 </div>
                 <div id="ttf-props-content" style="display:flex;flex-direction:column;gap:10px;"></div>
                 <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);">
@@ -4670,8 +4782,8 @@ Arrastra para seleccionar el área · Esc para cancelar">
         </div>
 
                         <!-- UNIFIED SAVE MODAL -->
-        <div id="save-modal" class="glass-box" style="display:none; width: 530px; max-width: 95vw; padding: 18px 22px;">
-            <h3 style="display:flex; align-items:center; justify-content:center; gap:8px; margin: 0 0 12px 0; font-size:16px;">
+        <div id="save-modal" class="glass-box" role="dialog" aria-modal="true" aria-labelledby="save-modal-title" style="display:none; width: 530px; max-width: 95vw; padding: 18px 22px;">
+            <h3 id="save-modal-title" style="display:flex; align-items:center; justify-content:center; gap:8px; margin: 0 0 12px 0; font-size:16px;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                 <span>Guardar como</span>
             </h3>
@@ -4733,7 +4845,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div>
                         <label style="font-size:11px; cursor:pointer; display:flex; align-items:center; gap:6px; font-weight:600;">
                             <input type="checkbox" id="save-use-password"
-                                onchange="document.getElementById('password-options').style.display = this.checked ? 'block' : 'none'">
+                                onchange="app.syncSavePasswordFields()">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             <span>Proteger con contraseña</span>
                         </label>
@@ -4742,12 +4854,12 @@ Arrastra para seleccionar el área · Esc para cancelar">
                             <form autocomplete="off" onsubmit="return false;" style="margin:0;">
                                 <input type="text" name="username" autocomplete="username" style="display:none;" aria-hidden="true">
                                 <div style="margin-bottom:4px;">
-                                    <label style="font-size:10px; color:var(--text-dim); display:block;">Contraseña para abrir:</label>
+                                    <label for="pdf-user-password" style="font-size:10px; color:var(--text-dim); display:block;">Contraseña para abrir:</label>
                                     <input type="password" id="pdf-user-password" placeholder="Requerida" data-i18n-placeholder="ph_811106" autocomplete="new-password"
                                         style="width:100%; padding:4px 6px; border:1px solid var(--border); border-radius:4px; font-size:11px; background:rgba(255,255,255,0.05); color:var(--text-main); box-sizing:border-box;">
                                 </div>
                                 <div>
-                                    <label style="font-size:10px; color:var(--text-dim); display:block;">Contraseña propietario (opcional):</label>
+                                    <label for="pdf-owner-password" title="Permite modificar las restricciones después de guardar." style="font-size:10px; color:var(--text-dim); display:block;">Contraseña propietario (opcional):</label>
                                     <input type="password" id="pdf-owner-password" placeholder="Para permisos" data-i18n-placeholder="ph_15430" autocomplete="new-password"
                                         style="width:100%; padding:4px 6px; border:1px solid var(--border); border-radius:4px; font-size:11px; background:rgba(255,255,255,0.05); color:var(--text-main); box-sizing:border-box;">
                                 </div>
@@ -4759,17 +4871,17 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:6px; display:flex; flex-direction:column; gap:4px; font-size:11px;">
                         <span style="font-size:10px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">Restricciones:</span>
                         <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="checkbox" id="save-lock-edit">
+                            <input type="checkbox" id="save-lock-edit" onchange="app.syncSavePasswordFields()">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.8;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             <span>Bloquear edición</span>
                         </label>
                         <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="checkbox" id="save-lock-copy">
+                            <input type="checkbox" id="save-lock-copy" onchange="app.syncSavePasswordFields()">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.8;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             <span>Bloquear copia</span>
                         </label>
                         <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="checkbox" id="save-lock-print">
+                            <input type="checkbox" id="save-lock-print" onchange="app.syncSavePasswordFields()">
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.8;"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             <span>Bloquear impresión</span>
                         </label>
@@ -4801,7 +4913,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <span style="font-size:14px; font-weight:700; color:#fff;">Consola de Formulario</span>
                     <span id="fc-page-label" style="font-size:10px; color:var(--accent, #818cf8); background:rgba(255,255,255,0.06); border:1px solid var(--accent, #818cf8); border-radius:4px; padding:2px 7px;"></span>
                 </div>
-                <button onclick="app.closeAllModals()" style="background:none;border:none;color:rgba(255,255,255,0.4);font-size:16px;cursor:pointer;line-height:1;padding:0;">✕</button>
+                <button aria-label="Cerrar" type="button" class="app-close-button" onclick="app.closeAllModals()"></button>
             </div>
             <!-- Fields reference -->
             <div style="padding:10px 18px 0; flex-shrink:0;">
@@ -4848,7 +4960,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
         <div id="shortcut-picker-modal" class="glass-box" style="display:none; width:520px; max-height:78vh; overflow:hidden; display:none; flex-direction:column; padding:20px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
                 <h3 style="margin:0;font-size:14px;font-weight:700;">Seleccionar Atajo Rápido</h3>
-                <button onclick="app.closeAllModals()" style="background:none;border:none;color:var(--text-main);cursor:pointer;padding:2px 6px;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                <button aria-label="Cerrar" type="button" class="app-close-button" onclick="app.closeAllModals()"></button>
             </div>
             <p style="font-size:11px;color:var(--text-secondary,#aaa);margin:0 0 10px;">Solo se permiten 2 atajos en el ribbon de INICIO.</p>
             <input id="shortcut-picker-search" type="text" placeholder="Buscar función..." data-i18n-placeholder="ph_116070" oninput="app._filterShortcutPicker(this.value)"
@@ -4860,7 +4972,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
         <div id="measure-calibration-modal" class="glass-box" style="display:none; flex-direction:column; width:460px; max-width:96vw; padding:0; overflow:hidden; gap:0;">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 22px 14px;border-bottom:1px solid var(--border,#ddd);">
                 <h3 style="margin:0;font-size:15px;font-weight:700;display:inline-flex;align-items:center;gap:7px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0l12.6 12.6z"/><line x1="14.5" y1="5.5" x2="16.5" y2="7.5"/><line x1="11.5" y1="8.5" x2="14.5" y2="11.5"/><line x1="8.5" y1="11.5" x2="10.5" y2="13.5"/><line x1="5.5" y1="14.5" x2="8.5" y2="17.5"/></svg>Calibrar Herramienta de Medición</h3>
-                <button onclick="app.closeAllModals();app.measureMode=false;['btn-measure','toggleMeasure'].forEach(id=>{const b=document.getElementById(id);if(b)b.classList.remove('active','measure-active');});" style="background:none;border:none;color:var(--text-main);cursor:pointer;padding:2px 6px;opacity:0.7;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                <button aria-label="Cerrar" type="button" class="app-close-button" onclick="app.closeAllModals();app.measureMode=false;['btn-measure','toggleMeasure'].forEach(id=>{const b=document.getElementById(id);if(b)b.classList.remove('active','measure-active');});"></button>
             </div>
             <div style="display:flex;border-bottom:1px solid var(--border,#ddd);background:var(--bg-ribbon,#f7f7f7);">
                 <button id="mcm-tab-page"  onclick="app._mcmSwitchTab('page')"  style="flex:1;padding:10px 6px;border:none;border-bottom:2px solid var(--accent,#185abd);background:transparent;cursor:pointer;font-size:12px;font-weight:600;color:var(--accent,#185abd);display:inline-flex;align-items:center;justify-content:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> Hoja PDF</button>
@@ -4942,20 +5054,20 @@ Arrastra para seleccionar el área · Esc para cancelar">
             </div>
         </div>
 
-        <!-- REVISIÓN DE TRADUCCIÓN: permanece temporal hasta publicar la copia. -->
+        <!-- TRADUCCIÓN DE DOCUMENTOS -->
         <div id="translation-review-modal" class="glass-box" role="dialog" aria-modal="true" aria-labelledby="translation-review-title" style="display:none; width:min(92vw,860px); max-height:85vh; overflow:hidden; flex-direction:column; gap:12px;">
             <div class="translation-review-heading">
-                <div><h3 id="translation-review-title" style="margin:0;">Traducir documento</h3><p style="margin:4px 0 0;font-size:11px;color:var(--text-muted);">Traduce el contenido directamente sobre el texto con lectura interactiva al pasar el mouse. El documento original se conserva.</p></div>
+                <h3 id="translation-review-title" style="margin:0;">Traducir documento</h3>
             </div>
-            <div style="display:flex;align-items:flex-start;gap:6px;padding:6px 10px;border-radius:8px;background:rgba(234,179,8,0.10);border:1px solid rgba(234,179,8,0.25);font-size:11px;color:var(--text-muted);line-height:1.4;">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:2px;" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                <span>La velocidad de traducción depende de tu conexión a internet y de la capacidad de respuesta de tu proveedor de inteligencia artificial.</span>
+            <div style="display:grid;gap:6px;font-size:12px;color:var(--text-muted);line-height:1.4;">
+                <div id="translation-review-notes-description"><strong>Traducir con comentarios.</strong> Añade la traducción al documento abierto. Pasa el mouse sobre el texto para leerla.</div>
+                <div id="translation-review-copy-description"><strong>Crear copia traducida.</strong> Revisa el texto antes de crear otro PDF. Se conservan, en la medida de lo posible, la estructura, los colores, las fuentes y sus tamaños. Suele tardar más y el tiempo depende del proveedor de IA.</div>
             </div>
             <div class="translation-review-options">
-                <label>Alcance<select id="translation-review-scope"><option value="page">Página actual</option><option value="selection">Texto seleccionado</option><option value="document">Documento completo</option></select></label>
-                <label>Idioma destino<select id="translation-review-language"><option value="Inglés">Inglés</option><option value="Español">Español</option><option value="Francés">Francés</option><option value="Alemán">Alemán</option><option value="Italiano">Italiano</option><option value="Portugués">Portugués</option></select></label>
+                <label>Alcance<select id="translation-review-scope" onchange="app.resetTextTranslationReview()"><option value="page">Página actual</option><option value="selection">Texto seleccionado</option><option value="document">Documento completo</option></select></label>
+                <label>Idioma destino<select id="translation-review-language" onchange="app.resetTextTranslationReview()"><option value="Inglés">Inglés</option><option value="Español">Español</option><option value="Francés">Francés</option><option value="Alemán">Alemán</option><option value="Italiano">Italiano</option><option value="Portugués">Portugués</option></select></label>
             </div>
-            <div id="translation-review-status" role="status" aria-live="polite">Elige el alcance y aplica la traducción en una copia.</div>
+            <div id="translation-review-status" role="status" aria-live="polite"></div>
             <div id="translation-review-progress" class="translation-review-progress" hidden aria-live="polite">
                 <div class="translation-review-progress-track" role="progressbar" aria-label="Avance de traducción" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div id="translation-review-progress-bar" class="translation-review-progress-bar"></div>
@@ -4966,10 +5078,11 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <div id="translation-review-items" class="translation-review-items"></div>
             <div class="translation-review-actions">
                 <button type="button" class="capsule-btn secondary" id="translation-review-background" onclick="app.minimizeTextTranslationModal()" hidden>Usar otras pestañas</button>
-                <button type="button" class="capsule-btn secondary" id="translation-review-fit" onclick="app.fitTextTranslationModal()" title="Ajusta tamaño y ancho; usa una fuente compatible similar solo cuando sea necesario. Revisa el resultado antes de aplicar en copia." hidden>Completar traducción</button>
+                <button type="button" class="capsule-btn secondary" id="translation-review-fit" onclick="app.fitTextTranslationModal()" title="Ajusta el tamaño y el ancho. Usa una fuente compatible si hace falta." hidden>Completar traducción</button>
                 <button type="button" class="capsule-btn secondary" id="translation-review-retry" onclick="app.retryTextTranslationModal()" hidden>Reintentar ahora</button>
                 <button type="button" class="capsule-btn secondary" onclick="app.closeTextTranslationModal()" data-i18n="btn_cancel">Cancelar</button>
-                <button type="button" class="capsule-btn primary" id="translation-review-apply" onclick="app.applyTextTranslationModal()">Aplicar en copia</button>
+                <button type="button" class="capsule-btn secondary" id="translation-review-prepare" onclick="app.prepareTextTranslationModal()" aria-describedby="translation-review-copy-description">Crear copia traducida</button>
+                <button type="button" class="capsule-btn primary" id="translation-review-apply" onclick="app.applyTextTranslationModal()" aria-describedby="translation-review-notes-description">Traducir con comentarios</button>
             </div>
         </div>
         <!-- FIN REVISIÓN DE TRADUCCIÓN -->
@@ -5086,7 +5199,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
               Añade entrada al INICIO de ALIOTH_CHANGELOG.
          ═══════════════════════════════════════════════════════════════ -->
     <script>window.i18n.setLanguage(window.i18n.getCurrentLanguage());</script>
-    <script type="module" src="js/main.js?v=3.2.40"></script>
+    <script type="module" src="js/main.js?v=3.2.46"></script>
     <!-- MODAL PROPIEDADES CAMPO -->
     <div id="properties-modal"
         style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
@@ -5792,7 +5905,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent);"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
                     Opciones y Propiedades de Forma
                 </h3>
-                <button onclick="app.closeShapeProperties()" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-size:18px; line-height:1; padding:4px 8px; border-radius:4px;">✕</button>
+                <button aria-label="Cerrar" type="button" class="app-close-button" onclick="app.closeShapeProperties()"></button>
             </div>
 
             <!-- Selector de Tipo de Forma -->
@@ -6136,7 +6249,6 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 </svg>
                 <div>
                     <h3 data-i18n="ai_agent_title">Agente IA</h3>
-                    <p>Powered by Gemini 2.5 Flash</p>
                 </div>
             </div>
             <div style="display: flex; gap: 6px;">
@@ -6146,9 +6258,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
                 </button>
                 <!-- Close Button -->
-                <button onclick="app.toggleAIPanel()" title="Cerrar" data-i18n-title="tit_933129" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);color:white;width:25px;height:25px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;">
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
+                <button type="button" class="app-close-button" onclick="app.toggleAIPanel()" title="Cerrar" data-i18n-title="tit_933129"></button>
             </div>
         </div>
 
@@ -6175,15 +6285,15 @@ Arrastra para seleccionar el área · Esc para cancelar">
             </button>
             <div style="position:relative;">
                 <button id="ai-font-size-btn" onclick="app.toggleAIFontSlider()" title="Tamaño de fuente del chat" data-i18n-title="tit_203405"
-                    style="width:32px;height:32px;border-radius:50%;border:2px solid var(--ai-accent);background:color-mix(in srgb,var(--ai-accent) 15%,transparent);color:#ffffff;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background 0.15s,border-color 0.15s;font-family:inherit;">F</button>
-                <div id="ai-font-slider-popup" style="display:none;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1e2232;border:1px solid color-mix(in srgb,var(--ai-accent) 40%,transparent);border-radius:8px;padding:10px 8px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+                    style="width:32px;height:32px;border-radius:50%;border:2px solid var(--ai-border);background:var(--ai-button-background);color:inherit;font-weight:700;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background 0.15s,border-color 0.15s;font-family:inherit;">F</button>
+                <div id="ai-font-slider-popup" style="display:none;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--ai-response-background);border:1px solid var(--ai-border);border-radius:8px;padding:10px 8px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
                     <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
-                        <span style="font-size:13px;color:var(--ai-accent);">A</span>
+                        <span style="font-size:13px;color:var(--ai-muted);">A</span>
                         <input type="range" id="ai-font-size-slider" min="5" max="20" value="13" step="1"
                             oninput="app.applyAIFontSize(this.value)"
-                            style="writing-mode:vertical-lr;direction:rtl;height:90px;width:20px;accent-color:var(--ai-accent);cursor:pointer;">
-                        <span style="font-size:9px;color:var(--ai-accent);">A</span>
-                        <span id="ai-font-size-label" style="font-size:10px;color:var(--ai-accent);text-align:center;">13px</span>
+                            style="writing-mode:vertical-lr;direction:rtl;height:90px;width:20px;accent-color:var(--ai-muted);cursor:pointer;">
+                        <span style="font-size:9px;color:var(--ai-muted);">A</span>
+                        <span id="ai-font-size-label" style="font-size:10px;color:var(--ai-muted);text-align:center;">13px</span>
                     </div>
                 </div>
             </div>
@@ -6244,7 +6354,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <!-- Welcome Message -->
             <div class="ai-message ai" id="ai-welcome-msg">
                 <p style="margin: 0 0 8px 0; font-weight: 600; display:flex; align-items:center; gap:6px;">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ai-accent); flex-shrink:0;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
                         <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
                     </svg>
                     <span data-i18n="ai_greeting">¡Hola! Soy tu asistente de IA.</span>
@@ -6260,11 +6370,16 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <div class="input-row">
                 <textarea id="ai-input" placeholder="Escribe tu pregunta aquí..." data-i18n-placeholder="ph_867255" rows="1"
                     onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); app.sendAIMessage();}"></textarea>
-                <button id="ai-send-btn" onclick="app.sendAIMessage()" title="Enviar" data-i18n-title="tit_201093">
+                <button id="ai-send-btn" type="button" onclick="app.sendAIMessage()" title="Enviar" data-i18n-title="tit_201093">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
                         stroke-width="2.5">
                         <line x1="22" y1="2" x2="11" y2="13"></line>
                         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+                <button id="ai-stop-btn" type="button" onclick="app.stopAIResponse()" title="Detener" data-i18n-title="tit_62108" hidden>
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                        <rect x="5" y="5" width="14" height="14" rx="2"/>
                     </svg>
                 </button>
             </div>
@@ -6274,21 +6389,12 @@ Arrastra para seleccionar el área · Esc para cancelar">
         <div id="ai-history-sidebar">
             <div class="history-header">
                 <h4 style="display:flex; align-items:center; gap:6px;">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#a78bfa;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                     </svg>
                     <span>Conversaciones Anteriores</span>
                 </h4>
-                <button onclick="app.toggleAIHistory()" style="
-                    background: rgba(255,255,255,0.2);
-                    border: none;
-                    color: white;
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 16px;
-                ">✕</button>
+                <button aria-label="Cerrar" type="button" class="app-close-button" onclick="app.toggleAIHistory()"></button>
             </div>
             <div id="ai-history-list">
                 <!-- History items will be populated dynamically -->
@@ -6390,8 +6496,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
             box-shadow: 0 0 30px rgba(0,0,0,0.5);
             object-fit: contain;
         ">
-        <div style="position: absolute; top: 20px; right: 20px; color: white; cursor: pointer; font-size: 30px;">&times;
-        </div>
+        <button type="button" class="app-close-button" aria-label="Cerrar vista previa" style="position:absolute;top:20px;right:20px;"></button>
     </div>
     <!-- Image Generation Modal (MOVED outside panel for better positioning) -->
 
@@ -6430,21 +6535,8 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg> IA
                 </button>
-                <button onclick="app.toggleIndexPanel()" title="Cerrar" data-i18n-title="tit_933129" style="
-                    background: rgba(255,255,255,0.1);
-                    border: none;
-                    width: 26px;
-                    height: 26px;
-                    border-radius: 50%;
-                    color: white;
-                    cursor: pointer;
-                    font-size: 16px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    transition: background 0.2s;
-                " onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                    onmouseout="this.style.background='rgba(255,255,255,0.1)'">✕</button>
+                <button type="button" class="app-close-button" onclick="app.toggleIndexPanel()" title="Cerrar" data-i18n-title="tit_933129"
+                   ></button>
             </div>
         </div>
 
@@ -6487,155 +6579,15 @@ Arrastra para seleccionar el área · Esc para cancelar">
         </div>
     </div>
 
-    <!-- Widget flotante de Lectura por Voz (TTS) -->
-    <div id="tts-widget" style="display:none;">
-        <!-- Barra principal: todo en una sola fila horizontal -->
-        <div id="tts-main-row">
-            <!-- Icono + título -->
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="11" height="11" style="flex-shrink:0;opacity:0.65;"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-            <span id="tts-widget-title">Leer</span>
-            <div class="tts-vsep"></div>
-
-            <!-- Transport -->
-            <button class="tts-transport-btn" id="tts-btn-play" onclick="app.ttsPlay()" title="Reproducir" data-i18n-title="tit_932888">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><polygon points="5,3 19,12 5,21"/></svg>
-            </button>
-            <button class="tts-transport-btn" id="tts-btn-pause" onclick="app.ttsPause()" title="Pausar" data-i18n-title="tit_106405" style="display:none;">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-            </button>
-            <button class="tts-transport-btn" id="tts-btn-stop" onclick="app.ttsStop()" title="Detener" data-i18n-title="tit_62108">
-                <svg viewBox="0 0 24 24" fill="currentColor" width="11" height="11"><rect x="4" y="4" width="16" height="16"/></svg>
-            </button>
-            <div class="tts-vsep"></div>
-
-            <!-- Scope -->
-            <button class="tts-pill tts-pill-active" id="tts-scope-sel" onclick="app.ttsSetScope('sel')" title="Leer texto seleccionado" data-i18n-title="tit_548136">Selección</button>
-            <button class="tts-pill" id="tts-scope-page" onclick="app.ttsSetScope('page')" title="Leer página actual" data-i18n-title="tit_641747"><span data-i18n="dyn_t_1076">PÁGINA</span></button>
-            <button class="tts-pill" id="tts-scope-doc" onclick="app.ttsSetScope('doc')" title="Leer documento completo" data-i18n-title="tit_588536">Documento</button>
-            <div class="tts-vsep"></div>
-
-            <!-- Velocidad -->
-            <span class="tts-label">Vel:</span>
-            <input type="range" id="tts-speed" min="0.5" max="2" step="0.1" value="1"
-                style="width:60px;accent-color:var(--accent);flex-shrink:0;"
-                oninput="app.ttsSetSpeed(this.value)">
-            <span id="tts-speed-val" style="font-size:9px;color:rgba(255,255,255,0.5);min-width:20px;flex-shrink:0;">1×</span>
-            <div class="tts-vsep"></div>
-
-            <!-- Filtros de voz -->
-            <button class="tts-filter-btn" id="tts-filter-online" onclick="app.ttsToggleFilter('online')" title="Solo voces online (Nube)" data-i18n-title="tit_544339" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg></button>
-            <button class="tts-filter-btn" id="tts-filter-m" onclick="app.ttsToggleFilter('m')" title="Voces masculinas" data-i18n-title="tit_98374" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="14" r="5"/><path d="M19 5h-5.5"/><path d="M19 5v5.5"/><path d="m13.5 10.5 5.5-5.5"/></svg></button>
-            <button class="tts-filter-btn" id="tts-filter-f" onclick="app.ttsToggleFilter('f')" title="Voces femeninas" data-i18n-title="tit_249391" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M12 14v7"/><path d="M9 18h6"/></svg></button>
-
-            <!-- Selector de voz -->
-            <select id="tts-voice-sel" style="flex:1;min-width:0;max-width:220px;background:#1a1a2e;border:1px solid rgba(255,255,255,0.18);border-radius:5px;color:rgba(255,255,255,0.9);font-size:9px;padding:2px 4px;outline:none;appearance:auto;-webkit-appearance:auto;"></select>
-
-            <!-- Status inline -->
-            <span id="tts-status" style="font-size:9px;color:rgba(255,255,255,0.38);white-space:nowrap;flex-shrink:0;">Listo</span>
-
-            <!-- Controles cabecera -->
-            <div class="tts-vsep"></div>
-            <button class="tts-hdr-btn" id="tts-apikey-btn" onclick="app.ttsToggleAPIKey()" title="API Key (voces AI)" data-i18n-title="tit_59478" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m11 12 7-7"/><path d="m15 5 3 3"/><path d="m18 8 2-2"/></svg></button>
-            <button class="tts-hdr-btn" onclick="app.toggleTTSWidget()" title="Cerrar" data-i18n-title="tit_933129" style="display:inline-flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-        </div>
-
-        <!-- Panel API Key (oculto por defecto) -->
-        <div id="tts-apikey-panel" style="display:none;padding:6px 10px;border-top:1px solid rgba(255,255,255,0.07);gap:5px;flex-direction:column;">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-                <div style="font-size:9px;color:rgba(255,255,255,0.6);font-weight:600;display:flex;align-items:center;gap:4px;">
-                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m11 12 7-7"/><path d="m15 5 3 3"/><path d="m18 8 2-2"/></svg> Configuración de Voz AI (requiere internet)
-                </div>
-                <button class="tts-hdr-btn" onclick="app.ttsToggleAPIKey(false)" title="Ocultar panel de API Key" style="width:16px;height:16px;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-            </div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
-                <button class="tts-pill tts-pill-active" id="tts-api-native" onclick="app.ttsSetProvider('native')">Sistema</button>
-                <button class="tts-pill" id="tts-api-fishaudio" onclick="app.ttsSetProvider('fishaudio')">BigFish</button>
-                <button class="tts-pill" id="tts-api-openai" onclick="app.ttsSetProvider('openai')">OpenAI</button>
-                <button class="tts-pill" id="tts-api-eleven" onclick="app.ttsSetProvider('eleven')">ElevenLabs</button>
-            </div>
-            <form id="tts-apikey-row" autocomplete="off" onsubmit="return false;" style="display:none;flex-direction:column;gap:4px;">
-                <div style="display:flex;gap:4px;align-items:center;width:100%;">
-                    <input id="tts-apikey-input" type="password" placeholder="API Key…" data-i18n-placeholder="ph_404624"
-                        style="flex:1;box-sizing:border-box;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.18);border-radius:5px;color:rgba(255,255,255,0.85);font-size:10px;padding:3px 6px;outline:none;" autocomplete="new-password">
-                    <button class="tts-pill" type="button" style="background:rgba(99,102,241,0.5);color:#fff;" onclick="app.ttsSaveAPIKey()" title="Guardar clave">Guardar</button>
-                    <button class="tts-pill" type="button" onclick="app.ttsToggleAPIKey(false)" title="Ocultar sección de API Key">Ocultar</button>
-                </div>
-                <div id="tts-fishaudio-voice-row" style="display:none;flex-direction:column;gap:3px;margin-top:2px;">
-                    <div style="display:flex;gap:4px;align-items:center;">
-                        <span style="font-size:9px;color:rgba(255,255,255,0.45);">Catálogo:</span>
-                        <button class="tts-pill tts-pill-active" id="tts-fish-scope-community" onclick="app.ttsSetFishScope('community')" title="Voces de la comunidad de Fish Audio" data-i18n-title="tit_268640" style="display:inline-flex;align-items:center;gap:3px;"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Comunitarias</button>
-                        <button class="tts-pill" id="tts-fish-scope-self" onclick="app.ttsSetFishScope('self')" title="Tus voces personalizadas/clonadas" data-i18n-title="tit_857437" style="display:inline-flex;align-items:center;gap:3px;"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Propias</button>
-                    </div>
-                </div>
-                <div id="tts-openai-voice-row" style="display:none;gap:4px;flex-wrap:wrap;">
-                    <button class="tts-pill" id="tts-oai-alloy" onclick="app.ttsSetOAIVoice('alloy')">Alloy</button>
-                    <button class="tts-pill" id="tts-oai-echo" onclick="app.ttsSetOAIVoice('echo')">Echo</button>
-                    <button class="tts-pill" id="tts-oai-fable" onclick="app.ttsSetOAIVoice('fable')">Fable</button>
-                    <button class="tts-pill" id="tts-oai-nova" onclick="app.ttsSetOAIVoice('nova')">Nova</button>
-                    <button class="tts-pill" id="tts-oai-shimmer" onclick="app.ttsSetOAIVoice('shimmer')">Shimmer</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-
-
-    <!-- Widget Desplazamiento Automático -->
-    <div id="autoscroll-widget" style="display:none;position:fixed;right:18px;bottom:192px;z-index:9995;
-         background:rgba(20,20,35,0.35);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-         border:1px solid rgba(255,255,255,0.10);border-radius:14px;padding:4px 6px;
-         flex-direction:column;align-items:center;gap:6px;user-select:none;
-         transition:background 0.2s,border-color 0.2s;"
-         onmouseenter="this.style.background='rgba(20,20,35,0.82)';this.style.borderColor='rgba(255,255,255,0.2)'"
-         onmouseleave="this.style.background='rgba(20,20,35,0.35)';this.style.borderColor='rgba(255,255,255,0.10)'">
-        <!-- Header -->
-        <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:4px;">
-            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="18 16 12 22 6 16"/></svg>
-            <span style="font-size:9px;color:rgba(255,255,255,0.45);flex:1;text-align:center;" data-i18n="dyn_t_3018">Auto</span>
-            <button onclick="app.toggleAutoScrollWidget()" style="background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-        </div>
-        <!-- Play/Pause -->
-        <button id="as-btn-play" onclick="app.autoScrollPlayPause()" title="Play / Pause" data-i18n-title="tit_959815"
-            style="width:32px;height:32px;border-radius:50%;background:none;border:1.5px solid rgba(255,255,255,0.55);
-                   color:rgba(255,255,255,0.85);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:border-color 0.2s,color 0.2s;"
-            onmouseover="this.style.borderColor='white';this.style.color='white'"
-            onmouseout="this.style.borderColor='rgba(255,255,255,0.55)';this.style.color='rgba(255,255,255,0.85)'">
-            <svg id="as-icon-play" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
-            <svg id="as-icon-pause" viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style="display:none;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-        </button>
-        <!-- Dirección -->
-        <button id="as-btn-dir" onclick="app.autoScrollToggleDir()" title="Dirección" data-i18n-title="tit_703757"
-            style="width:32px;height:32px;border-radius:50%;background:none;border:1.5px solid rgba(255,255,255,0.55);
-                   color:rgba(255,255,255,0.85);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:border-color 0.2s,color 0.2s;"
-            onmouseover="this.style.borderColor='white';this.style.color='white'"
-            onmouseout="this.style.borderColor='rgba(255,255,255,0.55)';this.style.color='rgba(255,255,255,0.85)'">
-            <svg id="as-icon-dir" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="4" x2="12" y2="20"/><polyline points="18 14 12 20 6 14"/></svg>
-        </button>
-        <!-- Velocidad slider vertical -->
-        <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
-            <span style="font-size:8px;color:rgba(255,255,255,0.35);">rápido</span>
-            <input type="range" id="as-speed" min="1" max="10" step="1" value="3" orient="vertical"
-                style="writing-mode:vertical-lr;direction:rtl;width:4px;height:70px;accent-color:var(--accent);cursor:pointer;"
-                oninput="app.autoScrollSetSpeed(this.value)">
-            <span style="font-size:8px;color:rgba(255,255,255,0.35);">lento</span>
-        </div>
-        <!-- Auto-stop toggle -->
-        <button id="as-btn-stop" onclick="app.autoScrollToggleAutoStop()" title="Detener al llegar al final" data-i18n-title="tit_931912"
-            style="width:32px;height:32px;border-radius:50%;background:none;border:1.5px solid rgba(255,255,255,0.25);
-                   color:rgba(255,255,255,0.4);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:9px;transition:border-color 0.2s,color 0.2s;"
-            onmouseover="this.style.borderColor='rgba(255,255,255,0.55)';this.style.color='rgba(255,255,255,0.85)'">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-        </button>
-    </div>
-
     <!-- Widget flotante de Modo Lectura -->
     <div id="reading-mode-float-widget">
-        <button id="btn-reading-mode" onclick="app.toggleReadingMode()" class="zoom-float-btn" title="Modo Lectura" data-i18n-title="tit_574824" data-i18n="lbl_reading_btn">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+        <button id="btn-reading-mode" type="button" onclick="app.toggleReadingMode()" title="Modo Lectura"
+                data-i18n-title="tit_574824" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                 <circle cx="12" cy="12" r="3"/>
             </svg>
-            <span>Lectura</span>
+            <span data-i18n="lbl_reading_btn">Lectura</span>
         </button>
     </div>
 
@@ -6670,30 +6622,30 @@ Arrastra para seleccionar el área · Esc para cancelar">
 
     <!-- Widget flotante de Zoom -->
     <div id="zoom-float-widget">
-        <div class="zoom-wing zoom-wing-start" inert>
-            <button class="zoom-float-btn" id="zoomBtnMinus" title="Alejar" data-i18n-title="tit_51676">−</button>
+        <div class="zoom-extra zoom-decrease" inert>
+            <button type="button" class="zoom-float-btn" id="zoomBtnMinus" title="Alejar" data-i18n-title="tit_51676">−</button>
             <input type="range" id="zoomSlider" min="20" max="500" value="100" step="1"
-                title="Deslizar para hacer zoom" data-i18n-title="tit_531429">
+                   title="Deslizar para hacer zoom" data-i18n-title="tit_531429">
         </div>
-        <div class="zoom-center">
-            <button class="zoom-float-btn" id="zoomBtnFit" title="Ajustar al ancho" data-i18n-title="tit_668486">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65"
-                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M3 5v14m18-14v14M6 12h12m-9-3-3 3 3 3m6-6 3 3-3 3"/>
-                </svg>
-            </button>
-            <input type="text" id="zoomInput" class="zoom-float-input" value="100%" inputmode="decimal"
-                   autocomplete="off" spellcheck="false" title="Zoom" data-i18n-title="tit_264014">
-        </div>
-        <div class="zoom-wing zoom-wing-end" inert>
-            <button class="zoom-float-btn" id="zoomBtnPlus" title="Acercar" data-i18n-title="tit_829722">+</button>
-            <button class="zoom-float-btn" id="zoomBtnReset" title="Restablecer" data-i18n-title="tit_656288">
+        <button type="button" class="zoom-float-btn" id="zoomBtnFit" title="Ajustar al ancho" data-i18n-title="tit_668486">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 5v14m18-14v14M6 12h12m-9-3-3 3 3 3m6-6 3 3-3 3"/>
+            </svg>
+        </button>
+        <div class="zoom-extra zoom-reset" inert>
+            <button type="button" class="zoom-float-btn" id="zoomBtnReset" title="Restablecer" data-i18n-title="tit_656288">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65"
                      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5"/>
                     <rect x="9" y="7" width="6" height="10" rx="1"/>
                 </svg>
             </button>
+        </div>
+        <input type="text" id="zoomInput" class="zoom-float-input" value="100%" inputmode="decimal"
+               autocomplete="off" spellcheck="false" title="Zoom" data-i18n-title="tit_264014">
+        <div class="zoom-extra zoom-increase" inert>
+            <button type="button" class="zoom-float-btn" id="zoomBtnPlus" title="Acercar" data-i18n-title="tit_829722">+</button>
         </div>
     </div>
 
@@ -6763,7 +6715,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 </svg>
             </button>
             <button class="comment-popup-menu-btn" id="comment-popup-menu-btn" title="Opciones" data-i18n-title="tit_110295">···</button>
-            <button class="comment-popup-close" id="comment-popup-close" title="Cerrar" data-i18n-title="tit_933129">✕</button>
+            <button type="button" class="app-close-button comment-popup-close" id="comment-popup-close" title="Cerrar" data-i18n-title="tit_933129"></button>
         </div>
         <div class="comment-popup-body">
             <div class="comment-popup-text" id="comment-popup-text"></div>
@@ -6835,7 +6787,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
 
     <div id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-modal-title" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none';">
         <div class="about-dialog" style="background:#1a1a2e !important;border:1px solid rgba(99,102,241,0.4);border-radius:18px;padding:26px 30px;max-width:760px;width:min(92vw,760px);box-shadow:0 24px 60px rgba(0,0,0,0.7);position:relative;max-height:88vh;overflow-y:auto;color:#ffffff;">
-            <button onclick="document.getElementById('about-modal').style.display='none'" aria-label="Cerrar modal" title="Cerrar" style="position:absolute;right:16px;top:16px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.6);cursor:pointer;line-height:1;z-index:10;width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;transition:all 0.15s;" onmouseover="this.style.background='rgba(239,68,68,0.25)';this.style.borderColor='rgba(239,68,68,0.4)';this.style.color='#fca5a5';" onmouseout="this.style.background='rgba(255,255,255,0.06)';this.style.borderColor='rgba(255,255,255,0.12)';this.style.color='rgba(255,255,255,0.6)';"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+            <button type="button" class="app-close-button" onclick="document.getElementById('about-modal').style.display='none'" aria-label="Cerrar modal" title="Cerrar" style="position:absolute;right:16px;top:16px;z-index:10;"></button>
             <div class="about-header" style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
                 <img src="ICONOS/ICONO 1.png" style="width:54px;height:54px;object-fit:contain;border-radius:12px;border:1px solid rgba(255,255,255,0.1);" alt="ALIOTH Logo">
                 <div>
@@ -6884,9 +6836,9 @@ Arrastra para seleccionar el área · Esc para cancelar">
         let _asRunning = false;
         let _asDir = 1;       // 1=abajo, -1=arriba
         let _asSpeed = 3;     // 1-10
-        let _asAutoStop = false;
         let _asRAF = null;
         let _asLast = null;
+        let _asRemainder = 0;
 
         const PX_PER_SEC_MIN = 20;
         const PX_PER_SEC_MAX = 400;
@@ -6897,7 +6849,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
         }
 
         function _container() {
-            return document.getElementById('mainViewPrimary');
+            return document.getElementById(app.splitView?.activePanel === 'secondary' ? 'mainViewSecondary' : 'mainViewPrimary');
         }
 
         function _tick(ts) {
@@ -6906,27 +6858,17 @@ Arrastra para seleccionar el área · Esc para cancelar">
             const dt = (ts - _asLast) / 1000;
             _asLast = ts;
             const c = _container();
-            if (!c) return;
-            const delta = _pxPerSec() * dt * _asDir;
-            
-            const isH = document.body.classList.contains('h-layout');
-            if (isH) {
-                c.scrollLeft += delta;
-            } else {
-                c.scrollTop += delta;
-            }
-
-            if (_asAutoStop) {
-                if (_asDir === 1) {
-                    const reachedEnd = isH 
-                        ? c.scrollLeft >= c.scrollWidth - c.clientWidth
-                        : c.scrollTop >= c.scrollHeight - c.clientHeight;
-                    if (reachedEnd) { app.autoScrollPlayPause(); return; }
-                }
-                if (_asDir === -1) {
-                    const reachedStart = isH ? c.scrollLeft <= 0 : c.scrollTop <= 0;
-                    if (reachedStart) { app.autoScrollPlayPause(); return; }
-                }
+            if (!c) { app.autoScrollPlayPause(); return; }
+            const horizontal = document.body.classList.contains('h-layout');
+            const axis = horizontal ? 'scrollLeft' : 'scrollTop';
+            const limit = horizontal ? c.scrollWidth - c.clientWidth : c.scrollHeight - c.clientHeight;
+            const distance = _pxPerSec() * Math.min(dt, 0.1) * _asDir + _asRemainder;
+            const pixels = Math.trunc(distance);
+            _asRemainder = distance - pixels;
+            c[axis] += pixels;
+            if (_asDir === 1 ? c[axis] >= limit - 1 : c[axis] <= 0) {
+                app.autoScrollPlayPause();
+                return;
             }
             _asRAF = requestAnimationFrame(_tick);
         }
@@ -6936,10 +6878,9 @@ Arrastra para seleccionar el área · Esc para cancelar">
             const pa = document.getElementById('as-icon-pause');
             const btn = document.getElementById('as-btn-play');
             const dirIcon = document.getElementById('as-icon-dir');
-            const stopBtn = document.getElementById('as-btn-stop');
             if (pi) pi.style.display = _asRunning ? 'none' : '';
             if (pa) pa.style.display = _asRunning ? '' : 'none';
-            if (btn) btn.style.borderColor = _asRunning ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.55)';
+            btn?.setAttribute('aria-pressed', String(_asRunning));
             if (dirIcon) {
                 const isH = document.body.classList.contains('h-layout');
                 if (isH) {
@@ -6952,10 +6893,6 @@ Arrastra para seleccionar el área · Esc para cancelar">
                         : '<line x1="12" y1="4" x2="12" y2="20"/><polyline points="6 10 12 4 18 10"/>';  // up arrow
                 }
             }
-            if (stopBtn) {
-                stopBtn.style.borderColor = _asAutoStop ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.25)';
-                stopBtn.style.color = _asAutoStop ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.4)';
-            }
         }
 
         app.toggleAutoScrollWidget = function() {
@@ -6965,14 +6902,12 @@ Arrastra para seleccionar el área · Esc para cancelar">
             w.style.display = visible ? 'none' : 'flex';
             if (visible && _asRunning) app.autoScrollPlayPause();
 
-            const headerBtn = document.getElementById('toggleAutoScroll');
-            if (headerBtn) {
-                if (w.style.display === 'flex') {
-                    headerBtn.classList.add('active');
-                } else {
-                    headerBtn.classList.remove('active');
-                }
+            for (const id of ['toggleAutoScroll', 'toggleAutoScrollReading']) {
+                const button = document.getElementById(id);
+                button?.classList.toggle('active', !visible);
+                button?.setAttribute('aria-pressed', String(!visible));
             }
+            _updateUI();
 
             window.dispatchEvent(new Event('app:dock-layout'));
 
@@ -6982,11 +6917,13 @@ Arrastra para seleccionar el área · Esc para cancelar">
             _asRunning = !_asRunning;
             if (_asRunning) {
                 _asLast = null;
+                _asRemainder = 0;
                 _asRAF = requestAnimationFrame(_tick);
                 document.body.classList.add('as-running');
             } else {
                 if (_asRAF) cancelAnimationFrame(_asRAF);
                 _asLast = null;
+                _asRemainder = 0;
                 document.body.classList.remove('as-running');
             }
             _updateUI();
@@ -6994,16 +6931,12 @@ Arrastra para seleccionar el área · Esc para cancelar">
 
         app.autoScrollToggleDir = function() {
             _asDir *= -1;
+            _asRemainder = 0;
             _updateUI();
         };
 
         app.autoScrollSetSpeed = function(v) {
             _asSpeed = parseInt(v);
-        };
-
-        app.autoScrollToggleAutoStop = function() {
-            _asAutoStop = !_asAutoStop;
-            _updateUI();
         };
 
         app.autoScrollUpdateUI = function() {
@@ -7357,7 +7290,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                         <small style="color:var(--text-dim); font-size:11px;">Azure Document Intelligence</small>
                     </div>
                 </div>
-                <button onclick="app.closeDataExtractionModal()" style="background:none; border:none; color:var(--text-dim); font-size:20px; cursor:pointer; line-height:1; padding:4px 8px; border-radius:6px;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">✕</button>
+                <button aria-label="Cerrar" type="button" class="app-close-button" onclick="app.closeDataExtractionModal()"></button>
             </div>
             <!-- Tabs -->
             <div style="display:flex; gap:0; border-bottom:1px solid var(--border);">

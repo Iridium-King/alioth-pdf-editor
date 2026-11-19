@@ -47,9 +47,12 @@ test('Two-Up View: Fit width uses the actual spread sizes, leaving the cover on 
     const listeners = new Map();
     const stack = {};
     const bounds = { left: 0, right: 1000, top: 0, bottom: 800 };
+    let fitWidthLayout = false;
     const mainView = {
         clientWidth: 1000,
         clientHeight: 800,
+        style: { setProperty() {} },
+        classList: { toggle: (name, enabled) => { if (name === 'fit-width') fitWidthLayout = enabled; } },
         getBoundingClientRect: () => bounds,
         querySelector: () => stack
     };
@@ -58,6 +61,10 @@ test('Two-Up View: Fit width uses the actual spread sizes, leaving the cover on 
         pages: [{ width: 500 }, { width: 600 }, { width: 300, height: 400, rotation: 90 }]
     };
     const state = { pageIndex: 1, scale: 1 };
+    let searchBounds;
+    const search = { getBoundingClientRect: () => searchBounds };
+    let aiTabWidth = 28;
+    const aiTab = { getBoundingClientRect: () => ({ width: aiTabWidth }) };
     let scale;
     const app = {
         splitView: { activePanel: 'primary', primary: state },
@@ -70,13 +77,18 @@ test('Two-Up View: Fit width uses the actual spread sizes, leaving the cover on 
     };
     const document = {
         body: { classList: { contains: () => false } },
-        getElementById: id => ({
-            addEventListener: (event, listener) => listeners.set(id + ':' + event, listener),
-            getBoundingClientRect: () => bounds,
-            querySelectorAll: () => []
-        })
+        getElementById: id => {
+            if (id === 'ai-floating-btn') return aiTab;
+            if (id === 'search-float-widget') return searchBounds ? search : null;
+            return {
+                addEventListener: (event, listener) => listeners.set(id + ':' + event, listener),
+                getBoundingClientRect: () => ({ left: 450, right: 550, top: 750 }),
+                querySelectorAll: () => []
+            };
+        }
     };
     function getComputedStyle(element) {
+        if (element === search) return { getPropertyValue: () => '27px' };
         return element === stack
             ? { paddingLeft: '20px', paddingRight: '20px', columnGap: '24px' }
             : { paddingLeft: '10px', paddingRight: '10px', paddingTop: '10px', paddingBottom: '10px' };
@@ -87,10 +99,25 @@ test('Two-Up View: Fit width uses the actual spread sizes, leaving the cover on 
 
     const fit = listeners.get('zoomBtnFit:click');
     await fit();
-    assert.equal(scale, (1000 - 20 - 40 - 24 - 2) / (600 + 400));
+    assert.equal(fitWidthLayout, true);
+    assert.equal(scale, (1000 - 2 * aiTabWidth - 24) / (600 + 400));
     state.pageIndex = 0;
     await fit();
-    assert.equal(scale, (1000 - 20 - 40 - 2) / 500);
+    assert.equal(scale, (1000 - 2 * aiTabWidth) / 500);
+
+    searchBounds = { left: 880, right: 907, width: 27, top: 300, bottom: 327 };
+    await fit();
+    assert.equal(scale, (1000 - 2 * aiTabWidth) / 500);
+    searchBounds = { ...searchBounds, left: 550, width: 357 };
+    await fit();
+    assert.equal(scale, (1000 - 2 * aiTabWidth) / 500);
+
+    aiTabWidth = 34;
+    await fit();
+    assert.equal(scale, (1000 - 2 * aiTabWidth) / 500);
+    await listeners.get('zoomBtnReset:click')();
+    assert.equal(fitWidthLayout, false);
+    assert.equal(scale, (800 - 12 - 53 - 2) / 792);
 });
 
 test('Two-Up View: Command Palette and i18n are registered', () => {

@@ -19,6 +19,10 @@ cambios funcionales por actualizar bibliotecas durante esta revisión.
 | Caché de fuentes del usuario | Excluida de la construcción |
 
 El archivo de insumos permite reconstruir sin buscar versiones nuevas en CDNs.
+El OCR de navegador carga el worker incluido y utiliza los núcleos WASM y
+modelos de español e inglés de la carpeta libs/ocr-offline. Su archivo
+origins.json fija origen, versión y hashes. El núcleo y los modelos de idioma
+provienen de Tesseract y sus distribuciones para Tesseract.js.
 `libs/third_party/npm-origins.json` registra los paquetes consultados, sus licencias
 y qué archivos coinciden byte por byte. Las entradas sin coincidencia no afirman
 identificar la versión de un bundle local: el hash del inventario es su identidad

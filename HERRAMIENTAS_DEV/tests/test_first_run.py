@@ -21,7 +21,16 @@ class FirstRunTests(unittest.TestCase):
         self.addCleanup(registration.stop)
 
     def initialize(self, certificate=b'root', executable=r'C:\Alioth\Alioth.exe', **kwargs):
+        kwargs.setdefault('trust_certificate', True)
         return integration.initialize_once(certificate, executable, state_path=self.path, **kwargs)
+
+    def test_startup_and_registration_retry_leave_certificate_trust_untouched(self):
+        first = self.initialize(trust_certificate=False)
+        retry = self.initialize(trust_certificate=False, force=True)
+        self.assertTrue(first['registration']['ok'])
+        self.assertEqual(first, retry)
+        self.assertNotIn('certificate', first)
+        self.install.assert_not_called()
 
     def test_first_launch_sets_up_once_and_second_launch_only_reads_the_marker(self):
         first = self.initialize()

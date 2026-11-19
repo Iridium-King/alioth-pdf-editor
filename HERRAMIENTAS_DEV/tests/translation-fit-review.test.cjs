@@ -160,12 +160,11 @@ test('cancelling after a rejected item prevents further reconstruction', async (
   assert.equal(attempts, 1);
 });
 
-test('document action forwards the native failed occurrence without publishing a copy', async () => {
+test('local reconstruction needs no provider key and reports the failed occurrence before publication', async () => {
   const { app, options, windowObject } = fixture();
   const review = await app.prepareTextTranslationReview(options);
   const stored = app._translationReviews.get(review.reviewId);
   const failedId = review.items[0].unitId;
-  app._documentActions.get('translate-text').hasUserKey = () => true;
   windowObject.PythonManager.reconstructTranslatedOccurrences = async () => {
     const error = new Error('TRANSLATION_OVERFLOW');
     error.failedOccurrenceId = failedId;

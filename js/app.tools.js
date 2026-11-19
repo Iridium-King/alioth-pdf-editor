@@ -375,8 +375,8 @@ Object.assign(app, {
                 pop.innerHTML = `
                     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,0.12);">
                         <span style="font-weight:700;font-size:14px;color:#f0f4ff;">📏 Referencia #${nextOrder}</span>
-                        <button onclick="document.getElementById('mcm-known-popup').remove();app._measureCalib._calibrating=false;app._openMeasureCalibModal();"
-                            style="background:none;border:none;color:rgba(200,215,255,0.6);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;">✕</button>
+                        <button aria-label="Cerrar" type="button" class="app-close-button" onclick="document.getElementById('mcm-known-popup').remove();app._measureCalib._calibrating=false;app._openMeasureCalibModal();"
+                           ></button>
                     </div>
                     <div style="padding:18px;display:flex;flex-direction:column;gap:12px;">
                         <div style="display:flex;align-items:center;gap:10px;">
@@ -4983,6 +4983,60 @@ Object.assign(app, {
                 }
             },
 
+            syncImageSharpnessControl: function () {
+                const control = document.getElementById('imgSharpness');
+                if (!control) return;
+                const image = this.selectedObj?.type === 'image' ? this.selectedObj : null;
+                control.disabled = !image;
+                control.value = image?.filters?.sharpness ?? 0;
+            },
+
+            updateImageSharpness: function (amount) {
+                const image = this.selectedObj;
+                if (image?.type !== 'image') return;
+                if (amount === (image.filters?.sharpness ?? 0)) return;
+                if (!this._saveStateTimers?.has(this.activeDocId)) {
+                    this.saveState(this.activeDocId, { skipDuplicate: true });
+                }
+                image.filters ??= {};
+                image.filters.sharpness = amount;
+                this.saveStateDebounced(600);
+                this.renderOverlays();
+            },
+
+            getImageSharpnessFilter: function (amount) {
+                const level = Math.min(100, Math.max(0, Math.round(Number(amount) / 5) * 5));
+                if (!level) return '';
+                const id = 'alioth-image-sharpness-' + level;
+                if (!document.getElementById(id)) {
+                    const ns = 'http://www.w3.org/2000/svg';
+                    let definitions = document.getElementById('alioth-image-filters');
+                    if (!definitions) {
+                        const svg = document.createElementNS(ns, 'svg');
+                        svg.setAttribute('width', '0');
+                        svg.setAttribute('height', '0');
+                        svg.setAttribute('aria-hidden', 'true');
+                        svg.style.position = 'absolute';
+                        definitions = document.createElementNS(ns, 'defs');
+                        definitions.id = 'alioth-image-filters';
+                        svg.appendChild(definitions);
+                        document.body.appendChild(svg);
+                    }
+                    const strength = level / 200;
+                    const filter = document.createElementNS(ns, 'filter');
+                    filter.id = id;
+                    filter.setAttribute('color-interpolation-filters', 'sRGB');
+                    const sharpen = document.createElementNS(ns, 'feConvolveMatrix');
+                    sharpen.setAttribute('kernelMatrix', `0 ${-strength} 0 ${-strength} ${1 + 4 * strength} ${-strength} 0 ${-strength} 0`);
+                    sharpen.setAttribute('divisor', '1');
+                    sharpen.setAttribute('edgeMode', 'duplicate');
+                    sharpen.setAttribute('preserveAlpha', 'true');
+                    filter.appendChild(sharpen);
+                    definitions.appendChild(filter);
+                }
+                return `url(#${id})`;
+            },
+
             // ══════════════════════════════════════════════════════
             //  IMAGE EFFECTS MODAL — full rewrite
             // ══════════════════════════════════════════════════════
@@ -4996,7 +5050,8 @@ Object.assign(app, {
             _iemActiveFx: null,
             _iemMagicAction: 'remove',
             _iemMagicColor: null,
-            _iemMagicPreviewSrc: null,
+            _iemMagicImage: null,
+            _iemMagicChanged: false,
 
             openImageEffectsModal: function () {
                 const obj = this.selectedObj;
@@ -5004,14 +5059,13 @@ Object.assign(app, {
                 this._iemObj = obj;
                 this._iemOrigSrc = obj.src;
                 this._iemPreviewSrc = obj.src;
-                this._iemMagicPreviewSrc = obj.src;
+                this._iemResetMagicCanvas();
                 this._iemFlipH = (obj.scaleX || 1) < 0;
                 this._iemFlipV = (obj.scaleY || 1) < 0;
                 this._iemFrame = obj.clipShape || 'none';
                 this._iemRefDir = 'bottom';
                 this._iemActiveFx = null;
-                this._iemMagicAction = 'remove';
-                this._iemMagicColor = null;
+                this.iemMagicAction('remove');
 
                 // Restore shadow values
                 document.getElementById('iem-shadow-on').checked = obj.shadow || false;
@@ -5118,9 +5172,10 @@ Object.assign(app, {
 
                 // Setup magic canvas click
                 mc.onclick = (e) => {
+                    if (!mc.width) return;
                     const r = mc.getBoundingClientRect();
-                    const x = Math.round((e.clientX - r.left) * (mc.width / r.width));
-                    const y = Math.round((e.clientY - r.top) * (mc.height / r.height));
+                    const x = Math.max(0, Math.min(mc.width - 1, Math.floor((e.clientX - r.left) * mc.width / r.width)));
+                    const y = Math.max(0, Math.min(mc.height - 1, Math.floor((e.clientY - r.top) * mc.height / r.height)));
                     const ctx = mc.getContext('2d');
                     const px = ctx.getImageData(x, y, 1, 1).data;
                     const hex = '#' + [px[0],px[1],px[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
@@ -5154,18 +5209,36 @@ Object.assign(app, {
                 }
             },
 
-            _iemLoadMagicCanvas: function() {
+            _iemResetMagicCanvas: function () {
+                this._iemMagicImage = null;
+                this._iemMagicColor = null;
+                this._iemMagicChanged = false;
+                const mc = document.getElementById('iem-magic-canvas');
+                mc.width = mc.height = 0;
+            },
+
+            _iemLoadMagicCanvas: async function () {
+                if (this._iemMagicImage) return;
                 const mc = document.getElementById('iem-magic-canvas');
                 const img = new Image();
-                img.onload = () => {
-                    const maxW = 280, maxH = 250;
-                    const scale = Math.min(maxW/img.width, maxH/img.height, 1);
-                    mc.width = Math.round(img.width*scale);
-                    mc.height = Math.round(img.height*scale);
-                    mc.getContext('2d').drawImage(img, 0, 0, mc.width, mc.height);
-                    this._iemMagicPreviewSrc = mc.toDataURL();
-                };
+                this._iemMagicImage = img;
                 img.src = this._iemOrigSrc;
+                try {
+                    await img.decode();
+                    if (this._iemMagicImage !== img) return;
+                    // La vista previa escala por CSS. El lienzo conserva los píxeles originales.
+                    mc.width = img.naturalWidth;
+                    mc.height = img.naturalHeight;
+                    const scale = Math.min(280 / mc.width, 250 / mc.height, 1);
+                    mc.style.width = Math.max(1, mc.width * scale) + 'px';
+                    mc.style.height = Math.max(1, mc.height * scale) + 'px';
+                    mc.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0);
+                } catch (error) {
+                    if (this._iemMagicImage !== img) return;
+                    this._iemResetMagicCanvas();
+                    console.warn('No se pudo abrir la imagen para quitar el fondo', error);
+                    this.showToast('No se pudo abrir la imagen');
+                }
             },
 
             iemMagicAction: function(action) {
@@ -5183,19 +5256,23 @@ Object.assign(app, {
                 const data = imgData.data;
                 const tc = this._iemMagicColor;
                 const tr = parseInt(tc.slice(1,3),16), tg = parseInt(tc.slice(3,5),16), tb = parseInt(tc.slice(5,7),16);
-                const colorDist = (i) => Math.sqrt(Math.pow(data[i]-tr,2)+Math.pow(data[i+1]-tg,2)+Math.pow(data[i+2]-tb,2));
                 const action = this._iemMagicAction;
-                // Flood fill from all pixels matching color (global tolerance, not flood)
-                for (let i=0; i<data.length; i+=4) {
-                    const d = colorDist(i);
-                    if (action === 'remove') {
-                        if (d <= tol) data[i+3] = Math.max(0, data[i+3] - Math.round(255*(1-d/tol)));
-                    } else {
-                        if (d > tol) data[i+3] = Math.max(0, data[i+3] - Math.round(255*(d-tol)/255));
-                    }
+                let changed = false;
+                for (let i = 0; i < data.length; i += 4) {
+                    const alpha = data[i + 3];
+                    if (!alpha) continue;
+                    const r = data[i] - tr, g = data[i + 1] - tg, b = data[i + 2] - tb;
+                    const distance = Math.sqrt(r * r + g * g + b * b);
+                    const reduction = action === 'remove' ? 255 * (1 - distance / tol) : distance - tol;
+                    const nextAlpha = Math.max(0, alpha - Math.round(reduction));
+                    if (nextAlpha >= alpha) continue;
+                    data[i + 3] = nextAlpha;
+                    changed = true;
                 }
-                ctx.putImageData(imgData, 0, 0);
-                this._iemMagicPreviewSrc = mc.toDataURL('image/png');
+                if (changed) {
+                    ctx.putImageData(imgData, 0, 0);
+                    this._iemMagicChanged = true;
+                }
                 this.showToast('✅ Vista previa actualizada');
             },
 
@@ -5663,10 +5740,29 @@ Object.assign(app, {
             iemApply: function() {
                 const obj = this._iemObj;
                 if (!obj) return;
-                this.saveState();
 
                 const activeTab = document.querySelector('.iem-tab.active')?.dataset.tab;
+                if (activeTab === 'fondo') {
+                    if (!this._iemMagicChanged) { this.closeAllModals(); return; }
+                    let src;
+                    try {
+                        src = document.getElementById('iem-magic-canvas').toDataURL('image/png');
+                        if (!src.startsWith('data:image/png;')) throw new Error('No se pudo codificar el PNG');
+                    } catch (error) {
+                        console.warn('No se pudo guardar la imagen sin fondo', error);
+                        this.showToast('No se pudo aplicar el cambio de fondo');
+                        return;
+                    }
+                    this.saveState(this.activeDocId, { skipDuplicate: true });
+                    obj.src = src;
+                    obj.backgroundRemoved = true;
+                    this.saveState();
+                    this.renderOverlays(); this.renderSidebar();
+                    this.closeAllModals(); this.showToast('✅ Fondo modificado');
+                    return;
+                }
 
+                this.saveState();
                 if (activeTab === 'espejo') {
                     // Shadow
                     const shadowOn = document.getElementById('iem-shadow-on').checked;
@@ -5721,10 +5817,6 @@ Object.assign(app, {
                     this.renderOverlays(); this.renderSidebar();
                     this.closeAllModals(); this.showToast('✅ Efecto aplicado');
 
-                } else if (activeTab === 'fondo') {
-                    obj.src = this._iemMagicPreviewSrc;
-                    this.renderOverlays(); this.renderSidebar();
-                    this.closeAllModals(); this.showToast('✅ Fondo modificado');
                 }
             },
 
@@ -6589,8 +6681,13 @@ Object.assign(app, {
              * Saves the current state to history for undo/redo
              * Maintains a maximum of 50 history states
              */
-            saveState: function (docId = this.activeDocId) {
+            saveState: function (docId = this.activeDocId, { skipDuplicate = false } = {}) {
                 const doc = this.getDocumentById ? this.getDocumentById(docId) : this.getDoc(); if (!doc) return;
+                // Excluir propiedades de caché del historial (no son parte del estado del documento)
+                const _cacheKeys = ['_thumbCache', '_thumbCacheObjects', '_bgBitmap', '_bgBitmapScale', '_bgBitmapW', '_bgBitmapH'];
+                const replacer = (key, val) => _cacheKeys.includes(key) ? undefined : val;
+                const snapshot = JSON.stringify(doc.pages, replacer);
+                if (skipDuplicate && snapshot === doc.history[doc.historyIndex]) return;
                 if (doc.historyIndex < doc.history.length - 1) {
                     doc.history = doc.history.slice(0, doc.historyIndex + 1);
                     // Clean orphaned buffer snapshots beyond new top
@@ -6600,10 +6697,7 @@ Object.assign(app, {
                         });
                     }
                 }
-                // Excluir propiedades de caché del historial (no son parte del estado del documento)
-                const _cacheKeys = ['_thumbCache', '_thumbCacheObjects', '_bgBitmap', '_bgBitmapScale', '_bgBitmapW', '_bgBitmapH'];
-                const replacer = (key, val) => _cacheKeys.includes(key) ? undefined : val;
-                doc.history.push(JSON.stringify(doc.pages, replacer));
+                doc.history.push(snapshot);
                 doc.historyIndex++;
                 if (doc.history.length > 50) {
                     doc.history.shift();
@@ -7014,7 +7108,7 @@ Object.assign(app, {
                 this._captureActionMenu?.remove();
                 const menu = document.createElement('div');
                 menu.className = 'capture-action-menu';
-                menu.innerHTML = `<div class="capture-action-head"><strong data-i18n="capture_title">Captura</strong><button type="button" data-action="close" data-i18n-aria="btn_close" aria-label="Cerrar">×</button></div>
+                menu.innerHTML = `<div class="capture-action-head"><strong data-i18n="capture_title">Captura</strong><button class="app-close-button" type="button" data-action="close" data-i18n-aria="btn_close" aria-label="Cerrar"></button></div>
                     <div class="capture-action-row"><label><span data-i18n="capture_search_engine">Buscador</span><select data-field="provider"><option value="google">Google Lens</option><option value="bing">Bing Visual Search</option><option value="tineye">TinEye</option></select></label><button type="button" data-action="search" data-i18n="capture_search_similar">Buscar similares</button></div>
                     <div class="capture-action-row"><label><span data-i18n="capture_translate_to">Traducir a</span><select data-field="language"><option value="Español" data-i18n="capture_target_es">Español</option><option value="Inglés" data-i18n="capture_target_en">Inglés</option><option value="Francés" data-i18n="capture_target_fr">Francés</option><option value="Alemán" data-i18n="capture_target_de">Alemán</option><option value="Italiano" data-i18n="capture_target_it">Italiano</option><option value="Portugués" data-i18n="capture_target_pt">Portugués</option></select></label><button type="button" data-action="translate" data-i18n="capture_translate_text">Traducir texto</button></div>
                     <div class="capture-action-buttons"><button type="button" data-action="explain" data-i18n="capture_explain_image">Explicar imagen</button><button type="button" data-action="copy" data-i18n="capture_copy">Copiar captura</button></div>

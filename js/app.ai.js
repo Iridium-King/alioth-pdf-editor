@@ -7,51 +7,6 @@ const app = window.app;
 
 
 Object.assign(app, {
-            _tesseractWorker: null,
-            _tesseractWorkerLoading: false,
-            _tesseractWorkerPsm: null,
-
-            // View & Navigation State
-            _getOCRWorker: async function (psmMode) {
-                if (typeof Tesseract === 'undefined') {
-                    if (this.lazyLoad) await this.lazyLoad('tesseract');
-                    else if (window.app && window.app.lazyLoad) await window.app.lazyLoad('tesseract');
-                }
-                const autoPsm = (typeof Tesseract !== 'undefined' && Tesseract.PSM) ? Tesseract.PSM.AUTO : 3;
-                const targetPsm = (psmMode !== undefined && psmMode !== null) ? psmMode : autoPsm;
-                if (this._tesseractWorker && this._tesseractWorkerPsm === targetPsm) return this._tesseractWorker;
-                if (this._tesseractWorkerLoading) {
-                    await new Promise(resolve => {
-                        const interval = setInterval(() => {
-                            if (!this._tesseractWorkerLoading) { clearInterval(interval); resolve(); }
-                        }, 100);
-                    });
-                    return this._tesseractWorker;
-                }
-                this._tesseractWorkerLoading = true;
-                // Terminar worker anterior si cambió el PSM
-                if (this._tesseractWorker && this._tesseractWorkerPsm !== targetPsm) {
-                    try { await this._tesseractWorker.terminate(); } catch (_) { }
-                    this._tesseractWorker = null;
-                }
-                this._tesseractWorker = await Tesseract.createWorker('spa', 1, {
-                    logger: m => {
-                        if (m.status === 'recognizing text') {
-                            const progress = Math.round(m.progress * 100);
-                            const loaderMsg = document.getElementById('loader-msg');
-                            if (loaderMsg) loaderMsg.innerText = `OCR: ${progress}% completado...`;
-                        }
-                    }
-                });
-                await this._tesseractWorker.setParameters({
-                    tessedit_pageseg_mode: targetPsm,
-                    preserve_interword_spaces: '1',
-                });
-                this._tesseractWorkerPsm = targetPsm;
-                this._tesseractWorkerLoading = false;
-                return this._tesseractWorker;
-            },
-
             extractText: async function () {
                 const cvs = document.getElementById('the-canvas');
                 if (!cvs || cvs.width === 0) { alert("No hay página cargada."); return; }
@@ -3015,7 +2970,7 @@ Reglas:
                         box-shadow: 0 20px 60px rgba(0,0,0,0.5) !important;
                         z-index: 15001 !important;
                         flex-direction: column !important;
-                        border: 2px solid #8b5cf6 !important;
+                        border: 2px solid var(--ai-border) !important;
                         visibility: visible !important;
                         opacity: 1 !important;
                         pointer-events: auto !important;
@@ -3263,8 +3218,6 @@ Reglas:
 
                 if (type === 'user') {
                     messageDiv.style.cssText = `
-                        background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
-                        color: white;
                         ${padStr}
                         border-radius: 12px 12px 4px 12px;
                         max-width: 80%;
@@ -3272,19 +3225,16 @@ Reglas:
                         margin-left: auto;
                         ${fontSizeStr}
                         line-height: 1.5;
-                        box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
                     `;
                 } else {
                     messageDiv.style.cssText = `
-                        background: var(--bg-panel);
-                        color: var(--text-main);
                         ${padStr}
                         border-radius: 12px 12px 12px 4px;
                         max-width: 85%;
                         align-self: flex-start;
                         ${fontSizeStr}
                         line-height: 1.6;
-                        border: 1px solid var(--border);
                         white-space: pre-wrap;
                     `;
                 }
@@ -3958,25 +3908,18 @@ NO fragmentes nombres propios. Responde SOLO JSON array sin markdown:
                 const w = document.getElementById('tts-widget');
                 if (!w) return;
                 w.style.display = this._ttsVisible ? 'block' : 'none';
+                document.body.classList.toggle('tts-widget-open', this._ttsVisible);
                 if (this._ttsVisible) {
-                    this._ttsUpdatePosition();
-                    this._ttsLoadVoices();
+                    if (this._ttsProvider === 'native') this._ttsLoadVoices();
                 } else {
+                    this.closeTTSVoiceList();
                     this.ttsStop();
                 }
+                window.dispatchEvent(new Event('app:dock-layout'));
                 ['btn-tts-magic','btn-tts-reading'].forEach(id => {
                     const b = document.getElementById(id);
                     if (b) b.classList.toggle('tts-active', this._ttsVisible);
                 });
-            },
-
-            _ttsUpdatePosition: function () {
-                const w = document.getElementById('tts-widget');
-                if (!w) return;
-                const isReading = document.body.classList.contains('reading-mode');
-                // reading: header(36) + mini-ribbon(23) = 59px
-                // normal:  header(36) + tabs(29) + ribbon(61) = 126px
-                w.style.top = isReading ? '59px' : '126px';
             },
 
             ttsBtnCollapse: function () {
@@ -4017,6 +3960,7 @@ NO fragmentes nombres propios. Responde SOLO JSON array sin markdown:
             },
 
             ttsSetProvider: function (provider) {
+                if (provider !== this._ttsProvider) this.ttsSetVoiceOptions([]);
                 this._ttsProvider = provider;
                 ['native','fishaudio','openai','eleven'].forEach(p => {
                     const b = document.getElementById('tts-api-' + p);
@@ -4053,48 +3997,38 @@ NO fragmentes nombres propios. Responde SOLO JSON array sin markdown:
             },
 
             _ttsLoadFishVoices: async function (scope = 'community') {
-                const sel = document.getElementById('tts-voice-sel');
-                if (!sel) return;
+                const request = this._ttsFishRequest = (this._ttsFishRequest || 0) + 1;
+                const isCurrent = () => this._ttsProvider === 'fishaudio' && request === this._ttsFishRequest;
                 const key = localStorage.getItem('alioth_tts_key_fishaudio') || localStorage.getItem('fishaudio_api_key') || '';
-                this._ttsSetStatus('⏳ Cargando voces Fish Audio…');
+                const defaults = [
+                    { id: '7f92f8afb8ec43bf81429cc1c9199cb1', name: 'Alonso (Español Natural)', language: 'es', gender: 'male' },
+                    { id: 'e48a17fe01f24d77bb4518bf97cf5c49', name: 'Sofía (Español Neutro)', language: 'es', gender: 'female' },
+                    { id: 'd28d09f7a9ec49b996113b28b7e28b17', name: 'Mateo (Narrador Profesional)', language: 'es', gender: 'male' }
+                ];
+                let voices = defaults;
+                let status = 'Listo (Voces sugeridas)';
+                this._ttsSetStatus('Cargando voces Fish Audio…');
                 try {
-                    const r = await fetch(`/api/tts/fishaudio/voices?scope=${scope}`, {
-                        headers: key ? { 'Authorization': 'Bearer ' + key } : {}
+                    const response = await fetch('/api/tts/fishaudio/voices?scope=' + scope, {
+                        headers: key ? { Authorization: 'Bearer ' + key } : {}
                     });
-                    const data = await r.json();
-                    if (data && data.ok && Array.isArray(data.voices) && data.voices.length > 0) {
-                        this._ttsFishVoices = data.voices;
-                        sel.innerHTML = data.voices.map(v => {
-                            const icon = scope === 'community' ? '🌐' : '👤';
-                            const genderIcon = v.gender === 'female' ? '♀' : (v.gender === 'male' ? '♂' : '🎙');
-                            const langBadge = (v.language || 'es').toUpperCase();
-                            return `<option value="${v.id}">${icon} ${genderIcon} [${langBadge}] ${v.name}</option>`;
-                        }).join('');
-                        
-                        const savedVoice = localStorage.getItem('alioth_tts_voice_fishaudio');
-                        if (savedVoice && Array.from(sel.options).some(o => o.value === savedVoice)) {
-                            sel.value = savedVoice;
-                        }
-                        this._ttsSetStatus(`✅ ${data.voices.length} voces BigFish`);
-                    } else {
-                        // Fallback a voces populares en español de BigFish
-                        const defaults = [
-                            { id: '7f92f8afb8ec43bf81429cc1c9199cb1', name: 'Alonso (Español Natural)', lang: 'ES', gender: '♂' },
-                            { id: 'e48a17fe01f24d77bb4518bf97cf5c49', name: 'Sofía (Español Neutro)', lang: 'ES', gender: '♀' },
-                            { id: 'd28d09f7a9ec49b996113b28b7e28b17', name: 'Mateo (Narrador Profesional)', lang: 'ES', gender: '♂' }
-                        ];
-                        sel.innerHTML = defaults.map(v => `<option value="${v.id}">🌐 ${v.gender} [${v.lang}] ${v.name}</option>`).join('');
-                        const savedVoice = localStorage.getItem('alioth_tts_voice_fishaudio');
-                        if (savedVoice && Array.from(sel.options).some(o => o.value === savedVoice)) {
-                            sel.value = savedVoice;
-                        }
-                        this._ttsSetStatus('Listo (Voces sugeridas)');
+                    const data = await response.json();
+                    if (data?.ok && Array.isArray(data.voices) && data.voices.length) {
+                        voices = data.voices;
+                        status = voices.length + ' voces BigFish';
                     }
-                } catch (e) {
-                    console.warn('[TTS FishAudio] Fallo al cargar voces remotas:', e);
-                    sel.innerHTML = '<option value="">🌐 🎙 [ES] BigFish Narrador por Defecto</option>';
-                    this._ttsSetStatus('Listo');
+                } catch (error) {
+                    console.warn('[TTS FishAudio] Fallo al cargar voces remotas:', error);
                 }
+                if (!isCurrent()) return;
+                this.ttsSetVoiceOptions(voices.map(voice => ({
+                    value: String(voice.id),
+                    name: voice.name,
+                    locale: (voice.language || 'es').toUpperCase(),
+                    kind: scope === 'community' ? 'cloud' : 'person',
+                    gender: voice.gender === 'female' || voice.gender === 'male' ? voice.gender : null
+                })), localStorage.getItem('alioth_tts_voice_fishaudio'));
+                this._ttsSetStatus(status);
             },
 
             ttsSetOAIVoice: function (voice) {
@@ -4120,9 +4054,9 @@ NO fragmentes nombres propios. Responde SOLO JSON array sin markdown:
             },
 
             _ttsLoadVoices: function () {
-                const sel = document.getElementById('tts-voice-sel');
-                if (!sel) return;
+                if (!window.speechSynthesis) return;
                 const populate = () => {
+                    if (this._ttsProvider !== 'native') return;
                     const voices = window.speechSynthesis.getVoices();
                     const es = voices.filter(v => v.lang.startsWith('es'));
                     this._ttsAllVoices = es.length ? es : voices.slice(0, 60);
@@ -4143,37 +4077,23 @@ NO fragmentes nombres propios. Responde SOLO JSON array sin markdown:
                 return female.some(f => n.includes(f)) ? 'f' : 'm';
             },
 
-            _ttsVoiceCountryFlag: function (v) {
-                const flags = { US:'🇺🇸', MX:'🇲🇽', ES:'🇪🇸', AR:'🇦🇷', CO:'🇨🇴', CL:'🇨🇱', VE:'🇻🇪', PE:'🇵🇪', UY:'🇺🇾', GT:'🇬🇹', CR:'🇨🇷', PA:'🇵🇦', DO:'🇩🇴', CU:'🇨🇺', PR:'🇵🇷', BO:'🇧🇴', EC:'🇪🇨', PY:'🇵🇾', HN:'🇭🇳', NI:'🇳🇮', SV:'🇸🇻' };
-                const m = v.lang.match(/es-([A-Z]{2})/i);
-                const code = m ? m[1].toUpperCase() : null;
-                return flags[code] || (code || '??');
-            },
-
             _ttsRebuildVoiceList: function () {
-                const sel = document.getElementById('tts-voice-sel');
-                if (!sel || !this._ttsAllVoices.length) return;
-                let list = this._ttsAllVoices.filter(v => {
-                    if (this._ttsFilterOnline && !this._ttsVoiceIsOnline(v)) return false;
-                    if (this._ttsFilterGender && this._ttsVoiceGender(v) !== this._ttsFilterGender) return false;
-                    return true;
-                });
-                if (!list.length) list = this._ttsAllVoices;
-                sel.innerHTML = list.map(v => {
-                    const idx = this._ttsAllVoices.indexOf(v);
-                    const online = this._ttsVoiceIsOnline(v) ? '☁' : '💻';
-                    const gender = this._ttsVoiceGender(v) === 'f' ? '♀' : '♂';
-                    const flag = this._ttsVoiceCountryFlag(v);
-                    return `<option value="${idx}">${online} ${gender} ${flag} ${v.name}</option>`;
-                }).join('');
-                // Seleccionar voz preferida: Alonso Online > Alonso > Raul Online > Raul > Sabina > Google
+                const select = document.getElementById('tts-voice-sel');
+                if (!select || this._ttsProvider !== 'native') return;
+                const filtered = this._ttsAllVoices.filter(voice =>
+                    (!this._ttsFilterOnline || this._ttsVoiceIsOnline(voice)) &&
+                    (!this._ttsFilterGender || this._ttsVoiceGender(voice) === this._ttsFilterGender));
+                const voices = (filtered.length ? filtered : this._ttsAllVoices).map(voice => ({
+                    value: String(this._ttsAllVoices.indexOf(voice)),
+                    name: voice.name,
+                    locale: voice.lang.split('-').at(-1).toUpperCase(),
+                    kind: this._ttsVoiceIsOnline(voice) ? 'cloud' : 'device',
+                    gender: this._ttsVoiceGender(voice) === 'f' ? 'female' : 'male'
+                }));
                 const preferred = ['alonso online','alonso natural','alonso','raul online','raul natural','raul','sabina online','google español','google spanish'];
-                let found = false;
-                for (const name of preferred) {
-                    const opt = Array.from(sel.options).find(o => o.text.toLowerCase().includes(name));
-                    if (opt) { sel.value = opt.value; found = true; break; }
-                }
-                if (!found && sel.options.length) sel.value = sel.options[0].value;
+                const fallback = preferred.map(name => voices.find(voice => voice.name.toLowerCase().includes(name))).find(Boolean);
+                const previous = voices.find(voice => voice.value === select.value);
+                this.ttsSetVoiceOptions(voices, (previous || fallback)?.value);
             },
 
             ttsToggleFilter: function (type) {

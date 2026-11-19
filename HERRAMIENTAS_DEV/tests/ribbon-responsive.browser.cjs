@@ -50,9 +50,20 @@ const root = path.resolve(__dirname, '../..');
           const bounds = bar.getBoundingClientRect();
           const left = Math.min(...children.map(child => child.getBoundingClientRect().left));
           const right = Math.max(...children.map(child => child.getBoundingClientRect().right));
+          const commands = [...bar.querySelectorAll('.tool-btn, .page-op-btn, .group-col-btn')].flatMap(button => {
+            const icon = button.querySelector('svg, img');
+            const label = button.querySelector(':scope > span:last-child');
+            if (!icon || !label || !button.getClientRects().length) return [];
+            const iconBounds = icon.getBoundingClientRect();
+            return [{
+              label: label.textContent.trim(),
+              iconY: iconBounds.top + iconBounds.height / 2 - bounds.top,
+              labelY: label.getBoundingClientRect().top - bounds.top
+            }];
+          });
           return { tab, hasShortcuts: !!shortcut, hidden: !!shortcut && getComputedStyle(shortcut).display === 'none',
             width: bar.clientWidth, content: right-left, centered: Math.abs((left+right)/2-(bounds.left+bounds.right)/2),
-            overflow: bar.classList.contains('ribbon-overflow'), compact: bar.classList.contains('ribbon-compact'), tight: bar.classList.contains('ribbon-tight'), fitted: bar.classList.contains('ribbon-fit') };
+            overflow: bar.classList.contains('ribbon-overflow'), compact: bar.classList.contains('ribbon-compact'), tight: bar.classList.contains('ribbon-tight'), fitted: bar.classList.contains('ribbon-fit'), commands };
         }, tab);
         if (width > 1280) {
           assert.equal(result.hidden, false, JSON.stringify(result));
@@ -61,9 +72,39 @@ const root = path.resolve(__dirname, '../..');
         }
         assert.equal(result.overflow, false, JSON.stringify(result));
         assert.ok(result.centered < 4, JSON.stringify(result));
-        results.push({ viewport: width, ...result });
+        const { commands, ...layout } = result;
+        assert.ok(commands.length > 0, tab);
+        for (const command of commands) {
+          assert.ok(Math.abs(command.iconY - 17) < 1, JSON.stringify({ width, tab, ...command }));
+          assert.ok(Math.abs(command.labelY - 31.5) < 1, JSON.stringify({ width, tab, ...command }));
+        }
+        results.push({ viewport: width, ...layout });
       }
     }
+
+    const clippedHomeLabels = await page.evaluate(() => {
+      app.switchRibbon('home');
+      return [...document.querySelectorAll('.home-text-actions > .tool-btn')].flatMap(button => {
+        const label = button.querySelector(':scope > span:last-child');
+        const range = document.createRange();
+        range.selectNodeContents(label);
+        const clipBottom = button.getBoundingClientRect().bottom - parseFloat(getComputedStyle(button).borderBottomWidth);
+        return range.getBoundingClientRect().bottom > clipBottom ? [label.textContent.trim()] : [];
+      });
+    });
+    assert.deepEqual(clippedHomeLabels, []);
+
+    const flipRows = await page.evaluate(() => {
+      app.switchRibbon('image');
+      return [...document.querySelectorAll('.image-flip-controls > button')].map(button => {
+        const bounds = button.getBoundingClientRect();
+        return { x: bounds.left, top: bounds.top, bottom: bounds.bottom };
+      });
+    });
+    assert.equal(flipRows.length, 2);
+    assert.equal(flipRows[0].x, flipRows[1].x);
+    assert.ok(flipRows[0].bottom <= flipRows[1].top);
+
     fs.writeFileSync(path.join(root, 'HERRAMIENTAS_DEV/qa-runtime/ribbon-responsive-3238.json'), JSON.stringify(results,null,2));
     await page.evaluate(() => app.switchRibbon('home'));
     if (await localButton.isVisible()) await localButton.click();

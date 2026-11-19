@@ -1,6 +1,59 @@
-const ALIOTH_VERSION = '3.2.40';
+const ALIOTH_VERSION = '3.2.46';
         window.ALIOTH_VERSION = ALIOTH_VERSION;
         const ALIOTH_CHANGELOG = [
+            {
+                version: '3.2.46',
+                date: '2026-11-19',
+                items: [
+                    { type: 'fix', text: '<strong>Desplazamiento automático:</strong> El control translúcido flota en el visor. El zoom se oculta durante el desplazamiento y vuelve al pausar.' },
+                    { type: 'fix', text: '<strong>Lectura por voz:</strong> La barra translúcida se ajusta al espacio del visor debajo de la cinta, al lado de los paneles.' }
+                ]
+            },
+            {
+                version: '3.2.45',
+                date: '2026-11-19',
+                items: [
+                    { type: 'fix', text: '<strong>Lectura por voz:</strong> La barra se acopla debajo de la cinta y el selector usa iconos de contorno.' },
+                    { type: 'fix', text: '<strong>Desplazamiento automático:</strong> Se ubica en una fila inferior y conserva la posición de la pestaña IA y sus flechas.' },
+                    { type: 'fix', text: '<strong>Restaurar color:</strong> El botón refleja el documento activo y vuelve a su estilo normal.' }
+                ]
+            },
+            {
+                version: '3.2.44',
+                date: '2026-11-19',
+                items: [
+                    { type: 'fix', text: '<strong>Guardar como:</strong> Guarda con contraseña y restricciones, y conserva la protección en los siguientes guardados de la sesión.' },
+                    { type: 'fix', text: '<strong>Seguridad:</strong> Carga PDFs con la mitigación de Mozilla para PDF.js. Las operaciones compatibles de la CLI conservan el cifrado y los permisos.' },
+                    { type: 'fix', text: '<strong>OCR:</strong> Reconoce español e inglés con los recursos incluidos y permite reintentar tras un fallo.' },
+                    { type: 'fix', text: '<strong>Automatización:</strong> Reemplaza todas las coincidencias verificadas y ofrece limpieza explícita de datos ocultos al censurar.' }
+                ]
+            },
+            {
+                version: '3.2.43',
+                date: '2026-11-19',
+                items: [
+                    { type: 'improve', text: 'Los botones con X de los modales, las ventanas flotantes y la vista de cuadrícula comparten el mismo diseño circular.' }
+                ]
+            },
+            {
+                version: '3.2.42',
+                date: '2026-11-19',
+                items: [
+                    { type: 'improve', text: '<strong>Recientes</strong> usa iconos de contorno para la fecha, la hora, el número de aperturas y el tamaño del archivo. El texto secundario es más claro.' },
+                    { type: 'fix', text: '<strong>Ribbon</strong> alinea los iconos y las etiquetas de una y dos líneas. Las etiquetas de Inicio se ven completas, se ajusta el espaciado en Inputs y Dibujar y FLIP se organiza en dos filas.' },
+                    { type: 'improve', text: '<strong>Imagen</strong> conserva la resolución original y la transparencia al quitar el fondo, incluso al guardar con compresión. Se añade un control vertical de nitidez.' },
+                    { type: 'fix', text: '<strong>Búsqueda y zoom</strong> muestran una lupa blanca y un borde de foco neutro. Ajustar al ancho deja un margen lateral del ancho de la pestaña de IA.' }
+                ]
+            },
+            {
+                version: '3.2.41',
+                date: '2026-11-18',
+                items: [
+                    { type: 'fix', text: '<strong>Zoom:</strong> Ajustar al ancho y Restablecer quedan juntos. Los botones de acercar y alejar enmarcan el deslizador.' },
+                    { type: 'fix', text: '<strong>Lectura:</strong> La cápsula queda en el extremo inferior derecho del visor.' },
+                    { type: 'fix', text: '<strong>Panel IA:</strong> Sigue los colores del encabezado y del ribbon y se cierra al hacer clic fuera.' }
+                ]
+            },
             {
                 version: '3.2.40',
                 date: '2026-11-18',

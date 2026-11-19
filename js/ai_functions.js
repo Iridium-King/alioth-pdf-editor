@@ -58,13 +58,27 @@
                         }
                         // Focus input
                         setTimeout(() => {
-                            const input = document.getElementById('ai-input');
-                            if (input) input.focus();
+                            if (panel.classList.contains('visible')) {
+                                document.getElementById('ai-input')?.focus();
+                            }
                         }, 350);
                         // Load current conversation if any
                         this.loadCurrentAIConversation();
                     }
                 };
+
+                const aiPanel = document.getElementById('ai-panel');
+                const aiToggle = document.getElementById('ai-floating-btn');
+                document.addEventListener('click', (event) => {
+                    if (!aiPanel?.classList.contains('visible')) return;
+                    const path = event.composedPath();
+                    if (path.includes(aiPanel) || path.includes(aiToggle)) return;
+
+                    // Defer closing until the clicked control has run and the layout can change safely.
+                    requestAnimationFrame(() => {
+                        if (aiPanel.classList.contains('visible')) app.toggleAIPanel();
+                    });
+                }, true);
 
                 // Escape key closes AI panel
                 document.addEventListener('keydown', function(e) {
@@ -171,6 +185,8 @@
                 // NEW CHAT
                 // ============================================================
                 app.aiNewChat = function () {
+                    this.stopAIResponse(false);
+                    dismissChatRetry();
                     // Save current conversation before starting new
                     if (this.aiPanelState.messages.length > 0) {
                         this.saveAIConversation();
@@ -335,6 +351,8 @@
                             getReq.onsuccess = () => {
                                 const conv = getReq.result;
                                 if (conv) {
+                                    this.stopAIResponse(false);
+                                    dismissChatRetry();
                                     this.aiPanelState.currentConversationId = conv.id;
                                     this.aiPanelState.messages = conv.messages || [];
                                     this.renderAIChatMessages();
@@ -577,170 +595,195 @@
                 }
                 // Si app.geminiApiKey ya tiene valor (de la línea 16082), lo conserva
 
-                app.sendAIMessage = async function (overrideMessage) {
-                    const input = document.getElementById('ai-input');
-                    const chatArea = document.getElementById('ai-chat-area');
-                    const message = overrideMessage || input.value.trim();
+                let activeChat = null;
+                let retryNotice = null;
 
-                    if (!message) return;
+                function setChatBusy(busy) {
+                    document.getElementById('ai-send-btn').hidden = busy;
+                    document.getElementById('ai-stop-btn').hidden = !busy;
+                }
 
-                    // Check for API key
-                    if (!this.geminiApiKey && !window.AliothSecureKeys?.gemini) {
-                        this.showApiKeyPrompt();
+                function dismissChatRetry() {
+                    if (retryNotice) retryNotice.remove();
+                    retryNotice = null;
+                }
+
+                function finishChat(run) {
+                    clearTimeout(run.timeout);
+                    run.loading?.remove();
+                    if (activeChat === run) {
+                        activeChat = null;
+                        setChatBusy(false);
+                    }
+                }
+
+                function showChatRetry(question, text, type = 'ai-error') {
+                    const id = app.addAIChatMessage(text, type, false);
+                    const notice = document.getElementById(id);
+                    if (!notice) return;
+                    const retry = document.createElement('button');
+                    retry.type = 'button';
+                    retry.className = 'ai-msg-action-btn ai-chat-retry';
+                    retry.textContent = 'Reintentar';
+                    retry.addEventListener('click', () => {
+                        if (activeChat) return;
+                        if (app.getDoc?.() !== question.doc) {
+                            app.showToast?.('Vuelve al documento de la consulta para reintentar.');
+                            return;
+                        }
+                        runChat(question);
+                    });
+                    notice.append(retry);
+                    retryNotice = notice;
+                    notice.scrollIntoView({ block: 'nearest' });
+                }
+
+                function cancelChat(run, status) {
+                    if (activeChat !== run) return;
+                    run.controller.abort();
+                    if (run.requestId) {
+                        fetch('/api/ai/chat/cancel', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ requestId: run.requestId }),
+                            keepalive: true
+                        }).catch(() => {});
+                    }
+                    finishChat(run);
+                    if (status) showChatRetry(run.question, status, 'ai-stopped');
+                }
+
+                app.stopAIResponse = function (showStatus = true) {
+                    if (activeChat) cancelChat(activeChat, showStatus ? 'Respuesta detenida.' : '');
+                };
+
+                function waitForChatRetry(signal) {
+                    return new Promise(resolve => {
+                        const finish = () => {
+                            clearTimeout(timer);
+                            signal.removeEventListener('abort', finish);
+                            resolve();
+                        };
+                        const timer = setTimeout(finish, 900);
+                        signal.addEventListener('abort', finish, { once: true });
+                    });
+                }
+
+                async function requestChat(run, payload) {
+                    const { signal } = run.controller;
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (app.geminiApiKey && !window.AliothSecureKeys?.gemini) {
+                        headers.Authorization = 'Bearer ' + app.geminiApiKey;
+                    }
+                    const started = performance.now();
+                    for (let attempt = 0; attempt < 2; attempt++) {
+                        signal.throwIfAborted();
+                        run.requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+                        let result;
+                        try {
+                            const response = await fetch('/api/ai/chat', {
+                                method: 'POST', headers, signal,
+                                body: JSON.stringify({ ...payload, requestId: run.requestId })
+                            });
+                            const data = await response.json().catch(() => ({}));
+                            result = { ...data, success: response.ok && data?.ok };
+                        } catch (error) {
+                            signal.throwIfAborted();
+                            if (!(error instanceof TypeError)) throw error;
+                            result = { error: 'PROVIDER_NETWORK_ERROR' };
+                        }
+                        run.requestId = null;
+                        signal.throwIfAborted();
+
+                        const mayRetry = result.error === 'PROVIDER_REQUEST_FAILED' || result.error === 'PROVIDER_NETWORK_ERROR';
+                        if (attempt || !mayRetry || performance.now() - started > 4000) return result;
+                        if (run.loading) run.loading.textContent = 'Reintentando la consulta…';
+                        await waitForChatRetry(signal);
+                    }
+                }
+
+                async function prepareChat(question, signal) {
+                    const { doc, message } = question;
+                    const totalPages = doc?.pages?.length || 0;
+                    const extractedText = totalPages ? await app.extractTextFromAllPages(doc, signal) : '';
+                    signal.throwIfAborted();
+                    let context = '';
+                    if (extractedText) {
+                        const limitedText = extractedText.substring(0, 30000);
+                        context = '[DOCUMENTO - ' + totalPages + ' páginas]\n\n' + limitedText;
+                        if (limitedText.length < extractedText.length) context += '\n[Texto del documento recortado.]';
+                        context += '\n\nPREGUNTA DEL USUARIO:\n';
+                    } else if (totalPages) {
+                        context = '[DOCUMENTO SIN TEXTO EXTRAÍBLE - ' + totalPages + ' páginas]\n\n';
+                    }
+                    const needsImages = totalPages > 0 && totalPages <= 10
+                        && (!extractedText || /imagen|visual|gráfico|foto|diagrama/i.test(message));
+                    const images = needsImages ? (await app.captureAllPagesAsImages(10, doc, signal)).map(image => image.data) : [];
+                    signal.throwIfAborted();
+                    return { prompt: context + message, images };
+                }
+
+                async function runChat(question) {
+                    if (!window.aliothLegal?.isAiEnabled(localStorage)) {
+                        app.addAIChatMessage('Activa las funciones de IA para usar el chat.', 'ai-error', false);
                         return;
                     }
+                    dismissChatRetry();
+                    const loadingId = app.addAIChatMessage('Preparando la respuesta…', 'ai-loading');
+                    const run = { question, controller: new AbortController(), loading: document.getElementById(loadingId) };
+                    activeChat = run;
+                    run.loading?.setAttribute('role', 'status');
+                    setChatBusy(true);
+                    run.timeout = setTimeout(() => cancelChat(run, 'La consulta tardó demasiado. Puedes reintentar.'), 26000);
+                    const { signal } = run.controller;
+                    try {
+                        question.payload ??= await prepareChat(question, signal);
+                        signal.throwIfAborted();
+                        if (run.loading) run.loading.textContent = 'Esperando respuesta…';
+                        const result = await requestChat(run, {
+                            ...question.payload,
+                            preferredProvider: localStorage.getItem('alioth_default_ai_provider') || 'gemini'
+                        });
+                        signal.throwIfAborted();
+                        if (result.success && typeof result.text === 'string' && result.text.trim()) {
+                            app.addAIChatMessage(result.text, 'ai');
+                            return;
+                        }
 
-                    // Add user message to chat
+                        const messages = {
+                            PROVIDER_KEY_REQUIRED: 'Vincula una clave API en Preferencias para usar el chat.',
+                            PROVIDER_AUTH_FAILED: 'No fue posible autenticar los proveedores configurados. Revisa tus claves en Preferencias.',
+                            PROVIDER_PAYMENT_REQUIRED: 'El proveedor requiere revisar la facturación de tu cuenta.',
+                            PROVIDER_RATE_LIMITED: 'Los modelos disponibles alcanzaron su límite de solicitudes.',
+                            PROVIDER_TIMEOUT: 'Los modelos disponibles tardaron demasiado en responder.',
+                            INVALID_AI_CHAT: 'No se pudo enviar la consulta. Intenta con un mensaje más corto o vuelve a abrir el PDF.'
+                        };
+                        showChatRetry(question, messages[result.error] || 'Ningún modelo disponible pudo responder.');
+                        if (result.error === 'PROVIDER_KEY_REQUIRED') app.showApiKeyPrompt();
+                    } catch (error) {
+                        if (!signal.aborted) {
+                            console.warn('No se pudo completar la consulta de IA:', error.name);
+                            showChatRetry(question, 'No se pudo completar la consulta de IA.');
+                        }
+                    } finally {
+                        finishChat(run);
+                    }
+                }
+
+                app.sendAIMessage = function (overrideMessage) {
+                    const input = document.getElementById('ai-input');
+                    const message = (overrideMessage || input.value).trim();
+                    if (!message || activeChat) return;
+                    if (!window.aliothLegal?.isAiEnabled(localStorage)) {
+                        this.addAIChatMessage('Activa las funciones de IA para usar el chat.', 'ai-error', false);
+                        return;
+                    }
                     this.addAIChatMessage(message, 'user');
-
                     if (!overrideMessage) {
                         input.value = '';
                         input.style.height = 'auto';
                     }
-
-                    // Add loading indicator
-                    const loadingId = this.addAIChatMessage('⏳ Analizando TODO el documento (todas las páginas)...', 'ai-loading');
-
-                    try {
-                        const doc = this.getDoc ? this.getDoc() : null;
-                        const totalPages = doc?.pages?.length || 0;
-
-                        console.log(`🤖 Iniciando análisis de documento con ${totalPages} páginas`);
-                        console.log('📋 Estructura del documento:', {
-                            id: doc?.id,
-                            totalPages: totalPages,
-                            sources: Object.keys(doc?.sources || {})
-                        });
-
-                        // Extract text from ALL pages
-                        const extractedText = await this.extractTextFromAllPages();
-
-                        console.log('📊 TEXTO EXTRAÍDO:');
-                        console.log('  - Total caracteres:', extractedText.length);
-                        console.log('  - Primeros 200 chars:', extractedText.substring(0, 200));
-                        console.log('  - Últimos 200 chars:', extractedText.substring(extractedText.length - 200));
-
-                        const parts = [];
-                        let contextPrefix = "";
-
-                        if (extractedText && extractedText.length > 0) {
-                            // Limit to 30,000 characters to avoid token limits
-                            const limitedText = extractedText.substring(0, 30000);
-                            contextPrefix = `[DOCUMENTO COMPLETO - ${totalPages} páginas - ${extractedText.length} caracteres totales]:\n\n${limitedText}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPREGUNTA DEL USUARIO:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-                            if (extractedText.length > 30000) {
-                                contextPrefix += `\n[NOTA: El documento completo tiene ${extractedText.length} caracteres. Mostrando primeros 30,000 para análisis]\n\n`;
-                            }
-                        } else {
-                            console.warn('⚠️ No se pudo extraer texto del documento');
-                            contextPrefix = `[DOCUMENTO SIN TEXTO EXTRAÍBLE - ${totalPages} páginas - Posiblemente imágenes escaneadas]\n\n`;
-                        }
-
-                        // Add text context + user message
-                        parts.push({ text: contextPrefix + message });
-
-                        console.log('📤 Enviando a Gemini:');
-                        console.log('  - Contexto: ', contextPrefix.substring(0, 300) + '...');
-                        console.log('  - Pregunta:', message);
-
-                        // Decide if we need images based on the message or document type
-                        const needsImages = totalPages <= 10 && (
-                            message.toLowerCase().includes('imagen') ||
-                            message.toLowerCase().includes('visual') ||
-                            message.toLowerCase().includes('gráfico') ||
-                            message.toLowerCase().includes('foto') ||
-                            message.toLowerCase().includes('diagrama') ||
-                            !extractedText || extractedText.length < 500 // If little text, probably image-based
-                        );
-
-                        if (needsImages) {
-                            console.log('📸 Capturando imágenes de todas las páginas...');
-
-                            // Update loading message
-                            const loadingEl = document.getElementById(loadingId);
-                            if (loadingEl) {
-                                loadingEl.innerHTML = `
-                                    <div style="display: flex; align-items: center; gap: 10px;">
-                                        <div style="width: 20px; height: 20px; border: 3px solid rgba(139, 92, 246, 0.3); border-top-color: #8b5cf6; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-                                        <div>Capturando imágenes de ${totalPages} páginas...</div>
-                                    </div>
-                                `;
-                            }
-
-                            const images = await this.captureAllPagesAsImages(10); // Max 10 pages for performance
-
-                            // Add all images to parts
-                            for (const img of images) {
-                                parts.push({
-                                    inline_data: {
-                                        mime_type: "image/jpeg",
-                                        data: img.data
-                                    }
-                                });
-                            }
-
-                            console.log(`✅ ${images.length} imágenes agregadas al contexto`);
-                        } else {
-                            console.log('📝 Solo texto - sin captura de imágenes');
-                        }
-
-                        // Use Google Gemini API (gemini-3.6-flash - supports multiple images)
-                        const response = await fetch(
-                            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${this.geminiApiKey}`,
-                            {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    contents: [{
-                                        parts: parts
-                                    }],
-                                    generationConfig: {
-                                        temperature: 0.7,
-                                        maxOutputTokens: 4096 // Increased for more detailed responses
-                                    }
-                                })
-                            }
-                        );
-
-                        const data = await response.json();
-
-                        // Remove loading indicator
-                        const loadingEl = document.getElementById(loadingId);
-                        if (loadingEl) loadingEl.remove();
-
-                        if (data.error) {
-                            if (data.error.code === 400 || data.error.code === 403) {
-                                localStorage.removeItem('gemini_api_key');
-                                this.geminiApiKey = '';
-                                this.addAIChatMessage(
-                                    '❌ API Key inválida. Por favor ingresa una nueva.',
-                                    'ai-error'
-                                );
-                                this.showApiKeyPrompt();
-                            } else {
-                                this.addAIChatMessage(
-                                    `❌ Error: ${data.error.message}`,
-                                    'ai-error'
-                                );
-                            }
-                            return;
-                        }
-
-                        // Extract response text
-                        const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text ||
-                            'No se pudo obtener respuesta.';
-                        this.addAIChatMessage(aiText, 'ai');
-
-                    } catch (error) {
-                        console.error('Gemini API Error:', error);
-                        const loadingEl = document.getElementById(loadingId);
-                        if (loadingEl) loadingEl.remove();
-
-                        this.addAIChatMessage(
-                            '❌ Error de conexión. Verifica tu internet.',
-                            'ai-error'
-                        );
-                    }
+                    return runChat({ doc: this.getDoc?.(), message });
                 };
 
                 // ============================================================
@@ -752,8 +795,8 @@
 
                     const promptHtml = `
                         <div id="api-key-prompt" style="
-                            background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(236, 72, 153, 0.2));
-                            border: 1px solid #8b5cf6;
+                            background: var(--ai-response-background);
+                            border: 1px solid var(--ai-border);
                             border-radius: 12px;
                             padding: 16px;
                             margin-bottom: 16px;
@@ -763,7 +806,7 @@
                                 <span style="font-size: 12px; opacity: 0.8;">
                                     Obtén tu key gratis en 
                                     <a href="https://aistudio.google.com/apikey" target="_blank" 
-                                       style="color: #8b5cf6;">Google AI Studio</a>
+                                       style="color: var(--ai-text); text-decoration: underline;">Google AI Studio</a>
                                 </span>
                             </p>
                             <div style="display: flex; gap: 8px;">
@@ -772,7 +815,7 @@
                                     style="
                                         flex: 1;
                                         padding: 10px 12px;
-                                        border: 1px solid rgba(139, 92, 246, 0.5);
+                                        border: 1px solid var(--ai-border);
                                         border-radius: 8px;
                                         background: rgba(0,0,0,0.3);
                                         color: white;
@@ -780,8 +823,8 @@
                                     "
                                 >
                                 <button onclick="app.saveApiKey()" style="
-                                    background: linear-gradient(135deg, #8b5cf6, #ec4899);
-                                    border: none;
+                                    background: var(--ai-hover-background);
+                                    border: 1px solid var(--ai-border);
                                     color: white;
                                     padding: 10px 16px;
                                     border-radius: 8px;
@@ -801,13 +844,25 @@
                     }, 100);
                 };
 
-                app.saveApiKey = function () {
+                app.saveApiKey = async function () {
                     const input = document.getElementById('gemini-key-input');
                     const key = input?.value?.trim();
 
                     if (key && key.length > 20) {
-                        this.geminiApiKey = key;
-                        localStorage.setItem('gemini_api_key', key);
+                        try {
+                            const response = await fetch('/api/secure-credentials', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ provider: 'gemini', key })
+                            });
+                            if (!response.ok) throw new Error('No se pudo guardar la clave');
+                            this.geminiApiKey = key;
+                            localStorage.removeItem('gemini_api_key');
+                            await this._refreshSecureKeyStatus?.();
+                        } catch (_) {
+                            this.showToast?.('No se pudo guardar la clave API.');
+                            return;
+                        }
 
                         const prompt = document.getElementById('api-key-prompt');
                         if (prompt) prompt.remove();
@@ -847,126 +902,69 @@
                 // ============================================================
                 // EXTRACT TEXT FROM ALL PAGES (Reads entire document)
                 // ============================================================
-                app.extractTextFromAllPages = async function () {
-                    try {
-                        const doc = this.getDoc ? this.getDoc() : null;
-                        if (!doc || !doc.pages || doc.pages.length === 0) return '';
-
-                        const totalPages = doc.pages.length;
-                        console.log(`📄 Extrayendo texto de ${totalPages} páginas...`);
-
-                        // Extracción local con Poppler y respaldo PyMuPDF / PDF.js.
-                        if (window.PythonManager?.extractDocumentText) {
+                app.extractTextFromAllPages = async function (doc = this.getDoc?.(), signal) {
+                    if (!doc?.pages?.length) return '';
+                    const sections = [];
+                    let characters = 0;
+                    for (const [index, record] of doc.pages.entries()) {
+                        signal?.throwIfAborted();
+                        let text = record.textContent?.trim() || '';
+                        const source = doc.sources[record.sourceId];
+                        if (!text && source) {
                             try {
-                                const sourceIds = [...new Set(doc.pages.map(p => p.sourceId))];
-                                // Si todos los sources son el mismo PDF, extraer en una sola llamada
-                                if (sourceIds.length === 1) {
-                                    const src = doc.sources[sourceIds[0]];
-                                    if (src && src.buffer) {
-                                        const pyText = await PythonManager.extractDocumentText(src.buffer);
-                                        if (pyText && pyText.length > 0) {
-                                            console.log(`🐍 PyMuPDF AI context: ${pyText.length} chars extraídos`);
-                                            return pyText;
-                                        }
-                                    }
-                                } else {
-                                    // Múltiples sources: extraer cada uno y concatenar
-                                    let fullText = '';
-                                    for (const sid of sourceIds) {
-                                        const src = doc.sources[sid];
-                                        if (!src || !src.buffer) continue;
-                                        const pyText = await PythonManager.extractDocumentText(src.buffer);
-                                        if (pyText) fullText += pyText + '\n';
-                                    }
-                                    if (fullText.trim().length > 0) {
-                                        console.log(`🐍 PyMuPDF AI context (multi-source): ${fullText.length} chars`);
-                                        return fullText.trim();
-                                    }
-                                }
-                            } catch (pyErr) {
-                                console.warn("🐍 extractDocumentText failed, using PDF.js fallback:", pyErr);
+                                const pdf = await this.loadSourcePdf(source);
+                                signal?.throwIfAborted();
+                                const page = await pdf.getPage(record.pageIndex + 1);
+                                signal?.throwIfAborted();
+                                const content = await page.getTextContent();
+                                text = content.items.map(item => item.str).join(' ').trim();
+                            } catch (error) {
+                                signal?.throwIfAborted();
+                                console.warn('No se pudo extraer texto de una página para el chat:', error.name);
                             }
                         }
-
-                        // ── Fallback: PDF.js getTextContent por página ──────────────────────
-                        console.log("🔍 Extracción de texto AI con PDF.js (fallback)...");
-                        let fullText = '';
-                        for (let i = 0; i < totalPages; i++) {
-                            const currentPage = doc.pages[i];
-                            if (!currentPage) continue;
-                            let pageText = '';
-                            if (currentPage.textContent && currentPage.textContent.trim()) {
-                                pageText = currentPage.textContent;
-                            } else if (currentPage.sourceId && doc.sources && doc.sources[currentPage.sourceId]) {
-                                try {
-                                    const sourceData = doc.sources[currentPage.sourceId];
-                                    let pdfDoc = sourceData.doc;
-                                    if (!pdfDoc && sourceData.buffer && window.pdfjsLib) {
-                                        pdfDoc = await pdfjsLib.getDocument({ data: sourceData.buffer }).promise;
-                                        sourceData.doc = pdfDoc;
-                                    }
-                                    if (pdfDoc) {
-                                        const page = await pdfDoc.getPage(currentPage.pageIndex + 1);
-                                        const textContent = await page.getTextContent();
-                                        pageText = textContent.items.map(item => item.str).join(' ');
-                                    }
-                                } catch (e) {
-                                    console.warn(`⚠️ No se pudo extraer texto de página ${i + 1}:`, e);
-                                }
-                            }
-                            const SEP = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
-                            fullText += `\n${SEP}\nPÁGINA ${i + 1} DE ${totalPages}\n${SEP}\n`;
-                            fullText += pageText && pageText.trim()
-                                ? pageText.trim() + '\n'
-                                : '[Esta página no contiene texto extraíble o está en formato imagen]\n';
-                        }
-                        console.log(`✅ PDF.js fallback: ${fullText.length} chars`);
-                        return fullText;
-                    } catch (e) {
-                        console.error('❌ Error extracting text from all pages:', e);
-                        return '';
+                        if (!text) continue;
+                        const section = 'PÁGINA ' + (index + 1) + ' DE ' + doc.pages.length + '\n' + text;
+                        sections.push(section);
+                        characters += section.length + 2;
+                        if (characters > 30000) break;
                     }
+                    return sections.join('\n\n');
                 };
 
-                // ============================================================
-                // CAPTURE ALL PAGES AS IMAGES (For documents with visual content)
-                // ============================================================
-                app.captureAllPagesAsImages = async function (maxPages = 10) {
-                    try {
-                        const doc = this.getDoc();
-                        if (!doc || !doc.pages.length) return [];
-
-                        const firstPage = doc.pages[0];
-                        const source = doc.sources[firstPage.sourceId];
-                        if (!source) return [];
-
-                        const pdfDoc = source.doc || await pdfjsLib.getDocument({ data: source.buffer.slice(0) }).promise;
-                        source.doc = pdfDoc;
-
-                        const totalToCapture = Math.min(pdfDoc.numPages, maxPages);
-                        const capturePromises = [];
-
-                        for (let i = 1; i <= totalToCapture; i++) {
-                            capturePromises.push((async (pageNum) => {
-                                const page = await pdfDoc.getPage(pageNum);
-                                const viewport = page.getViewport({ scale: 1.0 });
-                                const canvas = document.createElement('canvas');
-                                canvas.width = viewport.width;
-                                canvas.height = viewport.height;
-                                const ctx = canvas.getContext('2d');
-                                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-
-                                const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-                                return { page: pageNum, data: base64 };
-                            })(i));
+                app.captureAllPagesAsImages = async function (maxPages = 10, doc = this.getDoc?.(), signal) {
+                    if (!doc?.pages?.length) return [];
+                    const images = await Promise.all(doc.pages.slice(0, maxPages).map(async (record, index) => {
+                        signal?.throwIfAborted();
+                        if (record.canvas) {
+                            return { page: index + 1, data: record.canvas.toDataURL('image/jpeg', 0.8).split(',')[1] };
                         }
-
-                        const images = await Promise.all(capturePromises);
-                        return images.sort((a, b) => a.page - b.page);
-                    } catch (e) {
-                        console.error('Capture Error:', e);
-                        return [];
-                    }
+                        const source = doc.sources[record.sourceId];
+                        if (!source) return null;
+                        try {
+                            const pdf = await this.loadSourcePdf(source);
+                            const page = await pdf.getPage(record.pageIndex + 1);
+                            signal?.throwIfAborted();
+                            const viewport = page.getViewport({ scale: 1, rotation: page.rotate + (record.rotation || 0) });
+                            const canvas = document.createElement('canvas');
+                            canvas.width = viewport.width;
+                            canvas.height = viewport.height;
+                            const task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+                            const cancel = () => task.cancel();
+                            signal?.addEventListener('abort', cancel, { once: true });
+                            try {
+                                await task.promise;
+                                return { page: index + 1, data: canvas.toDataURL('image/jpeg', 0.8).split(',')[1] };
+                            } finally {
+                                signal?.removeEventListener('abort', cancel);
+                            }
+                        } catch (error) {
+                            signal?.throwIfAborted();
+                            console.warn('No se pudo preparar una imagen para el chat:', error.name);
+                            return null;
+                        }
+                    }));
+                    return images.filter(Boolean);
                 };
 
                 // ============================================================
@@ -1042,15 +1040,16 @@
                 // ============================================================
                 // ADD CHAT MESSAGE (UI Helper) - ENHANCED
                 // ============================================================
-                app.addAIChatMessage = function (text, type) {
+                let aiMessageSequence = 0;
+                app.addAIChatMessage = function (text, type, record = true) {
                     const chatArea = document.getElementById('ai-chat-area');
                     if (!chatArea) return null;
 
-                    const id = 'ai-msg-' + Date.now();
+                    const id = 'ai-msg-' + Date.now() + '-' + ++aiMessageSequence;
                     const msgIndex = this.aiPanelState?.messages?.length || 0;
 
                     // Save to state (except loading messages)
-                    if (type !== 'ai-loading' && type !== 'loading' && this.aiPanelState) {
+                    if (record && type !== 'ai-loading' && type !== 'loading' && this.aiPanelState) {
                         this.aiPanelState.messages.push({
                             id: id,
                             type: type === 'user' ? 'user' : 'ai',
@@ -1114,10 +1113,6 @@
                         @keyframes spin {
                             0% { transform: rotate(0deg); }
                             100% { transform: rotate(360deg); }
-                        }
-                        #ai-input:focus {
-                            border-color: #8b5cf6 !important;
-                            box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2) !important;
                         }
                     `;
                     document.head.appendChild(style);

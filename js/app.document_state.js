@@ -55,6 +55,7 @@ Object.assign(app, {
             baselineSnapshotId: current.baselineSnapshotId || snapshotId(),
             baselineSnapshot: current.baselineSnapshot || null,
             redactionVerification: current.redactionVerification || null,
+            outputProtectionRequired: current.outputProtectionRequired === true,
             lifecycleEpoch: Number.isSafeInteger(current.lifecycleEpoch) ? current.lifecycleEpoch : 0,
             operation: current.operation || 'idle'
         };
@@ -75,11 +76,11 @@ Object.assign(app, {
         return work;
     },
 
-    flushDocumentEdits: async function (docId) {
+    flushDocumentEdits: async function (docId, { blur = true } = {}) {
         const doc = this.getDocumentById(docId);
         if (!doc) return;
         const active = document.activeElement;
-        if (active && typeof active.blur === 'function') active.blur();
+        if (blur && active && typeof active.blur === 'function') active.blur();
         while (this._pendingDocumentEdits?.get(docId)?.size) {
             await Promise.all([...this._pendingDocumentEdits.get(docId)]);
         }

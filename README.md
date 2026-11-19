@@ -1,6 +1,6 @@
 # Alioth PDF Editor
 
-Editor portable de PDF para Windows, de ALIOTH TDAH LABS. Versión 3.2.40.
+Editor portable de PDF para Windows, de ALIOTH TDAH LABS. Versión 3.2.46.
 Código propio: GNU AGPL-3.0-or-later. Consulta LICENSE y COPYING.
 
 ## Construcción pública
@@ -37,9 +37,9 @@ Nunca publiques documentos ni credenciales personales al contribuir.
 
 ## Windows y firma
 
-El portable comprueba una vez por usuario, certificado y ubicación la instalación
-de su raíz de firma local y el registro como opción para abrir PDF. No fuerza
-el visor predeterminado. Los rechazos de políticas se recuerdan. El aviso y las
+El portable comprueba una vez por usuario y ubicación el registro como opción
+para abrir PDF. No fuerza el visor predeterminado. El certificado raíz de firma
+local requiere instalación manual explícita. Los rechazos de registro se recuerdan. El aviso y las
 instrucciones para retirar esta integración están dentro de
 **About → Legal → Windows y firma local**.
 

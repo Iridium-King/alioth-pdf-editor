@@ -437,9 +437,8 @@ Object.assign(app, {
                             <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
                         </svg>
                         <strong style="font-size:15px;flex:1;">Orden de Tabulación</strong>
-                        <button onclick="document.getElementById('_tab_order_panel').remove()"
-                            style="background:var(--btn-hover);border:1px solid var(--border);border-radius:50%;
-                                   width:26px;height:26px;cursor:pointer;color:var(--text-main);font-size:13px;">✕</button>
+                        <button aria-label="Cerrar" type="button" class="app-close-button" onclick="document.getElementById('_tab_order_panel').remove()"
+                           ></button>
                     </div>
 
                     <div style="font-size:11px;color:var(--text-muted,#888);margin-bottom:12px;">

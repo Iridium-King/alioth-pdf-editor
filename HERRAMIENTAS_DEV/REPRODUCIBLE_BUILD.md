@@ -41,7 +41,7 @@ equipo del mantenedor, usando su almacén privado de certificados de Windows.
 ```powershell
 # Solo una vez; requiere PowerShell 7. No se ejecuta desde bootstrap ni CI.
 ./HERRAMIENTAS_DEV/create_local_signing_certificate.ps1
-# La confianza de la raíz pública se gestiona con la integración de la app.
+# La confianza de la raíz pública requiere una acción manual en Windows.
 $env:ALIOTH_SIGN_LOCAL='1'
 ./.build-python/python.exe build_executables.py --edition both --release-dir ../salida-privada
 ./sign_release.ps1 -Edition both -ReleasePath ../salida-privada

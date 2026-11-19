@@ -83,9 +83,9 @@ if server:
         res = engine.execute('pdf_splice_text', locals())
         return json.dumps(res, ensure_ascii=False, indent=2)
 
-    @server.tool(name='pdf_redact_sensitive_data', description='Permanently redact and erase literal sensitive strings from a PDF.')
-    def pdf_redact_sensitive_data(filepath: str, patterns: List[str], page_number: int=0, fill_color: str='black', output_path: str='', password: str='') -> str:
-        """Permanently redacts words/patterns (page_number=0 for all pages)."""
+    @server.tool(name='pdf_redact_sensitive_data', description='Permanently redact literal page text and optionally sanitize hidden document data.')
+    def pdf_redact_sensitive_data(filepath: str, patterns: List[str], page_number: int=0, fill_color: str='black', output_path: str='', password: str='', sanitize: bool=False) -> str:
+        """Page 0 targets all pages. Sanitizing also removes metadata, attachments, scripts and hidden text."""
         res = engine.execute('pdf_redact_sensitive_data', locals())
         return json.dumps(res, ensure_ascii=False, indent=2)
 

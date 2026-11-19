@@ -83,7 +83,7 @@ test('the current AI interface does not expose the removed analysis modal', () =
   assert.match(html, /id="translation-review-modal"/);
 });
 
-test('AI translation creates a copy with translation notes from the modal', () => {
+test('AI translation offers comments by default and a separate translated copy', () => {
   const aiToolbar = ribbonToolbar('toolbar-ai');
   assert.match(aiToolbar, /id="btn-translate-review"[^>]*onclick="app\.showTextTranslationModal\(\)"/);
   assert.match(aiToolbar, /id="btn-translate-review"[\s\S]*?>[\s\S]*?Traducir<br>Documento/);
@@ -93,11 +93,11 @@ test('AI translation creates a copy with translation notes from the modal', () =
   assert.match(modal[0], /Traducir documento/);
   assert.match(modal[0], /id="translation-review-items"/);
   assert.match(modal[0], /value="selection">Texto seleccionado/);
-  assert.doesNotMatch(modal[0], /id="translation-review-prepare"/);
-  assert.match(modal[0], /id="translation-review-apply"[^>]*>Aplicar en copia/);
+  assert.match(modal[0], /id="translation-review-prepare"[^>]*>Crear copia traducida/);
+  assert.match(modal[0], /id="translation-review-apply"[^>]*>Traducir con comentarios/);
   assert.match(modal[0], /id="translation-review-progress"[\s\S]*?role="progressbar"[\s\S]*?id="translation-review-progress-bar"/);
   assert.match(agentic, /Página escaneada: reconstrucción visual pendiente/);
-  assert.match(agentic, /createTranslationNotesCopyFromModal: async function/);
+  assert.match(agentic, /createTranslationNotesFromModal: async function/);
 });
 
 test('translation review shows staged progress for preparation and copy creation', () => {

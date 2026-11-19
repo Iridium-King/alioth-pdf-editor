@@ -19,7 +19,7 @@ las mismas operaciones del motor PDF. Consulta [CLI_GUIDE.md](CLI_GUIDE.md).
 | `pdf_read_text` | Extrae texto plano, bloques posicionados o palabras con bboxes. | `filepath`, `page_number` (1-indexed, o 0 para todas), `detail_level` ("text", "blocks", "words") |
 | `pdf_search_text` | Busca frases o palabras clave y devuelve coordenadas exactas y contexto circundante. | `filepath`, `query`, `page_number`, `case_sensitive` |
 | `pdf_splice_text` | **Edición quirúrgica:** Reemplaza texto in situ preservando tipografía, alineación y fondo original sin alterar el PDF. | `filepath`, `page_number`, `old_text`, `new_text`, `output_path`, `font_name`, `font_size` |
-| `pdf_redact_sensitive_data` | Censura y remueve físicamente textos sensibles con cuadro negro o blanco. | `filepath`, `patterns` (lista de textos literales), `page_number`, `fill_color`, `output_path` |
+| `pdf_redact_sensitive_data` | Elimina texto literal de página. Con `sanitize: true` también limpia metadatos, adjuntos, scripts y texto oculto. | `filepath`, `patterns`, `page_number`, `fill_color`, `output_path`, `sanitize` |
 | `pdf_render_page_image` | Renderiza una página a imagen PNG de alta resolución (ideal para agentes con visión multimodal). | `filepath`, `page_number`, `dpi` (default 150), `output_path` |
 | `pdf_organize_pages` | Rota páginas (90°, 180°, 270°), elimina páginas o reordena la secuencia de hojas. | `filepath`, `output_path`, `rotations`, `delete_pages`, `reorder_pages` |
 | `pdf_merge` | Une múltiples archivos PDF en un solo documento continuo. | `input_paths`, `output_path` |

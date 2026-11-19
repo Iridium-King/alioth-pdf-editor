@@ -325,7 +325,8 @@ function buildTranslationNoteGroups(units, pages, selectedText) {
         const page = pages?.[unit.pageIndex];
         const side = translationNoteSide(unit, page);
         const previous = lastByPage.get(unit.pageIndex);
-        const sameParagraph = canMergeTranslationUnits(previous, unit, selectedText);
+        const sourceGeometry = Boolean(unit.sourceId);
+        const sameParagraph = previous?.sourceGeometry === sourceGeometry && canMergeTranslationUnits(previous, unit, selectedText);
         if (sameParagraph) {
             previous.text += (previous.text.endsWith('-') ? '' : ' ') + unit.text;
             previous.sourceText += (previous.sourceText.endsWith('-') ? '' : ' ') + unit.text;
@@ -340,7 +341,7 @@ function buildTranslationNoteGroups(units, pages, selectedText) {
         } else {
             const group = { id: newId('note'), text: unit.text, sourceText: unit.text, pageIndex: unit.pageIndex,
                 rect: { ...unit.rect }, pageWidth: unit.pageWidth || page?._pdfW, pageHeight: unit.pageHeight || page?._pdfH,
-                fontSize: unit.fontSize || 12, isScan: !!unit.isScan, noteBlock: unit.noteBlock, side };
+                fontSize: unit.fontSize || 12, isScan: !!unit.isScan, noteBlock: unit.noteBlock, side, sourceGeometry };
             groups.push(group);
             lastByPage.set(unit.pageIndex, group);
         }
@@ -350,6 +351,68 @@ function buildTranslationNoteGroups(units, pages, selectedText) {
 
 function requiresOpaqueImageOverlay(unit) {
     return !!unit?.isScan || !!unit?.overImage;
+}
+
+async function pendingTranslationNoteGroups(app, doc, pages, groups, language, signal) {
+    const byPage = new Map();
+    for (const group of groups) {
+        if (!byPage.has(group.pageIndex)) byPage.set(group.pageIndex, []);
+        byPage.get(group.pageIndex).push(group);
+    }
+    const duplicates = new Set();
+    const author = 'Traducción · ' + language;
+    const annotationString = value => typeof value === 'string' ? value : value?.str || '';
+    for (const [pageIndex, pageGroups] of byPage) {
+        if (signal.aborted) throw new Error('TRANSLATION_CANCELLED');
+        const page = pages[pageIndex];
+        const existing = new Map();
+        const add = (text, x, y, pdfRect) => {
+            const key = comparableText(text);
+            if (!existing.has(key)) existing.set(key, []);
+            existing.get(key).push({ x, y, pdfRect });
+        };
+        for (const note of page.objects || []) {
+            if (note.translationNote && note.translationLanguage === language) add(note.sourceText, note.x, note.y, note.translationPdfAnchor);
+        }
+        const source = doc.sources?.[page.sourceId];
+        const pdf = source?.doc || (source?.buffer && await app.loadSourcePdf?.(source));
+        if (pdf?.getPage) {
+            const pdfPage = await pdf.getPage(page.pageIndex + 1);
+            const annotations = await pdfPage.getAnnotations({ intent: 'display' });
+            const viewport = pdfPage.getViewport({ scale: 1, rotation: 0 });
+            const rotation = ((pdfPage.rotate || 0) + (page.rotation || 0)) % 360;
+            const editedViewport = rotation ? pdfPage.getViewport({ scale: 1, rotation }) : viewport;
+            for (const group of pageGroups) {
+                const space = group.sourceGeometry ? viewport : editedViewport;
+                const { x, y, width, height } = group.rect;
+                group.pdfAnchor = [
+                    ...space.convertToPdfPoint(x, y),
+                    ...space.convertToPdfPoint(x + Math.max(24, width), y + Math.max(14, height))
+                ];
+            }
+            for (const note of annotations) {
+                const title = annotationString(note.titleObj) || annotationString(note.title) || annotationString(note.author);
+                if (title !== author || !note.rect) continue;
+                const contents = annotationString(note.contentsObj) || annotationString(note.contents);
+                const original = /^Original: ([\s\S]+?)\r?\n\r?\nTraducción: /.exec(contents)?.[1];
+                if (!original) continue;
+                add(original, note.rect[0], (rotation % 180 ? viewport.width : viewport.height) - note.rect[3], note.rect);
+            }
+        }
+        for (const group of pageGroups) {
+            const sameOrigin = note => {
+                if (note.pdfRect && group.pdfAnchor) {
+                    const [x1, y1, x2, y2] = note.pdfRect;
+                    const [gx1, gy1, gx2, gy2] = group.pdfAnchor;
+                    if (Math.abs(Math.min(x1, x2) - Math.min(gx1, gx2)) < 3 &&
+                        Math.abs(Math.max(y1, y2) - Math.max(gy1, gy2)) < 3) return true;
+                }
+                return Math.abs(note.x - group.rect.x) < 3 && Math.abs(note.y - group.rect.y) < 3;
+            };
+            if (existing.get(comparableText(group.sourceText))?.some(sameOrigin)) duplicates.add(group);
+        }
+    }
+    return groups.filter(group => !duplicates.has(group));
 }
 
 function setTranslationReviewProgress({ visible, value = 0, label = '', busy = false } = {}) {
@@ -698,7 +761,7 @@ function translationReviewConfiguration() {
     ]);
 }
 
-async function requestJsonFromConfiguredProvider(prompt, temperature, task, metrics, cancellationSignal, onRateLimit) {
+async function requestJsonFromConfiguredProvider(prompt, temperature, task, metrics, cancellationSignal, onRateLimit, expectedTranslationIds) {
     let response;
     try {
         const timeoutSignal = task === 'translation' && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
@@ -706,7 +769,9 @@ async function requestJsonFromConfiguredProvider(prompt, temperature, task, metr
         const signal = cancellationSignal && timeoutSignal && typeof AbortSignal.any === 'function'
             ? AbortSignal.any([cancellationSignal, timeoutSignal]) : cancellationSignal || timeoutSignal;
         response = await fetch('/api/ai/generate-json', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, temperature, ...(task ? { task } : {}), ...(metrics ? { metrics } : {}) }),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, temperature, ...(task ? { task } : {}), ...(metrics ? { metrics } : {}),
+                ...(expectedTranslationIds ? { expectedTranslationIds } : {}) }),
             signal
         });
     } catch (error) {
@@ -864,6 +929,7 @@ async function requestTranslationPayload(units, targetLanguage, request, onProgr
         const batchStarted = Date.now();
         const batchId = `${batchIndex + 1}-${attemptKind}-${newId('request').slice(-6)}`;
         const requested = batch.map(({ unitId, text }) => ({ unitId, text }));
+        const expectedIds = requested.map(item => item.unitId);
         const prompt = [
             `Traduce al ${targetLanguage} únicamente los textos de la lista JSON.`,
             'El texto pertenece a un PDF de diseño fijo. Usa una traducción concisa y fiel; no añadas explicaciones, expansiones ni información ausente. No omitas significado para acortarla.',
@@ -877,8 +943,8 @@ async function requestTranslationPayload(units, targetLanguage, request, onProgr
                 : await requestJsonFromConfiguredProvider(prompt, 0, 'translation', {
                     ...metrics, batchId, batchIndex, attemptKind, itemCount: requested.length,
                     characterCount: requested.reduce((sum, item) => sum + item.text.length, 0)
-                }, signal, limitQuotaConcurrency);
-            const parsed = parseTranslationResponse(payload, requested.map(item => item.unitId));
+                }, signal, limitQuotaConcurrency, expectedIds);
+            const parsed = parseTranslationResponse(payload, expectedIds);
             void recordTranslationMetric({
                 ...metrics, event: 'batch_completed', batchId, batchIndex, attemptKind,
                 itemCount: requested.length, characterCount: requested.reduce((sum, item) => sum + item.text.length, 0),
@@ -1361,7 +1427,7 @@ Object.assign(app, {
         const result = spans.filter(span => !span.needsOcr);
         try {
             worker = await measureTranslationExtraction(diagnostics, 'browser_ocr_init', () =>
-                Tesseract.createWorker('eng+spa', 1, { workerPath: 'libs/tesseract.worker.min.js' }));
+                this._createLocalOCRWorker('eng+spa'));
             checkCancelled();
             pdf = await measureTranslationExtraction(diagnostics, 'browser_pdf_open', () =>
                 pdfjsLib.getDocument({ data: buffer.slice(0) }).promise, { byteLength: buffer.byteLength });
@@ -1494,83 +1560,22 @@ Object.assign(app, {
         return result;
     },
     createTranslationNotesFromModal: async function () {
-        const doc = this.getDoc?.();
-        const scopeControl = document.getElementById('translation-review-scope');
-        const languageControl = document.getElementById('translation-review-language');
-        const button = document.getElementById('translation-notes-create');
-        const status = document.getElementById('translation-review-status');
-        if (!doc || !scopeControl || !languageControl || !button || !status) return;
-        const pageIndex = doc.currentIndex;
-        const scopePages = scopeControl.value === 'document' ? doc.pages.map((_, index) => index) : [pageIndex];
-        const selectedText = scopeControl.value === 'selection' ? String(this._translationSelectionText || '').trim() : '';
-        if (scopeControl.value === 'selection' && !selectedText) { status.textContent = 'Selecciona texto antes de traducir.'; return; }
-        const language = languageControl.value;
-        const revision = this.ensureDocumentState(doc).revision;
-        this._translationNotesAbortController?.abort();
-        const controller = new AbortController();
-        this._translationNotesAbortController = controller;
-        button.disabled = true;
-        try {
-            status.textContent = 'Extrayendo texto del PDF…';
-            const snapshot = await this.captureDocumentSnapshot(doc.id);
-            const extracted = (await resolveTranslationNoteUnits(snapshot, window.PythonManager, scopePages))
-                .filter(unit => scopePages.includes(unit.pageIndex) && unit.text && !unit.isFormValue);
-            const units = selectedText ? extracted.filter(unit => comparableText(unit.text) === comparableText(selectedText)) : extracted;
-            if (!units.length) throw new Error('NO_TRANSLATABLE_TEXT');
-            const groups = buildTranslationNoteGroups(units, doc.pages, selectedText);
-            status.textContent = `Traduciendo ${groups.length} bloques…`;
-            const translated = parseTranslationResponse(await requestTranslationPayload(groups, language, null,
-                ({ completed, total }) => { status.textContent = `Traducidos ${completed} de ${total} bloques…`; },
-                {}, '', controller.signal, translationNotesOptions), groups.map(group => group.id));
-            if (controller.signal.aborted) throw new Error('TRANSLATION_CANCELLED');
-            if (this.getDoc?.() !== doc || this.ensureDocumentState(doc).revision !== revision) throw new Error('STALE_TRANSLATION_REVIEW');
-            const existingNativeNotes = new Map();
-            for (const index of scopePages) {
-                const page = doc.pages[index];
-                const source = doc.sources?.[page?.sourceId]?.doc;
-                if (!source?.getPage) continue;
-                const annotations = await (await source.getPage(page.pageIndex + 1)).getAnnotations({ intent: 'display' });
-                existingNativeNotes.set(index, annotations.filter(annotation => {
-                    const author = annotation.titleObj?.str || annotation.title || annotation.author || '';
-                    return String(author).startsWith(`Traducción · ${language}`);
-                }).map(annotation => ({ text: annotation.contentsObj?.str || annotation.contents || '',
-                    y: Number(annotation.rect?.[3]) })));
-            }
-            if (controller.signal.aborted || this.getDoc?.() !== doc || this.ensureDocumentState(doc).revision !== revision) throw new Error('STALE_TRANSLATION_REVIEW');
-            const now = new Date();
-            let added = 0;
-            for (const group of groups) {
-                const text = translated.get(group.id);
-                const page = doc.pages[group.pageIndex];
-                if (!text || !page || !isUsableTranslationNote(group, text) || existingNativeNotes.get(group.pageIndex)?.some(note => Number.isFinite(group.pageHeight) && Math.abs(group.pageHeight - note.y - group.rect.y) < 6) || page.objects?.some(object => object.translationNote && object.translationLanguage === language && Math.abs(object.y - group.rect.y) < 6)) continue;
-                page.objects ||= [];
-                page.objects.push({ id: newId('translation-note'), type: 'comment',
-                    x: Math.round(group.rect.x), y: Math.round(group.rect.y),
-                    width: Math.max(24, Math.round(group.rect.width)), height: Math.max(14, Math.round(group.rect.height)),
-                    text, sourceText: group.sourceText,
-                    translationNote: true, translationLanguage: language, translationSide: group.side,
-                    color: '#3b82f6', author: `Traducción · ${language}`, date: now.toLocaleDateString('es'),
-                    time: now.toLocaleTimeString('es'), replies: [], resolved: false, reactions: {} });
-                added++;
-            }
-            if (added) { this.saveState?.(); await this.loadPage?.(doc.currentIndex); }
-            status.textContent = `${added} traducciones agregadas.`;
-        } catch (error) { console.error('[Traducción] Notas:', error); status.textContent = 'No se pudieron crear las notas. Inténtalo de nuevo.'; }
-        finally { button.disabled = false; if (this._translationNotesAbortController === controller) this._translationNotesAbortController = null; }
-    },
-    createTranslationNotesCopyFromModal: async function () {
-        const doc = this.getDoc?.();
+        const doc = this._translationReviewDocId
+            ? this.getDocumentById(this._translationReviewDocId) : this.getDoc?.();
         const scopeControl = document.getElementById('translation-review-scope');
         const languageControl = document.getElementById('translation-review-language');
         const status = document.getElementById('translation-review-status');
         const apply = document.getElementById('translation-review-apply');
-        if (!doc || !scopeControl || !languageControl || !status || !apply) return;
+        if (!doc || !scopeControl || !languageControl || !status || !apply || this._translationReviewPhase === 'working') return;
         const scopePages = scopeControl.value === 'document' ? doc.pages.map((_, index) => index) : [doc.currentIndex];
         const selectedText = scopeControl.value === 'selection' ? String(this._translationSelectionText || '').trim() : '';
-        if (scopeControl.value === 'selection' && !selectedText) { status.textContent = 'Selecciona texto antes de aplicar en copia.'; return; }
+        if (scopeControl.value === 'selection' && !selectedText) { status.textContent = 'Selecciona texto antes de traducir.'; return; }
         const language = languageControl.value;
+        const prepare = document.getElementById('translation-review-prepare');
+        const inputs = [apply, prepare, scopeControl, languageControl].filter(Boolean);
+        this._translationReviewDocId = doc.id;
         this._translationReviewPhase = 'working';
-        apply.disabled = true;
+        inputs.forEach(input => { input.disabled = true; });
         const background = document.getElementById('translation-review-background');
         if (background) background.hidden = false;
         this._translationNotesAbortController?.abort();
@@ -1585,12 +1590,24 @@ Object.assign(app, {
             setTranslationReviewProgress({ visible: true, value: 8, label: 'Extrayendo texto del PDF…', busy: true });
             void recordTranslationMetric({ ...metrics, event: 'job_started' });
             const snapshot = await measureTranslationExtraction(diagnostics, 'document_snapshot', () => this.captureDocumentSnapshot(doc.id));
+            if (controller.signal.aborted) return;
             const extracted = (await resolveTranslationNoteUnits(snapshot, window.PythonManager, scopePages, diagnostics))
                 .filter(unit => scopePages.includes(unit.pageIndex) && unit.text && !unit.isFormValue);
             const units = selectedText ? extracted.filter(unit => comparableText(unit.text) === comparableText(selectedText)) : extracted;
             if (!units.length) throw new Error('NO_TRANSLATABLE_TEXT');
-            const groups = await measureTranslationExtraction(diagnostics, 'note_grouping', () =>
+            const allGroups = await measureTranslationExtraction(diagnostics, 'note_grouping', () =>
                 buildTranslationNoteGroups(units, snapshot.payload.pages, selectedText), { unitCount: units.length });
+            if (!allGroups.length) throw new Error('NO_TRANSLATABLE_TEXT');
+            const groups = await pendingTranslationNoteGroups(this, doc, snapshot.payload.pages, allGroups, language, controller.signal);
+            if (controller.signal.aborted) return;
+            if (!groups.length) {
+                this._translationReviewPhase = 'idle';
+                status.textContent = 'Los bloques seleccionados ya tienen comentarios en este idioma.';
+                setTranslationReviewProgress({ visible: false });
+                this.renderTabs?.();
+                if (this._translationReviewMinimized) this.showToast?.(status.textContent);
+                return;
+            }
             const checkpointKey = await measureTranslationExtraction(diagnostics, 'checkpoint_hash', () =>
                 translationNotesCheckpointKey(groups, language), { unitCount: groups.length });
             void recordTranslationMetric({ ...metrics, event: 'extraction_completed', extractionMs: Date.now() - started,
@@ -1606,31 +1623,40 @@ Object.assign(app, {
                         : `Traducidos ${completed} de ${total} bloque(s)…`;
                     setTranslationReviewProgress({ visible: true, value: 35 + Math.round((completed / Math.max(1, total)) * 45), label: `Traducidos ${completed} de ${total} bloque(s)…`, busy: true });
                 }, metrics, checkpointKey, controller.signal, translationNotesOptions), groups.map(group => group.id));
-            if (controller.signal.aborted) throw new Error('TRANSLATION_CANCELLED');
-            const draftSnapshot = await this.cloneDocumentSnapshot(snapshot);
+            await this.flushDocumentEdits(doc.id, { blur: this.activeDocId === doc.id });
+            if (controller.signal.aborted) return;
+            const state = this.getDocumentById(doc.id) === doc && this.ensureDocumentState(doc);
+            if (!state || state.revision !== snapshot.revision || state.lifecycleEpoch !== snapshot.lifecycleEpoch) {
+                throw new Error('STALE_TRANSLATION_REVIEW');
+            }
+            const applyStarted = performance.now();
             const now = new Date();
+            const date = now.toLocaleDateString('es'), time = now.toLocaleTimeString('es');
+            const notesByPage = new Map();
             let added = 0;
             for (const group of groups) {
                 const text = translated.get(group.id);
-                const page = draftSnapshot.payload.pages[group.pageIndex];
-                if (!text || !page || !isUsableTranslationNote(group, text)) continue;
-                page.objects ||= [];
-                page.objects.push({ id: newId('translation-note'), type: 'comment',
+                if (!text || !isUsableTranslationNote(group, text)) continue;
+                if (!notesByPage.has(group.pageIndex)) notesByPage.set(group.pageIndex, []);
+                notesByPage.get(group.pageIndex).push({ id: newId('translation-note'), type: 'comment',
                     x: Math.round(group.rect.x), y: Math.round(group.rect.y),
                     width: Math.max(24, Math.round(group.rect.width)), height: Math.max(14, Math.round(group.rect.height)),
                     text, sourceText: group.sourceText,
                     translationNote: true, translationLanguage: language, translationSide: group.side,
+                    ...(group.pdfAnchor ? { translationPdfAnchor: group.pdfAnchor } : {}),
                     color: '#3b82f6', author: `Traducción · ${language}`,
-                    date: now.toLocaleDateString('es'), time: now.toLocaleTimeString('es'),
+                    date, time,
                     replies: [], resolved: false, reactions: {} });
                 added++;
             }
             if (!added) throw new Error('NO_TRANSLATABLE_TEXT');
-            const draftId = newId('draft');
-            (this._documentActionDrafts ||= new Map()).set(draftId, { sourceDocId: doc.id, actionId: 'translate-notes', snapshot: draftSnapshot, redactionVerification: null });
-            setTranslationReviewProgress({ visible: true, value: 92, label: 'Publicando copia con notas…', busy: true });
-            const published = await this.publishDocumentAction(draftId);
-            setTranslationReviewProgress({ visible: true, value: 100, label: 'Copia con notas lista.', busy: false });
+            if (doc.historyIndex < 0) this.saveState(doc.id);
+            for (const [index, notes] of notesByPage) {
+                const objects = doc.pages[index].objects ||= [];
+                for (const note of notes) objects.push(note);
+            }
+            this.saveState(doc.id);
+            setTranslationReviewProgress({ visible: true, value: 100, label: 'Comentarios de traducción agregados.', busy: false });
             const wasMinimized = this._translationReviewMinimized || this.activeDocId !== doc.id;
             this._activeTranslationReviewId = null;
             this._translationReviewDocId = null;
@@ -1638,14 +1664,24 @@ Object.assign(app, {
             this._translationReviewMinimized = false;
             if (!wasMinimized) this.closeAllModals?.();
             this.renderTabs?.();
-            if (!wasMinimized) await this.switchTab?.(published.docId);
-            this.showToast?.(`Copia traducida lista con ${added} nota(s).`);
-            void recordTranslationMetric({ ...metrics, event: 'notes_completed', completedUnits: added, durationMs: Date.now() - started });
+            const split = this.splitView;
+            for (const panel of split && split.mode !== 'single' ? ['primary', 'secondary'] : ['primary']) {
+                const panelState = split?.[panel];
+                const visibleDocId = panelState?.docId || this.activeDocId;
+                const pageIndex = split?.mode === 'single' || panel === split?.activePanel
+                    ? doc.currentIndex : panelState?.pageIndex ?? doc.currentIndex;
+                if (visibleDocId === doc.id && notesByPage.has(pageIndex)) this.renderCommentPins?.(panel, pageIndex);
+            }
+            this.showToast?.(`Se agregaron ${added} comentario(s) de traducción a ${doc.name}.`);
+            void recordTranslationMetric({ ...metrics, event: 'notes_completed', completedUnits: added,
+                durationMs: Date.now() - started, applyMs: Math.round(performance.now() - applyStarted) });
         } catch (error) {
             void recordTranslationMetric({ ...metrics, event: 'notes_failed', errorCode: error?.message || 'ERROR', durationMs: Date.now() - started });
             if (controller.signal.aborted) return;
+            this._translationReviewPhase = 'error';
             const messages = {
                 NO_TRANSLATABLE_TEXT: 'No se encontró texto para traducir en el alcance seleccionado.',
+                STALE_TRANSLATION_REVIEW: 'El documento cambió durante la traducción. Puedes volver a intentarlo con su versión actual.',
                 TRANSLATION_INCOMPLETE: 'El proveedor omitió algunos bloques. Reintenta: se conservaron los lotes completados.',
                 TRANSLATION_OCR_UNAVAILABLE: 'No se pudo leer el texto de las imágenes.',
                 TRANSLATION_CANCELLED: 'Se canceló la traducción.',
@@ -1655,64 +1691,21 @@ Object.assign(app, {
                 PROVIDER_RATE_LIMITED: 'Los proveedores disponibles alcanzaron su límite de uso. Inténtalo más tarde.',
                 PROVIDER_TIMEOUT: 'Los proveedores tardaron demasiado en responder. Inténtalo de nuevo.'
             };
-            console.error('[Traducción] Copia con notas:', error);
-            status.textContent = messages[error?.message] || 'No se pudo crear la copia con notas. Inténtalo de nuevo.';
+            console.error('[Traducción] Comentarios:', error);
+            status.textContent = messages[error?.message] || 'No se pudieron agregar los comentarios. Inténtalo de nuevo.';
             setTranslationReviewProgress({ visible: false });
-            apply.disabled = false;
+            if (this._translationReviewMinimized) {
+                this.renderTabs?.();
+                this.showToast?.(status.textContent);
+            }
         } finally {
             if (this._translationNotesAbortController === controller) {
                 this._translationNotesAbortController = null;
                 this.setTranslationRetryControl(null);
-            }
-            if (background) background.hidden = true;
-        }
-    },
-    addTranslationNotesToDraft: function (draftId, review, selectedUnitIds) {
-        const draft = this._documentActionDrafts?.get(draftId);
-        const pages = draft?.snapshot?.payload?.pages;
-        if (!draft || !Array.isArray(pages) || !review) return 0;
-        const selected = new Set(Array.isArray(selectedUnitIds) ? selectedUnitIds : []);
-        const replacements = new Map((review.replacements || []).map(item => [item.unitId, item.translatedText]));
-        const groups = [];
-        for (const unit of review.units || []) {
-            if (!selected.has(unit.id)) continue;
-            const translatedText = String(replacements.get(unit.id) || '').trim();
-            if (!translatedText) continue;
-            const previous = groups[groups.length - 1];
-            const adjacent = previous && !unit.isScan && !previous.isScan &&
-                previous.pageIndex === unit.pageIndex && Math.abs(previous.fontSize - unit.fontSize) < 1 &&
-                Math.abs(previous.rect.x - unit.rect.x) < 20 &&
-                unit.rect.y >= previous.rect.y && unit.rect.y - (previous.rect.y + previous.rect.height) <= unit.fontSize * 1.5 &&
-                unit.rect.y - previous.rect.y < unit.fontSize * 2;
-            if (adjacent) {
-                previous.sourceText += ' ' + unit.text;
-                previous.text += ' ' + translatedText;
-                previous.rect.height = Math.max(previous.rect.height, unit.rect.y + unit.rect.height - previous.rect.y);
-            } else {
-                groups.push({ text: translatedText, sourceText: unit.text, pageIndex: unit.pageIndex,
-                    rect: { ...unit.rect }, pageWidth: unit.pageWidth, pageHeight: unit.pageHeight,
-                    fontSize: unit.fontSize, isScan: unit.isScan });
+                inputs.forEach(input => { input.disabled = false; });
+                if (background) background.hidden = true;
             }
         }
-        const now = new Date();
-        let added = 0;
-        for (const group of groups) {
-            const page = pages[group.pageIndex];
-            if (!page) continue;
-            page.objects ||= [];
-            if (page.objects.some(object => object.translationNote && object.translationLanguage === review.targetLanguage && Math.abs(object.y - group.rect.y) < 6)) continue;
-            group.side ||= translationNoteSide(group, page);
-            page.objects.push({ id: newId('translation-note'), type: 'comment',
-                x: Math.round(group.rect.x), y: Math.round(group.rect.y),
-                width: Math.max(24, Math.round(group.rect.width)), height: Math.max(14, Math.round(group.rect.height)),
-                text: group.text, sourceText: group.sourceText,
-                translationNote: true, translationLanguage: review.targetLanguage, translationSide: group.side,
-                color: '#3b82f6', author: `Traducción · ${review.targetLanguage}`,
-                date: now.toLocaleDateString('es'), time: now.toLocaleTimeString('es'),
-                replies: [], resolved: false, reactions: {} });
-            added++;
-        }
-        return added;
     },
     extractTextReplacementUnits: async function (snapshot, executor = window.PythonManager) {
         return resolveTranslationUnits(snapshot, executor);
@@ -2154,17 +2147,33 @@ Object.assign(app, {
         this._translationReviewDocId = doc.id;
         this._translationReviewPhase = 'idle';
         this._translationReviewMinimized = false;
+        const scope = document.getElementById('translation-review-scope');
+        const language = document.getElementById('translation-review-language');
+        if (scope) { scope.value = this._translationSelectionText ? 'selection' : 'page'; scope.disabled = false; }
+        if (language) language.disabled = false;
+        this.resetTextTranslationReview();
+        overlay.style.display = 'flex';
+        modal.style.display = 'flex';
+    },
+
+    resetTextTranslationReview: function () {
+        if (this._translationReviewPhase === 'working') return;
+        if (this._activeTranslationReviewId) this.discardTextTranslationReview(this._activeTranslationReviewId);
         this._activeTranslationReviewId = null;
+        this._translationReviewPhase = 'idle';
         const items = document.getElementById('translation-review-items');
         const prepare = document.getElementById('translation-review-prepare');
-        if (prepare) prepare.disabled = false;
+        if (prepare) { prepare.disabled = false; prepare.textContent = 'Crear copia traducida'; }
         const status = document.getElementById('translation-review-status');
         const apply = document.getElementById('translation-review-apply');
         if (items) items.replaceChildren();
-        if (status) status.textContent = this._translationSelectionText ? 'Selección de texto capturada. Elige ese alcance y aplica en una copia.' : 'Elige el alcance y aplica la traducción en una copia.';
         const scope = document.getElementById('translation-review-scope');
-        if (scope) scope.value = this._translationSelectionText ? 'selection' : 'page';
-        if (apply) apply.disabled = false;
+        if (status) status.textContent = scope?.value === 'selection' && this._translationSelectionText ? 'Selección de texto capturada.' : '';
+        if (apply) {
+            apply.disabled = false;
+            apply.textContent = 'Traducir con comentarios';
+            apply.setAttribute?.('aria-describedby', 'translation-review-notes-description');
+        }
         const fit = document.getElementById('translation-review-fit');
         if (fit) fit.hidden = true;
         const timing = document.getElementById('translation-review-timing');
@@ -2172,8 +2181,6 @@ Object.assign(app, {
         const background = document.getElementById('translation-review-background');
         if (background) background.hidden = true;
         setTranslationReviewProgress({ visible: false });
-        overlay.style.display = 'flex';
-        modal.style.display = 'flex';
     },
 
     closeTextTranslationModal: function () {
@@ -2318,13 +2325,14 @@ Object.assign(app, {
     },
 
     prepareTextTranslationModal: async function () {
-        const doc = this.getDoc?.();
+        const doc = this._translationReviewDocId
+            ? this.getDocumentById(this._translationReviewDocId) : this.getDoc?.();
         const scopeControl = document.getElementById('translation-review-scope');
         const languageControl = document.getElementById('translation-review-language');
         const status = document.getElementById('translation-review-status');
         const items = document.getElementById('translation-review-items');
         const apply = document.getElementById('translation-review-apply');
-        if (!doc || !scopeControl || !languageControl || !status || !items || !apply) return;
+        if (!doc || !scopeControl || !languageControl || !status || !items || !apply || this._translationReviewPhase === 'working') return;
         this._translationReviewDocId = doc.id;
         const scope = scopeControl.value === 'document'
             ? { pages: doc.pages.map((_, index) => index) }
@@ -2339,6 +2347,8 @@ Object.assign(app, {
         const button = document.getElementById('translation-review-prepare');
         this.setTranslationRetryControl(null);
         if (button) button.disabled = true;
+        scopeControl.disabled = true;
+        languageControl.disabled = true;
         const fit = document.getElementById('translation-review-fit');
         if (fit) fit.hidden = true;
         const timing = document.getElementById('translation-review-timing');
@@ -2372,8 +2382,14 @@ Object.assign(app, {
         this._translationReviewAbortController = null;
         this.setTranslationRetryControl(null);
         if (button) button.disabled = false;
+        scopeControl.disabled = false;
+        languageControl.disabled = false;
         if (review.status !== 'review') {
             this._translationReviewPhase = 'error';
+            apply.disabled = false;
+            apply.textContent = 'Traducir con comentarios';
+            apply.setAttribute?.('aria-describedby', 'translation-review-notes-description');
+            if (button) button.textContent = 'Crear copia traducida';
             if (this._translationReviewMinimized) this.renderTabs?.();
             setTranslationReviewProgress({ visible: false });
             const messages = {
@@ -2404,6 +2420,10 @@ Object.assign(app, {
         const fit = document.getElementById('translation-review-fit');
         const timing = document.getElementById('translation-review-timing');
         if (!status || !items || !apply) return;
+        apply.textContent = 'Crear copia traducida';
+        apply.setAttribute?.('aria-describedby', 'translation-review-copy-description');
+        const prepare = document.getElementById('translation-review-prepare');
+        if (prepare) prepare.textContent = 'Actualizar revisión';
         this._translationReviewPhase = 'ready';
         if (this._translationReviewMinimized) {
             this.renderTabs?.();
@@ -2484,9 +2504,10 @@ Object.assign(app, {
 
     fitTextTranslationModal: async function () {
         const reviewId = this._activeTranslationReviewId;
-        if (!reviewId) return;
+        if (!reviewId || this._translationReviewPhase === 'working') return;
         this._translationReviewPhase = 'working';
-        const controls = ['translation-review-prepare', 'translation-review-apply', 'translation-review-fit'].map(id => document.getElementById(id));
+        const controls = ['translation-review-prepare', 'translation-review-apply', 'translation-review-fit',
+            'translation-review-scope', 'translation-review-language'].map(id => document.getElementById(id));
         const previous = controls.map(control => control?.disabled);
         const storedReview = this._translationReviews?.get(reviewId);
         const ready = new Set((storedReview?.checks || []).filter(item => item.status === 'READY').map(item => item.id));
@@ -2507,22 +2528,23 @@ Object.assign(app, {
         }
         result.items.forEach(item => { if (previouslyReady.has(item.unitId)) item.selected = selected.has(item.unitId); });
         this.renderTextTranslationReview(result);
-        setTranslationReviewProgress({ visible: true, value: 100, label: 'Ajuste listo. Revisa los tamaños antes de aplicar.', busy: false });
+        setTranslationReviewProgress({ visible: true, value: 100, label: 'Ajuste listo. Revisa los tamaños antes de crear la copia.', busy: false });
     },
 
     applyTextTranslationModal: async function () {
         const reviewId = this._activeTranslationReviewId;
         const status = document.getElementById('translation-review-status');
         const apply = document.getElementById('translation-review-apply');
-        if (!status || !apply) return;
-        if (!reviewId) return this.createTranslationNotesCopyFromModal();
+        if (!status || !apply || this._translationReviewPhase === 'working') return;
+        if (!reviewId) return this.createTranslationNotesFromModal();
         const storedReview = this._translationReviews?.get(reviewId);
         const ready = new Set((storedReview?.checks || []).filter(item => item.status === 'READY').map(item => item.id));
         const selected = (storedReview?.replacements || []).filter(item => item.selected && ready.has(item.unitId)).map(item => item.unitId);
         if (!selected.length) { status.textContent = 'Selecciona al menos una unidad lista.'; return; }
         this._translationReviewPhase = 'working';
         apply.disabled = true;
-        const controls = ['translation-review-prepare', 'translation-review-fit'].map(id => document.getElementById(id));
+        const controls = ['translation-review-prepare', 'translation-review-fit',
+            'translation-review-scope', 'translation-review-language'].map(id => document.getElementById(id));
         const previous = controls.map(control => control?.disabled);
         controls.forEach(control => { if (control) control.disabled = true; });
         status.textContent = 'Creando copia para revisión…';
@@ -2542,7 +2564,7 @@ Object.assign(app, {
                 setTranslationReviewProgress({ visible: false });
                 this.renderTextTranslationReview(result);
                 status.textContent = result.readyCount
-                    ? 'La planificación final rechazó un fragmento y conservará su original. Revisa la excepción y pulsa Aplicar en copia para continuar sin consultar la IA.'
+                    ? 'La planificación final conservará el original de un fragmento. Revisa la excepción y pulsa Crear copia traducida para continuar.'
                     : 'Ningún fragmento seleccionado pudo reconstruirse con seguridad. Se conserva el original; no hay cambios para crear una copia.';
                 if (this._translationReviewMinimized) this.showToast?.('La copia necesita revisión en la pestaña de origen.');
                 return;
@@ -2567,7 +2589,6 @@ Object.assign(app, {
                 return;
             }
             setTranslationReviewProgress({ visible: true, value: 88, label: 'Publicando la copia traducida…', busy: true });
-            this.addTranslationNotesToDraft(result.draftId, storedReview, selected);
             const published = await this.publishDocumentAction(result.draftId);
             setTranslationReviewProgress({ visible: true, value: 100, label: 'Copia traducida lista.', busy: false });
             const wasMinimized = this._translationReviewMinimized;
@@ -2705,8 +2726,6 @@ Object.assign(app, {
 
 app.registerDocumentAction({
     id: 'translate-text',
-    requiresProvider: true,
-    hasUserKey: hasConfiguredTextProvider,
     apply: async ({ snapshot, scope, parameters }) => reconstructReviewedTextReplacements(snapshot, scope, parameters, window.PythonManager)
 });
 

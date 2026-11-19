@@ -169,15 +169,43 @@ Object.assign(app, {
                 const bytes = await this.savePDFInternal(false, null, compressionLevel !== 'none', true, compressionLevel, documentSnapshot);
                 if (!bytes) throw new Error('SAVE_OUTPUT_UNAVAILABLE');
                 if (signal?.aborted) throw new DOMException('Abortado', 'AbortError');
-                const output = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+                let output = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
                 const validation = await this.validatePreparedPdf(output, snapshot, options);
                 if (!validation.ok) throw new Error(validation.failures[0]?.code || 'INVALID_PDF');
+                if (options.encryption) output = await this._encryptPreparedPdf(output, options.encryption, documentSnapshot.pages.length);
+                if (signal?.aborted) throw new DOMException('Abortado', 'AbortError');
                 let sha256 = null;
                 if (globalThis.crypto?.subtle) {
                     const digest = await globalThis.crypto.subtle.digest('SHA-256', output);
                     sha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
                 }
                 return { bytes: output, sha256, revision: snapshot.revision, validation };
+            },
+
+            _encryptPreparedPdf: async function (bytes, encryption, pageCount) {
+                if (!window.PythonManager?.encryptPDF) throw new Error('PDF_ENCRYPTION_UNAVAILABLE');
+                const { userPassword, ownerPassword, permissions } = encryption;
+                const output = new Uint8Array(await window.PythonManager.encryptPDF(bytes, userPassword, ownerPassword, permissions));
+                if (userPassword) {
+                    const probe = pdfjsLib.getDocument({ data: output.slice() });
+                    try {
+                        await probe.promise;
+                        throw new Error('PDF_ENCRYPTION_UNVERIFIED');
+                    } catch (error) {
+                        if (error.code !== pdfjsLib.PasswordResponses.NEED_PASSWORD) throw error;
+                    } finally {
+                        await probe.destroy();
+                    }
+                }
+                const task = pdfjsLib.getDocument({ data: output.slice(), password: userPassword });
+                try {
+                    const pdf = await task.promise;
+                    const flags = await pdf.getPermissions();
+                    if (!flags || pdf.numPages !== pageCount) throw new Error('PDF_ENCRYPTION_UNVERIFIED');
+                } finally {
+                    await task.destroy();
+                }
+                return output;
             },
 
             validatePreparedPdf: async function (bytes, snapshot) {
@@ -327,18 +355,11 @@ Object.assign(app, {
                     }
                     const srcId = 'src_' + Date.now();
 
-                    // Si se usó contraseña, desencriptar el buffer para que PDFLib pueda leerlo al guardar
-                    let cleanBuffer = buffer;
-                    if (_capturedPassword) {
-                        try {
-                            cleanBuffer = await PythonManager.decryptPDF(buffer, _capturedPassword);
-                        } catch (e) {
-                            console.warn('⚠️ No se pudo desencriptar buffer, usando ignoreEncryption como fallback:', e);
-                            cleanBuffer = buffer;
-                        }
-                    }
-
-                    doc.sources[srcId] = { buffer: cleanBuffer, doc: pdf };
+                    const protectionRequired = !!_capturedPassword || !!(await Promise.resolve(pdf.getPermissions?.()).catch(() => null));
+                    const source = { buffer, doc: pdf };
+                    if (protectionRequired) source.metadata = { protectionRequired: true };
+                    if (_capturedPassword) Object.defineProperty(source, 'password', { value: _capturedPassword, writable: true, configurable: true });
+                    doc.sources[srcId] = source;
 
                     for (let i = 0; i < pdf.numPages; i++) {
                         doc.pages.push({
@@ -374,6 +395,8 @@ Object.assign(app, {
                     // Guardar en recientes de forma asíncrona sin bloquear UI
                     this.addToRecentDocs(fileName, '', buffer).catch(e => console.warn('Recents error:', e));
                     if (typeof this.updateWindowTitle === 'function') this.updateWindowTitle();
+                    this.toggleLoader(false);
+                    return doc;
 
                 } catch (e) {
                     console.error(e);
@@ -402,11 +425,13 @@ Object.assign(app, {
                     const buffer = await file.arrayBuffer();
 
                     let _insertCancelled = false;
+                    let password = null;
                     const loadingTask = pdfjsLib.getDocument({ data: buffer.slice(0) });
                     loadingTask.onPassword = function (cb, reason) {
                         if (_insertCancelled) return;
                         const p = prompt("Contraseña requerida para insertar:");
                         if (p === null) { _insertCancelled = true; loadingTask.destroy(); return; }
+                        password = p;
                         cb(p);
                     };
 
@@ -417,7 +442,10 @@ Object.assign(app, {
                         throw passErr;
                     }
                     const srcId = 'src_' + Date.now() + Math.random();
-                    doc.sources[srcId] = { buffer: buffer, doc: pdf };
+                    const source = { buffer, doc: pdf };
+                    if (password || await Promise.resolve(pdf.getPermissions?.()).catch(() => null)) source.metadata = { protectionRequired: true };
+                    if (password) Object.defineProperty(source, 'password', { value: password, writable: true, configurable: true });
+                    doc.sources[srcId] = source;
 
                     const insertAt = targetIndex !== null ? targetIndex + 1 : (doc.pages.length > 0 ? doc.currentIndex + 1 : 0);
                     const newPages = [];
@@ -855,6 +883,12 @@ Object.assign(app, {
 
                 const doc = sourceDocument || this.getDoc();
                 if (!doc || !doc.pages.length) { this._isSaving = false; return; }
+                if (Object.values(doc.sources || {}).some(source => source.metadata?.protectionRequired)) {
+                    this._isSaving = false;
+                    if (returnBytes) throw new Error('PROTECTION_REQUIRED');
+                    this._showNativeSaveError(new Error('PROTECTION_REQUIRED'));
+                    return;
+                }
 
                 this.toggleLoader(true);
                 document.getElementById('loader-msg').innerText = "Generando PDF...";
@@ -1255,16 +1289,16 @@ Object.assign(app, {
                                         const noteH = Math.max(12, o.height || 18);
                                         const tPdfY = pageHeight - o.y - noteH;
                                         const tPdfX = o.x;
+                                        const [ax, ay, bx, by] = o.translationPdfAnchor || [tPdfX, tPdfY, tPdfX + noteW, tPdfY + noteH];
+                                        const [left, right] = [Math.min(ax, bx), Math.max(ax, bx)];
+                                        const [bottom, top] = [Math.min(ay, by), Math.max(ay, by)];
                                         const annot = out.context.register(
                                             out.context.obj({
                                                 Type: 'Annot',
                                                 Subtype: 'Highlight',
-                                                Rect: [tPdfX, tPdfY, tPdfX + noteW, tPdfY + noteH],
+                                                Rect: [left, bottom, right, top],
                                                 QuadPoints: [
-                                                    tPdfX, tPdfY + noteH,
-                                                    tPdfX + noteW, tPdfY + noteH,
-                                                    tPdfX, tPdfY,
-                                                    tPdfX + noteW, tPdfY
+                                                    left, top, right, top, left, bottom, right, bottom
                                                 ],
                                                 Contents: PDFLib.PDFHexString.fromText(fullText),
                                                 T: PDFLib.PDFHexString.fromText(o.author || 'Traducción'),
@@ -2389,34 +2423,32 @@ Object.assign(app, {
                             else if (o.type === 'image' || o.type === 'drawing') {
                                 try {
                                     let imgEmbed;
+                                    const sharpness = o.filters?.sharpness && this.getImageSharpnessFilter(o.filters.sharpness);
+                                    const sourceIsSvg = o.type === 'image' && o.src?.startsWith('data:image/svg');
 
-                                    // Rasterizar SVG (Sellos) a PNG
-                                    if (o.type === 'image' && o.src && o.src.startsWith('data:image/svg')) {
-                                        // Crear elemento imagen temporal
+                                    // Rasterizar sellos SVG o materializar la nitidez a resolución original.
+                                    if (o.src && (sourceIsSvg || sharpness)) {
                                         const tempImg = new Image();
                                         tempImg.src = o.src;
-                                        await new Promise(r => tempImg.onload = r);
+                                        await tempImg.decode();
 
-                                        // Dibujar en canvas para rasterizar a PNG con tamaño apropiado
                                         const cvs = document.createElement('canvas');
-                                        // Usar dimensiones del objeto para mejor calidad
-                                        cvs.width = objW * 2; // 2x for higher quality
-                                        cvs.height = objH * 2;
-                                        const xctx = cvs.getContext('2d');
-                                        xctx.drawImage(tempImg, 0, 0, cvs.width, cvs.height);
-
-                                        const buffer = await new Promise(resolve => {
-                                            cvs.toBlob(async blob => {
-                                                resolve(await blob.arrayBuffer());
-                                            }, 'image/png');
-                                        });
-                                        imgEmbed = await out.embedPng(new Uint8Array(buffer));
-                                        // Free temporary canvas memory
-                                        cvs.width = 0; cvs.height = 0;
+                                        cvs.width = sourceIsSvg ? objW * 2 : tempImg.naturalWidth;
+                                        cvs.height = sourceIsSvg ? objH * 2 : tempImg.naturalHeight;
+                                        try {
+                                            const xctx = cvs.getContext('2d');
+                                            if (sharpness) xctx.filter = sharpness;
+                                            xctx.drawImage(tempImg, 0, 0, cvs.width, cvs.height);
+                                            const blob = await new Promise(resolve => cvs.toBlob(resolve, 'image/png'));
+                                            if (!blob) throw new Error('No se pudo codificar el PNG');
+                                            imgEmbed = await out.embedPng(await blob.arrayBuffer());
+                                        } finally {
+                                            cvs.width = cvs.height = 0;
+                                        }
                                     }
                                     // Handle PNG/JPG/Other images with optional compression
                                     else if (o.src) {
-                                        if (compress) {
+                                        if (compress && !o.backgroundRemoved) {
 
                                             try {
                                                 // Converts to JPEG 0.75 (25% reduction)
@@ -3483,41 +3515,20 @@ base64.b64encode(buf.getvalue()).decode("ascii")
             },
 
             savePDF: function () {
-                console.log('=== savePDF() CALLED ===');
-                console.log('PDFLib available:', typeof PDFLib !== 'undefined');
-                console.log('saveAs available:', typeof saveAs !== 'undefined');
                 const doc = this.getDoc();
-                console.log('this.getDoc():', doc ? 'exists' : 'null');
-
                 if (!doc) {
-                    alert('❌ No hay documento para guardar');
+                    this.showToast('No hay documento abierto');
                     return;
                 }
-
-                // Save last read position for bookmark system
-                if (window.BookmarkManager) BookmarkManager.saveLastRead(doc, doc.currentIndex);
-
-                // CRITICAL: Normalize ALL opacity before save to prevent PDF-lib validation errors
-                // DISABLED: This causes shapes/stamps opacity issues
-                console.log('🔧 Normalizando opacidad de todos los objetos...');
-                // this.normalizeAllOpacity(doc);
-                console.log('✅ Opacidad normalizada correctamente');
-
-
-                if (typeof PDFLib === 'undefined') {
-                    console.error('ERROR: PDFLib is not loaded!');
-                    alert('No se pudo preparar el guardado del PDF. Reinicia la aplicación e inténtalo de nuevo.');
+                window.BookmarkManager?.saveLastRead(doc, doc.currentIndex);
+                if (this.nativeSaveTransport && window.__aliothWindowId && /^https?:$/.test(window.location.protocol)) {
+                    return this.saveFromHeader('save', document.getElementById('btn-header-save'));
+                }
+                if (doc.documentState?.outputProtectionRequired) {
+                    this.showSaveModal();
                     return;
                 }
-
-                // Call with compression enabled by default
-                this.savePDFInternal(false, null, true).then(() => {
-                    console.log('=== SAVE COMPLETED SUCCESSFULLY ===');
-                }).catch(err => {
-                    console.error('=== SAVE PDF ASYNC ERROR ===', err);
-                    console.error('Error stack:', err.stack);
-                    alert('No se pudo guardar el PDF. Inténtalo de nuevo.');
-                });
+                return this.savePDFInternal(false, null, true);
             },
 
             // ============================================================
@@ -3676,13 +3687,77 @@ base64.b64encode(buf.getvalue()).decode("ascii")
 
                 this.clearSaveTarget();
 
-                // Reset options
+                const encryption = this.getNativeSaveEncryption?.(doc);
+                const permissions = encryption?.permissions;
                 document.getElementById('compress-none').checked = true;
-                document.getElementById('save-use-password').checked = false;
-                document.getElementById('password-options').style.display = 'none';
+                document.getElementById('save-use-password').checked = !!encryption?.userPassword;
+                document.getElementById('save-lock-edit').checked = !!permissions && !permissions.includes('modify');
+                document.getElementById('save-lock-copy').checked = !!permissions && !permissions.includes('copy');
+                document.getElementById('save-lock-print').checked = !!permissions && !permissions.includes('print');
+                this.syncSavePasswordFields();
                 document.getElementById('pdf-user-password').value = '';
                 document.getElementById('pdf-owner-password').value = '';
                 const _sdd = document.getElementById('save-share-dropdown'); if (_sdd) _sdd.style.display = 'none';
+
+                const modal = document.getElementById('save-modal');
+                this._saveModalPreviousFocus = document.activeElement;
+                modal.onkeydown = event => {
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this.closeAllModals();
+                        return;
+                    }
+                    if (event.key !== 'Tab') return;
+                    const controls = [...modal.querySelectorAll('button, input, select, [tabindex="0"]')]
+                        .filter(control => !control.disabled && control.getClientRects().length);
+                    const first = controls[0];
+                    const last = controls.at(-1);
+                    if ((event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
+                        event.preventDefault();
+                        (event.shiftKey ? last : first)?.focus();
+                    }
+                };
+                document.getElementById('btn-save-modal-copy')?.focus();
+            },
+
+            syncSavePasswordFields: function () {
+                const usePassword = document.getElementById('save-use-password').checked;
+                const hasLocks = ['edit', 'copy', 'print'].some(key => document.getElementById('save-lock-' + key).checked);
+                document.getElementById('password-options').style.display = usePassword || hasLocks ? 'block' : 'none';
+                const openingPassword = document.getElementById('pdf-user-password');
+                openingPassword.disabled = !usePassword;
+                openingPassword.parentElement.hidden = !usePassword;
+            },
+
+            _readSaveEncryption: function (doc) {
+                const existing = this.getNativeSaveEncryption?.(doc);
+                const usePassword = document.getElementById('save-use-password')?.checked;
+                const lockEdit = document.getElementById('save-lock-edit')?.checked;
+                const lockCopy = document.getElementById('save-lock-copy')?.checked;
+                const lockPrint = document.getElementById('save-lock-print')?.checked;
+                const restricted = lockEdit || lockCopy || lockPrint;
+                if (!usePassword && !restricted) return existing;
+                const userPassword = usePassword
+                    ? document.getElementById('pdf-user-password')?.value || existing?.userPassword || ''
+                    : '';
+                if (usePassword && !userPassword) throw new Error('SAVE_PROTECTION_PASSWORD_REQUIRED');
+                let ownerPassword = document.getElementById('pdf-owner-password')?.value || existing?.ownerPassword;
+                if (!ownerPassword || (restricted && ownerPassword === userPassword && !document.getElementById('pdf-owner-password')?.value)) {
+                    ownerPassword = restricted
+                        ? Array.from(crypto.getRandomValues(new Uint8Array(24)), value => value.toString(16).padStart(2, '0')).join('')
+                        : userPassword;
+                }
+                if (restricted && ownerPassword === userPassword) throw new Error('SAVE_PROTECTION_OWNER_REQUIRED');
+                const encoder = new TextEncoder();
+                if ([userPassword, ownerPassword].some(value => encoder.encode(value).byteLength > 127 || value.includes('\0'))) {
+                    throw new Error('SAVE_PROTECTION_PASSWORD_INVALID');
+                }
+                const permissions = [];
+                if (!lockPrint) permissions.push('print');
+                if (!lockEdit) permissions.push('modify', 'annotate');
+                if (!lockCopy) permissions.push('copy');
+                return { userPassword, ownerPassword, permissions };
             },
 
             clearSaveTarget: function () {
@@ -3694,6 +3769,17 @@ base64.b64encode(buf.getvalue()).decode("ascii")
             },
 
             _showNativeSaveError: function (error, fallbackPrefix = 'Error al guardar') {
+                const protectionErrors = {
+                    SAVE_PROTECTION_PASSWORD_REQUIRED: 'Introduce la contraseña en Guardar como para mantener la protección del PDF.',
+                    SAVE_PROTECTION_OWNER_REQUIRED: 'Usa una contraseña de propietario distinta para aplicar las restricciones.',
+                    SAVE_PROTECTION_PASSWORD_INVALID: 'Usa contraseñas de hasta 127 bytes y sin caracteres nulos.',
+                    PDF_ENCRYPTION_UNAVAILABLE: 'El motor de cifrado local no está disponible.',
+                    PDF_ENCRYPTION_UNVERIFIED: 'No se pudo verificar la protección de la copia.'
+                };
+                if (Object.hasOwn(protectionErrors, error?.message)) {
+                    this.showToast(protectionErrors[error.message], 5000, 'warning');
+                    return;
+                }
                 if (error?.message === 'SAVE_OUTPUT_UNVERIFIED') {
                     this.showToast('El archivo se escribió, pero no se pudo verificar. Conserva esta pestaña abierta y revisa el PDF antes de cerrarla.', 7000, 'warning');
                     return;
@@ -3732,6 +3818,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
             },
 
             saveFromHeader: async function (mode, button) {
+                if (button?.disabled) return;
                 const doc = this.getDoc();
                 if (!doc) {
                     this.showToast('No hay documento abierto');
@@ -3839,81 +3926,13 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                 }
 
                 const filename = (doc.name || 'documento.pdf').replace(/\.pdf$/i, '');
-                const compressLevel = document.querySelector('input[name="compress-level"]:checked')?.value || 'standard';
-                const compress = compressLevel !== 'none';
-                const usePassword = document.getElementById('save-use-password').checked;
-                const userPassword = document.getElementById('pdf-user-password').value;
-                const ownerPassword = document.getElementById('pdf-owner-password').value || userPassword;
-                const saveAsImages = document.getElementById('save-as-images')?.checked || false;
-                const lockEdit  = document.getElementById('save-lock-edit')?.checked || false;
-                const lockCopy  = document.getElementById('save-lock-copy')?.checked || false;
-                const lockPrint = document.getElementById('save-lock-print')?.checked || false;
-                const hasLocks  = lockEdit || lockCopy || lockPrint;
-
-                if (usePassword && !userPassword) {
-                    this.showToast('Ingresa una contraseña');
-                    return;
-                }
-
-                this.closeAllModals();
-                this.toggleLoader(true);
-                document.getElementById('loader-msg').innerText = "Generando PDF para compartir...";
-
+                const compression = document.querySelector('input[name="compress-level"]:checked')?.value || 'standard';
                 try {
-                    let pdfBytes = null;
-
-                    if (saveAsImages) {
-                        document.getElementById('loader-msg').innerText = "Rasterizando páginas...";
-                        const srcBytes = await this.savePDFInternal(false, null, false, true);
-                        if (!srcBytes) throw new Error('No se pudo generar el PDF base');
-                        const srcDoc = await pdfjsLib.getDocument({ data: srcBytes }).promise;
-                        const pageCount = srcDoc.numPages;
-                        const newPdf = await PDFLib.PDFDocument.create();
-                        const scale = compress ? 1.5 : 2;
-                        for (let i = 1; i <= pageCount; i++) {
-                            const pdfPage = await srcDoc.getPage(i);
-                            const vp = pdfPage.getViewport({ scale });
-                            const cvs = document.createElement('canvas');
-                            cvs.width = vp.width; cvs.height = vp.height;
-                            await pdfPage.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
-                            const quality = compress ? 0.8 : 0.95;
-                            const imgDataUrl = cvs.toDataURL('image/jpeg', quality);
-                            const imgBytes = Uint8Array.from(atob(imgDataUrl.split(',')[1]), c => c.charCodeAt(0));
-                            const embImg = await newPdf.embedJpg(imgBytes);
-                            const { width, height } = pdfPage.getViewport({ scale: 1 });
-                            const newPage = newPdf.addPage([width, height]);
-                            newPage.drawImage(embImg, { x: 0, y: 0, width, height });
-                        }
-                        pdfBytes = await newPdf.save();
-                    }
-
-                    if (usePassword || hasLocks) {
-                        if (!pdfBytes) pdfBytes = await this.savePDFInternal(false, null, compress, true, compressLevel);
-                        if (!pdfBytes) throw new Error('No se pudo generar el PDF');
-                        const effectiveUser  = usePassword ? userPassword : '';
-                        const effectiveOwner = ownerPassword || ('alioth-owner-' + Date.now());
-                        const perms = [];
-                        if (!lockPrint) perms.push('print');
-                        if (!lockEdit)  perms.push('modify', 'annotate');
-                        if (!lockCopy)  perms.push('copy');
-                        if (!usePassword) { perms.push('print', 'modify', 'annotate', 'copy'); }
-                        const uniquePerms = [...new Set(perms)];
-                        if (hasLocks) {
-                            const filteredPerms = uniquePerms.filter(p => {
-                                if (lockPrint && p === 'print') return false;
-                                if (lockEdit  && (p === 'modify' || p === 'annotate')) return false;
-                                if (lockCopy  && p === 'copy') return false;
-                                return true;
-                            });
-                            if (window.PythonManager) {
-                                pdfBytes = await PythonManager.encryptPDF(pdfBytes, effectiveUser, effectiveOwner, filteredPerms);
-                            }
-                        }
-                    } else if (!pdfBytes) {
-                        pdfBytes = await this.savePDFInternal(false, null, compress, true, compressLevel);
-                    }
-
-                    if (!pdfBytes) throw new Error('No se pudo compilar el archivo PDF.');
+                    const encryption = this.resolveNativeSaveEncryption(doc, this._readSaveEncryption(doc));
+                    const snapshot = await this.captureDocumentSnapshot(doc.id);
+                    this.toggleLoader(true, 'Generando PDF para compartir...');
+                    const { bytes: pdfBytes } = await this.prepareDocumentPdf(snapshot, { compression, encryption });
+                    this.closeAllModals();
 
                     const fn = filename + '.pdf';
                     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
@@ -3960,21 +3979,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
             saveNativeFromModal: async function () {
                 const doc = this.getDoc();
                 if (!doc) return;
-                if (!this._pendingNativeSaveTarget?.token || (this._pendingNativeSaveTarget.mode && this._pendingNativeSaveTarget.mode !== 'save')) {
-                    this.clearSaveTarget();
-                    await this.pickSaveTarget();
-                    return;
-                }
                 const compressLevel = document.querySelector('input[name="compress-level"]:checked')?.value || 'none';
-                const usePassword = document.getElementById('save-use-password')?.checked;
-                const saveAsImages = document.getElementById('save-as-images')?.checked;
-                const hasLocks = ['save-lock-edit', 'save-lock-copy', 'save-lock-print']
-                    .some(id => document.getElementById(id)?.checked);
-                if (usePassword || saveAsImages || hasLocks) {
-                    this.showToast('El guardado nativo no admite protección ni rasterización. Ajusta las opciones para continuar.');
-                    return;
-                }
-
                 const button = document.getElementById('btn-save-modal-primary');
                 const help = document.getElementById('save-target-help');
                 if (button) {
@@ -3983,13 +3988,21 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                 }
                 if (help) help.textContent = 'Guardando PDF...';
                 try {
+                    const encryption = this._readSaveEncryption(doc);
+                    const target = this._pendingNativeSaveTarget;
+                    if (!target?.token || (target.mode && target.mode !== 'save')) {
+                        this.clearSaveTarget();
+                        const selected = await this.pickSaveTarget();
+                        if (!selected || !this._pendingNativeSaveTarget?.token) return;
+                    }
                     await this.saveDocument(doc.id, {
                         token: this._pendingNativeSaveTarget.token,
                         targetPath: this._pendingNativeSaveTarget.path,
                         targetIdentity: this._pendingNativeSaveTarget.identity,
                         expectedFingerprint: this._pendingNativeSaveTarget.fingerprint || null,
                         compression: compressLevel,
-                        protection: 'preserve'
+                        protection: 'preserve',
+                        ...(encryption && { encryption })
                     });
                     this.clearSaveTarget();
                     this.closeAllModals();
@@ -4009,14 +4022,6 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                 const doc = this.getDoc();
                 if (!doc) return;
                 const compressLevel = document.querySelector('input[name="compress-level"]:checked')?.value || 'none';
-                const usePassword = document.getElementById('save-use-password')?.checked;
-                const saveAsImages = document.getElementById('save-as-images')?.checked;
-                const hasLocks = ['save-lock-edit', 'save-lock-copy', 'save-lock-print']
-                    .some(id => document.getElementById(id)?.checked);
-                if (usePassword || saveAsImages || hasLocks) {
-                    this.showToast('El guardado nativo no admite protección ni rasterización. Ajusta las opciones para continuar.');
-                    return;
-                }
                 const button = document.getElementById('btn-save-modal-copy');
                 if (button?.disabled) return;
                 if (button) {
@@ -4024,6 +4029,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                     button.setAttribute('aria-busy', 'true');
                 }
                 try {
+                    const encryption = this._readSaveEncryption(doc);
                     if (!this._pendingNativeSaveTarget?.token || this._pendingNativeSaveTarget.mode !== 'copy') {
                         this.clearSaveTarget();
                         const baseName = (doc.name || 'documento.pdf').replace(/\.pdf$/i, '');
@@ -4047,7 +4053,8 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                         targetIdentity,
                         expectedFingerprint: this._pendingNativeSaveTarget.fingerprint || null,
                         compression: compressLevel,
-                        protection: 'preserve'
+                        protection: 'preserve',
+                        ...(encryption && { encryption })
                     };
                     if (overwriteOriginal) {
                         await this.saveDocument(doc.id, saveOptions);
@@ -4073,115 +4080,23 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                 }
                 const doc = this.getDoc();
                 if (!doc) return;
-
-                const filename = (doc.name || 'documento.pdf').replace(/\.pdf$/i, '');
-                const compressLevel = document.querySelector('input[name="compress-level"]:checked')?.value || 'standard';
-                const compress = compressLevel !== 'none';
-                const usePassword = document.getElementById('save-use-password').checked;
-                const userPassword = document.getElementById('pdf-user-password').value;
-                const ownerPassword = document.getElementById('pdf-owner-password').value || userPassword;
-                const saveAsImages = document.getElementById('save-as-images')?.checked || false;
-                const lockEdit  = document.getElementById('save-lock-edit')?.checked || false;
-                const lockCopy  = document.getElementById('save-lock-copy')?.checked || false;
-                const lockPrint = document.getElementById('save-lock-print')?.checked || false;
-                const hasLocks  = lockEdit || lockCopy || lockPrint;
-
-                // Validate password if using protection
-                if (usePassword && !userPassword) {
-                    this.showToast('Ingresa una contraseña');
-                    return;
-                }
-
-                this.closeAllModals();
-                this.toggleLoader(true);
-                document.getElementById('loader-msg').innerText = "Generando PDF...";
-
                 try {
-                    let pdfBytes = null;
-
-                    if (saveAsImages) {
-                        // Rasterize each page as JPEG image inside a new PDF
-                        document.getElementById('loader-msg').innerText = "Rasterizando páginas como imágenes...";
-                        const srcBytes = await this.savePDFInternal(false, null, false, true);
-                        if (!srcBytes) throw new Error('No se pudo generar el PDF base');
-                        const srcDoc = await pdfjsLib.getDocument({ data: srcBytes }).promise;
-                        const pageCount = srcDoc.numPages;
-                        const newPdf = await PDFLib.PDFDocument.create();
-                        const scale = compress ? 1.5 : 2;
-                        for (let i = 1; i <= pageCount; i++) {
-                            document.getElementById('loader-msg').innerText = `Rasterizando página ${i}/${pageCount}...`;
-                            const pdfPage = await srcDoc.getPage(i);
-                            const vp = pdfPage.getViewport({ scale });
-                            const cvs = document.createElement('canvas');
-                            cvs.width = vp.width; cvs.height = vp.height;
-                            await pdfPage.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
-                            const quality = compress ? 0.8 : 0.95;
-                            const imgDataUrl = cvs.toDataURL('image/jpeg', quality);
-                            const imgBytes = Uint8Array.from(atob(imgDataUrl.split(',')[1]), c => c.charCodeAt(0));
-                            const embImg = await newPdf.embedJpg(imgBytes);
-                            const { width, height } = pdfPage.getViewport({ scale: 1 });
-                            const newPage = newPdf.addPage([width, height]);
-                            newPage.drawImage(embImg, { x: 0, y: 0, width, height });
-                        }
-                        pdfBytes = await newPdf.save();
-                    }
-
-                    if (usePassword || hasLocks) {
-                        // Apply encryption / permissions
-                        if (!pdfBytes) pdfBytes = await this.savePDFInternal(false, null, compress, true, compressLevel);
-                        if (!pdfBytes) throw new Error('No se pudo generar el PDF');
-
-                        const effectiveUser  = usePassword ? userPassword : '';
-                        const effectiveOwner = ownerPassword || ('alioth-owner-' + Date.now());
-
-                        // Build permissions array (what IS allowed)
-                        const perms = [];
-                        if (!lockPrint) perms.push('print');
-                        if (!lockEdit)  perms.push('modify', 'annotate');
-                        if (!lockCopy)  perms.push('copy');
-                        if (!usePassword) { perms.push('print', 'modify', 'annotate', 'copy'); }
-                        // deduplicate
-                        const uniquePerms = [...new Set(perms)];
-                        if (hasLocks) {
-                            const filteredPerms = uniquePerms.filter(p => {
-                                if (lockPrint && p === 'print') return false;
-                                if (lockEdit  && (p === 'modify' || p === 'annotate')) return false;
-                                if (lockCopy  && p === 'copy') return false;
-                                return true;
-                            });
-                            document.getElementById('loader-msg').innerText = "Aplicando restricciones de seguridad...";
-                            if (window.PythonManager) {
-                                pdfBytes = await PythonManager.encryptPDF(pdfBytes, effectiveUser, effectiveOwner, filteredPerms);
-                            }
-                        } else {
-                            await this.saveWithEncryption(filename, effectiveUser, effectiveOwner, compress, compressLevel, pdfBytes);
-                            return;
-                        }
-
-                        const fn = filename + '.pdf';
-                        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fn; a.click();
-                        this.showToast('✅ PDF guardado con restricciones');
-                    } else if (saveAsImages) {
-                        const fn = filename + '.pdf';
-                        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fn; a.click();
-                        this.showToast('✅ PDF guardado como imágenes');
-                    } else {
-                        await this.savePDFInternal(false, filename, compress, false, compressLevel);
-                    }
+                    const encryption = this.resolveNativeSaveEncryption(doc, this._readSaveEncryption(doc));
+                    const compression = document.querySelector('input[name="compress-level"]:checked')?.value || 'standard';
+                    const snapshot = await this.captureDocumentSnapshot(doc.id);
+                    const { bytes } = await this.prepareDocumentPdf(snapshot, { compression, encryption });
+                    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = (doc.name || 'documento').replace(/\.pdf$/i, '') + '.pdf';
+                    link.click();
+                    setTimeout(() => URL.revokeObjectURL(url), 1500);
+                    this.closeAllModals();
+                    this.showToast('PDF guardado correctamente.');
                 } catch (error) {
-                    console.error('Error saving PDF:', error);
-                    this.showToast('Error al guardar: ' + error.message);
-                } finally {
-                    this.toggleLoader(false);
+                    this._showNativeSaveError(error);
                 }
             },
-
-            /**
-             * Save PDF with encryption (password protection)
-             */
-            // showPageNumModal: merged into first definition above
 
             pageNumPos: 'bc', // default bottom-center
 
@@ -5378,6 +5293,8 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                                         const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = obj.src; });
                                         ctx.save();
                                         ctx.globalAlpha = obj.opacity !== undefined ? (obj.opacity > 1 ? obj.opacity/100 : obj.opacity) : 1;
+                                        const sharpness = obj.filters?.sharpness && this.getImageSharpnessFilter(obj.filters.sharpness);
+                                        if (sharpness) ctx.filter = sharpness;
                                         ctx.translate((obj.x + obj.width/2) * scale, (obj.y + obj.height/2) * scale);
                                         if (obj.rotation) ctx.rotate(obj.rotation * Math.PI / 180);
                                         ctx.drawImage(img, -obj.width/2 * scale, -obj.height/2 * scale, obj.width * scale, obj.height * scale);

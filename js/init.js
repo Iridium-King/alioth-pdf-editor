@@ -4,7 +4,7 @@
             var _orig = window.fetch;
             window.fetch = function (url, opts) {
                 var u = String(url);
-                var isAiRequest = /generativelanguage\.googleapis\.com|api\.groq\.com|api\.mistral\.ai|api-inference\.huggingface\.co|openrouter\.ai|integrate\.api\.nvidia\.com|api\.openai\.com|api\.elevenlabs\.io|\/groq\/|\/api\/tts|\/data-extract|convert-pdf-to-.*-ai/.test(u);
+                var isAiRequest = /generativelanguage\.googleapis\.com|api\.groq\.com|api\.mistral\.ai|api-inference\.huggingface\.co|openrouter\.ai|integrate\.api\.nvidia\.com|api\.openai\.com|api\.elevenlabs\.io|\/groq\/|\/api\/ai\/chat(?:\?|$)|\/api\/tts|\/data-extract|convert-pdf-to-.*-ai/.test(u);
                 if (isAiRequest && !window.aliothLegal?.isAiEnabled(window.localStorage)) {
                     return Promise.reject(new Error('AI notice has not been accepted; choose an AI data mode first.'));
                 }

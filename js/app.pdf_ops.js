@@ -971,7 +971,7 @@ Object.assign(app, {
                     overlay.innerHTML = `
                       <form onsubmit="return false;" style="display:contents;">
                       <div style="background:rgba(26,32,53,0.63);border:1px solid rgba(255,255,255,0.18);border-radius:14px;padding:28px 28px 24px;width:380px;max-width:92vw;color:#f0f4ff;font-family:inherit;box-shadow:0 16px 48px rgba(0,0,0,0.6);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);position:relative;">
-                        <button class="modal-close-btn-round" onclick="document.getElementById('_compCancel')?.click();" style="position:absolute;top:14px;right:14px;">✕</button>
+                        <button type="button" class="modal-close-btn-round" aria-label="Cerrar" onclick="document.getElementById('_compCancel')?.click();" style="position:absolute;top:14px;right:14px;">✕</button>
                         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
                           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#f0f4ff;flex-shrink:0;"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><rect x="4" y="17" width="16" height="3" rx="1"/></svg>
                           <span style="font-size:15px;font-weight:700;">Comprimir PDF</span>
@@ -1066,7 +1066,7 @@ Object.assign(app, {
                           <form onsubmit="return false;" style="display:contents;">
                           <input type="text" name="username" autocomplete="username" style="display:none;" aria-hidden="true">
                           <div style="background:rgba(26,32,53,0.63);border:1px solid rgba(255,255,255,0.18);border-radius:14px;padding:28px 28px 24px;width:340px;max-width:92vw;color:#f0f4ff;font-family:inherit;box-shadow:0 16px 48px rgba(0,0,0,0.6);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);position:relative;">
-                            <button class="modal-close-btn-round" onclick="document.getElementById('_lockPwCancel')?.click();" style="position:absolute;top:14px;right:14px;">✕</button>
+                            <button type="button" class="modal-close-btn-round" aria-label="Cerrar" onclick="document.getElementById('_lockPwCancel')?.click();" style="position:absolute;top:14px;right:14px;">✕</button>
                             <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
                               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#f0f4ff;flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2" fill="none"/><path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none"/></svg>
                               <span style="font-size:15px;font-weight:700;">Bloquear ${names[type]}</span>
@@ -1170,6 +1170,11 @@ Object.assign(app, {
                 this.toggleLoader(false);
             },
 
+            syncRestoreColorButton: function () {
+                const button = document.getElementById('btn-restore-color');
+                if (button) button.style.display = this.getDoc()?._originalColorBuffer ? '' : 'none';
+            },
+
             convertToGrayscalePDF: async function () {
                 const doc = this.getDoc();
                 const page = doc && doc.pages[doc.currentIndex];
@@ -1188,27 +1193,18 @@ Object.assign(app, {
                     }
                     const blob = new Blob([grayBuffer], { type: 'application/pdf' });
                     const file = new File([blob], "grises_" + (doc.name || "doc.pdf"), { type: 'application/pdf' });
-                    await this.openFile(file);
-
-                    // Guardar original en el nuevo doc activo para poder revertir
-                    const newDoc = this.getDoc();
-                    if (newDoc) {
-                        newDoc._originalColorBuffer = originalBuffer;
-                        newDoc._originalColorName = originalName;
-                    }
-                    // Aplicar filtro CSS al contenedor
-                    ['canvas-container', 'canvas-container-secondary'].forEach(id => {
-                        const el = document.getElementById(id);
-                        if (el) el.style.filter = 'grayscale(100%)';
-                    });
-                    // Mostrar botón de restaurar
-                    const btnRestore = document.getElementById('btn-restore-color');
-                    if (btnRestore) btnRestore.style.display = '';
+                    file._forceSameWindow = true;
+                    const newDoc = await this.openFile(file);
+                    if (!newDoc) return;
+                    newDoc._originalColorBuffer = originalBuffer;
+                    newDoc._originalColorName = originalName;
+                    this.syncRestoreColorButton();
                     this.showToast('✅ Documento convertido a escala de grises');
                 } catch (e) {
                     this.showToast('❌ Error en conversión: ' + e.message);
+                } finally {
+                    this.toggleLoader(false);
                 }
-                this.toggleLoader(false);
             },
 
             restoreColorPDF: async function () {
@@ -1222,25 +1218,19 @@ Object.assign(app, {
                     const colorBuffer = doc._originalColorBuffer;
                     const colorName = doc._originalColorName || doc.name;
 
-                    // Limpiar flags y filtro CSS ANTES de renderizar el nuevo doc
-                    delete doc._originalColorBuffer;
-                    delete doc._originalColorName;
-                    ['canvas-container', 'canvas-container-secondary'].forEach(id => {
-                        const el = document.getElementById(id);
-                        if (el) el.style.filter = '';
-                    });
-
                     const colorBlob = new Blob([colorBuffer], { type: 'application/pdf' });
                     const colorFile = new File([colorBlob], colorName, { type: 'application/pdf' });
-                    await this.openFile(colorFile);
-                    // Ocultar botón de restaurar
-                    const btnRestore = document.getElementById('btn-restore-color');
-                    if (btnRestore) btnRestore.style.display = 'none';
+                    colorFile._forceSameWindow = true;
+                    if (!await this.openFile(colorFile)) return;
+                    delete doc._originalColorBuffer;
+                    delete doc._originalColorName;
+                    this.syncRestoreColorButton();
                     this.showToast('✅ Documento restaurado a color');
                 } catch (e) {
                     this.showToast('❌ Error al restaurar: ' + e.message);
+                } finally {
+                    this.toggleLoader(false);
                 }
-                this.toggleLoader(false);
             },
 
             invertColorsPDF: async function () {
@@ -1415,7 +1405,7 @@ invert_colors(js_data)
                     const imageData = cvs.toDataURL('image/png');
 
                     document.getElementById('loader-msg').innerText = "OCR: Analizando texto de la imagen...";
-                    const worker = await this._getOCRWorker(Tesseract.PSM.AUTO);
+                    const worker = await this._getOCRWorker();
                     const ret = await worker.recognize(imageData);
 
                     const ocrResults = (ret.data.words || []).map(w => ({
@@ -2757,7 +2747,7 @@ invert_colors(js_data)
                     <!-- Header -->
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
                         <strong style="font-size:14px;">&#128290; Generador de Código de Barras</strong>
-                        <button class="modal-close-btn-round" onclick="document.getElementById('_alioth_barcode_modal').remove()" style="position:absolute;top:14px;right:14px;">✕</button>
+                        <button type="button" class="modal-close-btn-round" aria-label="Cerrar" onclick="document.getElementById('_alioth_barcode_modal').remove()" style="position:absolute;top:14px;right:14px;">✕</button>
                     </div>
 
                     <!-- Texto + Formato -->

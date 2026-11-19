@@ -107,9 +107,11 @@ def register_pdf(executable, launcher=None, icon=None):
     return True
 
 
-def initialize_once(certificate, executable, launcher=None, icon=None, *, state_path=None, force=False):
+def initialize_once(certificate, executable, launcher=None, icon=None, *, state_path=None, force=False,
+                    trust_certificate=False):
     """Attempt per-user integration once; cache denials too to avoid repeated prompts.
 
+    Certificate trust is a separate, opt-in operation.
     A different certificate or launch location invalidates only its own result.
     Explicit repair can use force=True. No elevation or default-app override.
     """
@@ -134,8 +136,12 @@ def initialize_once(certificate, executable, launcher=None, icon=None, *, state_
         entry = state.get(key)
         return isinstance(entry, dict) and entry.get('id') == identity and type(entry.get('ok')) is bool
 
+    operations = [('registration', target_id, lambda: register_pdf(executable, launcher, icon))]
+    if trust_certificate:
+        operations.insert(0, ('certificate', certificate_id, lambda: install_certificate(certificate)))
+
     def ready(state):
-        return completed(state, 'certificate', certificate_id) and completed(state, 'registration', target_id)
+        return all(completed(state, key, identity) for key, identity, _ in operations)
 
     state = read_state()
     if not force and ready(state):
@@ -155,10 +161,7 @@ def initialize_once(certificate, executable, launcher=None, icon=None, *, state_
         try:
             state = read_state()
             state['version'] = 1
-            for key, identity, operation in [
-                ('certificate', certificate_id, lambda: install_certificate(certificate)),
-                ('registration', target_id, lambda: register_pdf(executable, launcher, icon))
-            ]:
+            for key, identity, operation in operations:
                 if not force and completed(state, key, identity):
                     continue
                 try:

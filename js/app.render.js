@@ -12,7 +12,18 @@ Object.assign(app, {
                 if (source._pdfLoadingPromise) return source._pdfLoadingPromise;
                 const buffer = source.buffer;
                 if (!buffer) return Promise.reject(new Error('PDF_SOURCE_CLOSED'));
-                const task = pdfjsLib.getDocument({ data: buffer.slice(0) });
+                const task = pdfjsLib.getDocument({ data: buffer.slice(0), password: source.password });
+                task.onPassword = (updatePassword, reason) => {
+                    const password = window.prompt(reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD
+                        ? 'Contraseña incorrecta. Reintenta:' : 'Archivo protegido. Introduce contraseña:');
+                    if (password === null) {
+                        task.destroy().catch(() => {});
+                        return;
+                    }
+                    source.metadata = { ...source.metadata, protectionRequired: true };
+                    Object.defineProperty(source, 'password', { value: password, writable: true, configurable: true });
+                    updatePassword(password);
+                };
                 source._pdfLoadingTask = task;
                 const pending = task.promise.then(pdf => {
                     if (source.buffer !== buffer || source._pdfLoadingTask !== task) {
@@ -506,6 +517,7 @@ Object.assign(app, {
             },
 
             renderTabs: function () {
+                this.syncRestoreColorButton?.();
                 const c = document.getElementById('docTabsWrapper'); c.innerHTML = '';
                 this._updateAboutBtn();
                 if (typeof this.updateWindowTitle === 'function') this.updateWindowTitle();
@@ -1345,6 +1357,7 @@ Object.assign(app, {
 
                 // Update visible canvas only after render completes — no blank flash
                 cvs.width = vp.width; cvs.height = vp.height;
+                cvs._translationViewport = { page: pData, viewport: vp };
                 if (dlayer) { dlayer.width = vp.width; dlayer.height = vp.height; }
 
                 c.style.width = vp.width + 'px'; c.style.height = vp.height + 'px';
@@ -1743,7 +1756,7 @@ Object.assign(app, {
                 const result = document.createElement('p'); result.className = 'selection-translation-result';
                 const addNote = document.createElement('button'); addNote.type = 'button'; addNote.textContent = 'Agregar como nota'; addNote.hidden = true;
                 const footer = document.createElement('div'); footer.className = 'selection-translation-footer'; footer.appendChild(addNote);
-                const close = document.createElement('button'); close.type = 'button'; close.textContent = '×'; close.setAttribute('aria-label', 'Cerrar');
+                const close = document.createElement('button'); close.type = 'button'; close.className = 'app-close-button'; close.textContent = '×'; close.setAttribute('aria-label', 'Cerrar');
                 heading.append(title, close);
                 let translatedText = '', controller;
                 const positionPopup = () => {
@@ -3513,6 +3526,9 @@ Object.assign(app, {
 
             renderOverlays: function (panelId = null) {
                 const targetPanel = panelId || this.splitView.activePanel;
+                if (targetPanel === this.splitView.activePanel && this._currentRibbonTab === 'image') {
+                    this.syncImageSharpnessControl();
+                }
                 const elements = this.getPanelElements(targetPanel);
                 const l = elements.overlayLayer;
                 if (!l) return;
@@ -4639,6 +4655,8 @@ Object.assign(app, {
                         i.style.opacity = opacityValue;
                         i.style.transform = `scale(${scX}, ${scY})`;
                         let f = `brightness(${o.filters?.brightness || 100}%) contrast(${o.filters?.contrast || 100}%) saturate(${o.filters?.saturate || 100}%) hue-rotate(${o.filters?.hue || 0}deg) blur(${o.filters?.blur || 0}px)`;
+                        const sharpness = o.filters?.sharpness && this.getImageSharpnessFilter(o.filters.sharpness);
+                        if (sharpness) f = sharpness + ' ' + f;
                         if (o.filters?.grayscale) f += ' grayscale(100%)'; if (o.filters?.invert) f += ' invert(100%)'; if (o.filters?.sepia) f += ' sepia(100%)';
                         if (o.shadow) {
                             const sc = o.shadowColor || '#000000';
@@ -4944,7 +4962,7 @@ Object.assign(app, {
             },
 
             // ── Obtiene o crea el worker Tesseract persistente (con soporte PSM dinámico) ──
-            renderCommentPins: function(panelId) {
+            renderCommentPins: function(panelId, pageIndex) {
                 const panel     = panelId || this.splitView.activePanel;
                 const elements  = this.getPanelElements(panel);
                 const container = elements.canvasContainer;
@@ -4958,10 +4976,11 @@ Object.assign(app, {
                 const doc   = this.docs.find(d => d.id === docId);
                 if (!doc) return;
 
-                const page  = doc.pages[doc.currentIndex];
+                const page  = doc.pages[pageIndex ?? doc.currentIndex];
                 if (!page?.objects) return;
 
                 const scale = panelState?.scale || this.currentScale;
+                const translationViewport = elements.canvas?._translationViewport;
 
                 page.objects.filter(o => o.type === 'comment').forEach(o => {
                     if (o.translationNote) {
@@ -4972,12 +4991,15 @@ Object.assign(app, {
                         zone.dataset.translationNote = 'true';
                         zone.dataset.translationLanguage = o.translationLanguage || 'Traducción';
                         zone._nativeCommentObj = o;
-                        const zoneW = Math.max(20, (o.width || 80) * scale);
-                        const zoneH = Math.max(14, (o.height || 20) * scale);
+                        const [x1, y1, x2, y2] = o.translationPdfAnchor && translationViewport?.page === page
+                            ? translationViewport.viewport.convertToViewportRectangle(o.translationPdfAnchor)
+                            : [o.x * scale, o.y * scale, (o.x + (o.width || 80)) * scale, (o.y + (o.height || 20)) * scale];
+                        const zoneW = Math.max(20, Math.abs(x2 - x1));
+                        const zoneH = Math.max(14, Math.abs(y2 - y1));
                         zone.style.cssText = `
                             position:absolute;
-                            left:${o.x * scale}px;
-                            top:${o.y * scale}px;
+                            left:${Math.min(x1, x2)}px;
+                            top:${Math.min(y1, y2)}px;
                             width:${zoneW}px;
                             height:${zoneH}px;
                             z-index:450;
@@ -5253,12 +5275,7 @@ Object.assign(app, {
                                 </svg>
                             </button>
                             ${isPinned ? `
-                                <button type="button" id="trans-unpin-btn" title="Cerrar" style="background:none;border:none;color:#94a3b8;cursor:pointer;padding:2px 3px;display:inline-flex;align-items:center;justify-content:center;border-radius:3px;line-height:1;">
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;">
-                                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                                    </svg>
-                                </button>
+                                <button class="app-close-button" type="button" id="trans-unpin-btn" title="Cerrar"></button>
                             ` : ''}
                         </div>
                     </div>
@@ -6149,6 +6166,7 @@ Object.assign(app, {
                     const cvs = elements.canvas;
                     cvs.width = bg.width;
                     cvs.height = bg.height;
+                    cvs._translationViewport = bg._pdfViewport ? { page: p, viewport: bg._pdfViewport } : null;
                     cvs.getContext('2d', { alpha: false }).drawImage(bg, 0, 0);
                     const dlayer = elements.drawingLayer;
                     if (dlayer) { dlayer.width = bg.width; dlayer.height = bg.height; }

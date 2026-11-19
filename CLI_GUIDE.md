@@ -37,7 +37,15 @@ En PowerShell, desde la carpeta del proyecto:
 `pdf` es un prefijo opcional: `alioth.py pdf info entrada.pdf --json` equivale
 a `alioth.py info entrada.pdf --json`. Usa `COMANDO --help` para ver sus opciones.
 Las páginas empiezan en 1. En `text`, `search` y `redact`, 0 selecciona todas.
-`--password` permite abrir entradas cifradas; no aparece en los resultados.
+Las entradas cifradas se abren con `--password`. `replace`, `redact` y
+`organize` conservan el cifrado y los permisos originales. `merge` y `split`
+devuelven `PROTECTION_REQUIRED` cuando hay entradas protegidas que impiden
+conservar la política de acceso en la salida.
+
+`redact` trata coincidencias literales en el texto de página. Con
+`--sanitize` también limpia metadatos, adjuntos, scripts incrustados y
+texto oculto. Esta limpieza puede quitar la capa OCR y conserva comentarios,
+enlaces y campos de formulario. Revisa el PDF exportado antes de compartirlo.
 
 Las rutas relativas se resuelven desde el directorio de trabajo de quien llama
 la CLI o MCP. Las operaciones de escritura rechazan usar un PDF de entrada como

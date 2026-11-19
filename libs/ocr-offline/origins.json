@@ -1,0 +1,46 @@
+[
+  {
+    "package": "tesseract.js-core",
+    "version": "5.0.0",
+    "source": "https://registry.npmjs.org/tesseract.js-core/-/tesseract.js-core-5.0.0.tgz",
+    "source_sha256": "4e0903fade656252fe5f5eb59143743af9861d85e2b7c8b0e0d679613c375840",
+    "files": [
+      {
+        "path": "libs/ocr-offline/tesseract-core-lstm.wasm.js",
+        "sha256": "79bc1719fc7e8fd16430621b4df273b56b0172ce7634fe380c01197147350777"
+      },
+      {
+        "path": "libs/ocr-offline/tesseract-core-simd-lstm.wasm.js",
+        "sha256": "2773366915c9db41c7bb136d62b18fa581c2c1b175f429c794ef6256bbdf6719"
+      },
+      {
+        "path": "libs/ocr-offline/LICENSE",
+        "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+      }
+    ]
+  },
+  {
+    "package": "@tesseract.js-data/spa",
+    "version": "1.0.0",
+    "source": "https://registry.npmjs.org/@tesseract.js-data/spa/-/spa-1.0.0.tgz",
+    "source_sha256": "b6814aa0f4f672c6772b9a5323b85c19887d030ffcf571e5c41a8b066fbb9d16",
+    "files": [
+      {
+        "path": "libs/ocr-offline/spa.traineddata.gz",
+        "sha256": "40be52f97b5d4eb7460073dc1f94cd546b27150333c0bf854ed7e7132db6bceb"
+      }
+    ]
+  },
+  {
+    "package": "@tesseract.js-data/eng",
+    "version": "1.0.0",
+    "source": "https://registry.npmjs.org/@tesseract.js-data/eng/-/eng-1.0.0.tgz",
+    "source_sha256": "c9bddf2e2f0a214ac7918f3f4a3caf45e09ce8674fe26662ae7787ac8927f7bb",
+    "files": [
+      {
+        "path": "libs/ocr-offline/eng.traineddata.gz",
+        "sha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91"
+      }
+    ]
+  }
+]

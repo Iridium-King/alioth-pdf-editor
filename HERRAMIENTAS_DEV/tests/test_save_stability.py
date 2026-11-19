@@ -60,6 +60,18 @@ class SaveStabilityTests(unittest.TestCase):
         with fitz.open(self.path) as pdf:
             self.assertIn('first', pdf[0].get_text())
 
+    def test_plain_upload_cannot_overwrite_an_encrypted_destination(self):
+        for user_password in ('', 'reader'):
+            with self.subTest(requires_password=bool(user_password)):
+                with fitz.open(stream=pdf_bytes('protected'), filetype='pdf') as document:
+                    encrypted = document.tobytes(encryption=fitz.PDF_ENCRYPT_AES_256, user_pw=user_password,
+                                                 owner_pw='owner', permissions=fitz.PDF_PERM_PRINT)
+                self.path.write_bytes(encrypted)
+                upload = self.upload('overwrite-' + user_password)
+                with self.assertRaisesRegex(ValueError, 'PROTECTION_REQUIRED'):
+                    self.store.commit_save('session', upload.upload_id, upload.operation_id)
+                self.assertEqual(self.path.read_bytes(), encrypted)
+
     def test_expired_grant_renews_only_for_its_session_without_changing_baseline(self):
         grant = self.store.issue_grant('session', self.path, 'save')
         self.clock[0] = 901

@@ -1,5 +1,5 @@
 body.compact-chrome {
-    --chrome-zoom-width: 51px; --chrome-title-height: 29px; --chrome-header-height: 26px;
+    --chrome-title-height: 29px; --chrome-header-height: 26px;
     --chrome-tab-height: 25px; --chrome-active-tab-height: 26px;
     --chrome-file-size: 22px; --chrome-file-icon: 20px;
 }
@@ -40,11 +40,14 @@ body.compact-chrome .app-titlebar .doc-tab-add { width: 23px !important; height:
 body.compact-chrome .tabs-container { display: none !important; }
 body.compact-chrome .app-header { height: var(--chrome-header-height) !important; min-height: var(--chrome-header-height); flex-shrink: 0; gap: 6px; }
 body.compact-chrome .chrome-search-tools { order: initial !important; gap: 4px !important; margin-left: 2px !important; min-width: 0; }
-body.compact-chrome .chrome-search-tools .dark-toggle-btn {
+body.compact-chrome .chrome-search-tools .dark-toggle-btn,
+body.compact-chrome .header-tabs-wrapper #darkToggle {
     width: 24px; min-width: 24px; height: 24px; padding: 3px; margin: 0 !important;
     background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.22); border-radius: 50% !important;
 }
-body.compact-chrome .chrome-search-tools .dark-toggle-btn:hover { background: rgba(255,255,255,.25); }
+body.compact-chrome .header-tabs-wrapper #darkToggle { margin-left: 5px !important; }
+body.compact-chrome .chrome-search-tools .dark-toggle-btn:hover,
+body.compact-chrome .header-tabs-wrapper #darkToggle:hover { background: rgba(255,255,255,.25); }
 body.compact-chrome .chrome-search-tools svg { flex-shrink: 0; }
 body.compact-chrome .header-right { gap: 14px; }
 body.compact-chrome .header-right .chrome-file-button {
@@ -155,18 +158,6 @@ body.compact-chrome:not(.h-layout):not(.reading-mode) #bookmark-panel,
 body.compact-chrome:not(.h-layout):not(.reading-mode) #attach-panel-sidebar,
 body.compact-chrome:not(.h-layout):not(.reading-mode) #fields-panel-sidebar,
 body.compact-chrome:not(.h-layout):not(.reading-mode) #layers-panel-sidebar { top: 63px; }
-body.compact-chrome #reading-mode-float-widget {
-    width: var(--chrome-zoom-width) !important; height: 26px !important; right: 6px !important;
-    bottom: 181px !important; box-sizing: border-box !important; padding: 0; border-radius: 5px;
-    background: rgba(30,30,45,.38); border: 0;
-    opacity: .25; transition: opacity .2s;
-}
-body.compact-chrome #reading-mode-float-widget:hover,
-body.compact-chrome #reading-mode-float-widget:focus-within { opacity: 1; }
-body.compact-chrome #reading-mode-float-widget #btn-reading-mode { width: 100% !important; min-width: 0 !important; max-width: 100% !important; margin: 0 !important; height: 26px !important; padding: 0 2px !important; border-radius: 5px !important; font-size: 8px !important; gap: 3px !important; box-sizing: border-box; box-shadow: none !important; }
-body.compact-chrome #btn-reading-mode svg { width: 11px !important; height: 11px !important; flex-shrink: 0; }
-body.compact-chrome.h-layout #reading-mode-float-widget { bottom: 273px !important; }
-body.compact-chrome.h-layout.reading-mode #reading-mode-float-widget { bottom: 181px !important; }
 body.compact-chrome.reading-mode #view-toggle-widget { display: none !important; }
 body.compact-chrome.reading-mode .history-controls,
 body.compact-chrome.reading-mode .header-right { order: 0; }

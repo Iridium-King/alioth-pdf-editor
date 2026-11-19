@@ -36,7 +36,11 @@ Object.assign(app, {
                 // MODAL MASTER CLEANUP: Robustly hide and reset all UI overlays
                 try {
                     this.cancelPendingSignature?.();
+                    if (this._iemMagicImage) this._iemResetMagicCanvas();
                     if (document.getElementById('translation-review-modal')?.style.display === 'flex') {
+                        this._translationNotesAbortController?.abort();
+                        this._translationNotesAbortController = null;
+                        this.setTranslationRetryControl?.(null);
                         this._translationReviewAbortController?.abort();
                         this._translationReviewAbortController = null;
                         if (this._translationReviewDocId) {
@@ -118,6 +122,15 @@ Object.assign(app, {
 
                     // Reset scroll for modals that might have it
                     document.querySelectorAll('.glass-box').forEach(el => el.scrollTop = 0);
+                    if (this._saveModalPreviousFocus) {
+                        const previous = this._saveModalPreviousFocus;
+                        this._saveModalPreviousFocus = null;
+                        for (const id of ['pdf-user-password', 'pdf-owner-password']) {
+                            const input = document.getElementById(id);
+                            if (input) input.value = '';
+                        }
+                        if (previous.isConnected) previous.focus?.();
+                    }
                 } catch (err) {
                     console.warn('⚠ Error in closeAllModals:', err);
                 }
@@ -474,6 +487,7 @@ Object.assign(app, {
                 const btn  = document.getElementById('btn-reading-mode');
 
                 body.classList.toggle('reading-mode', this._readingMode);
+                btn?.setAttribute('aria-pressed', String(this._readingMode));
 
                 const docTabs = document.getElementById('docTabsWrapper');
                 const appHeader = document.querySelector('.app-header');
@@ -488,7 +502,6 @@ Object.assign(app, {
                     }
                     this._readingModeSidebarWidth =
                         document.getElementById('sidebarContainer')?.style.width || '';
-                    if (btn) btn.onmouseout = null;
                     // Desactivar resaltado de campos en modo lectura
                     this._readingModeHighlightWasOn = this.isFieldHighlightMode;
                     if (this.isFieldHighlightMode) {
@@ -516,11 +529,6 @@ Object.assign(app, {
                     const sc = document.getElementById('sidebarContainer');
                     if (sc && this._readingModeSidebarWidth && !document.body.classList.contains('h-layout'))
                         sc.style.width = this._readingModeSidebarWidth;
-                    if (btn) {
-                        btn.onmouseout = () => {
-                            btn.style.background = 'rgba(255,255,255,0.15)';
-                        };
-                    }
                     // Restaurar resaltado si estaba activo antes de modo lectura
                     if (this._readingModeHighlightWasOn) {
                         this.isFieldHighlightMode = true;
@@ -534,7 +542,6 @@ Object.assign(app, {
                 // Force re-render overlays and keep scale after layout shift
                 setTimeout(() => this.renderOverlays(), 100);
                 // Reposicionar widget TTS si está visible
-                if (this._ttsVisible) setTimeout(() => this._ttsUpdatePosition(), 50);
             },
 
             toggleSmartGuides: function () {
@@ -1285,6 +1292,7 @@ Object.assign(app, {
                 const tb = document.getElementById('toolbar-' + t);
                 if (tb) tb.classList.add('active');
                 this._currentRibbonTab = t;
+                if (t === 'image') this.syncImageSharpnessControl();
 
                 if (t !== 'draw') {
                     this.isDrawingMode = false;
@@ -3023,6 +3031,7 @@ equalize_pages(js_data, js_params_json)
                 if (panelState && panelState.docId) {
                     // Switch main activeDocId to match focused panel
                     this.activeDocId = panelState.docId;
+                    this.syncRestoreColorButton?.();
                     this.currentScale = panelState.scale || 1.0;
                     const doc = this.getDoc();
                     if (doc) {

@@ -139,7 +139,61 @@ class SharedEngineTests(unittest.TestCase):
         self.call('pdf_redact_sensitive_data', filepath=str(encrypted), password='reader-secret',
                   patterns=['SECRET123'], output_path=str(output))
         with engine.fitz.open(output) as document:
+            self.assertTrue(document.needs_pass)
+            self.assertTrue(document.authenticate('reader-secret'))
             self.assertNotIn('SECRET123', document[0].get_text())
+        with engine.fitz.open(output) as document:
+            self.assertEqual(document.authenticate('owner-secret'), 4)
+
+    def test_replace_repeated_text_preserves_other_content(self):
+        output = self.root / 'replace.pdf'
+        original = hashlib.sha256(self.source.read_bytes()).digest()
+        result = self.call('pdf_splice_text', filepath=str(self.source), page_number=1,
+                           old_text='alpha', new_text='New', output_path=str(output))
+        self.assertEqual(result['replaced_instances'], 3)
+        self.assertEqual(hashlib.sha256(self.source.read_bytes()).digest(), original)
+        with engine.fitz.open(output) as document:
+            text = document[0].get_text()
+            self.assertEqual(text.count('New'), 3)
+            self.assertNotIn('alpha', text.casefold())
+            self.assertIn('original text', text)
+            self.assertIn('SECRET123', text)
+
+    def test_organize_encrypted_pdf_rejects_reader_without_assembly_permission(self):
+        encrypted = self.root / 'protected.pdf'
+        output = self.root / 'rotated.pdf'
+        with engine.fitz.open(self.source) as document:
+            document.save(encrypted, encryption=engine.fitz.PDF_ENCRYPT_AES_256,
+                          owner_pw='owner-secret', user_pw='reader-secret',
+                          permissions=engine.fitz.PDF_PERM_COPY)
+        args = {'filepath': str(encrypted), 'output_path': str(output), 'rotations': {'1': 90}}
+        result = engine.execute('pdf_organize_pages', {**args, 'password': 'reader-secret'})
+        self.assertEqual(result.get('code'), 'PERMISSION_REQUIRED', result)
+        self.assertFalse(output.exists())
+        self.call('pdf_organize_pages', **args, password='owner-secret')
+        with engine.fitz.open(output) as document:
+            self.assertTrue(document.needs_pass)
+            self.assertEqual(document.authenticate('reader-secret'), 2)
+            self.assertFalse(document.permissions & engine.fitz.PDF_PERM_ASSEMBLE)
+            self.assertEqual(document[0].rotation, 90)
+            self.assertIn('original text', document[0].get_text())
+
+    def test_redaction_sanitizes_metadata_and_attachments_only_when_requested(self):
+        source = self.root / 'hidden.pdf'
+        with engine.fitz.open(self.source) as document:
+            document.set_metadata({'subject': 'SECRET123'})
+            document.embfile_add('hidden.txt', b'SECRET123')
+            document.save(source)
+        for sanitize in (False, True):
+            output = self.root / f'redact-{sanitize}.pdf'
+            result = self.call('pdf_redact_sensitive_data', filepath=str(source), patterns=['SECRET123'],
+                               output_path=str(output), sanitize=sanitize)
+            self.assertEqual(result['sanitized'], sanitize)
+            self.assertEqual('warning' in result, not sanitize)
+            with engine.fitz.open(output) as document:
+                self.assertNotIn('SECRET123', document[0].get_text())
+                self.assertEqual('SECRET123' in document.metadata['subject'], not sanitize)
+                self.assertEqual('hidden.txt' in document.embfile_names(), not sanitize)
 
     def test_default_output_is_in_application_artifact_directory(self):
         artifacts = self.root / 'application'

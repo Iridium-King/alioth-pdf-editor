@@ -530,10 +530,17 @@ def compress(data_bytes, img_quality):
 
     if img_quality > 0:
         max_dim = 2400 if img_quality >= 75 else 1600
+        # A soft mask is a separate image stream. Keep it at the size of its source.
+        soft_masks = {
+            image[1]
+            for page_index in range(len(doc))
+            for image in doc.get_page_images(page_index)
+            if image[1]
+        }
         
         for xref in range(1, doc.xref_length()):
             try:
-                if not doc.xref_is_image(xref):
+                if xref in soft_masks or not doc.xref_is_image(xref):
                     continue
                 img_info = doc.extract_image(xref)
                 if not img_info:

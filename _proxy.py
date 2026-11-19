@@ -17,7 +17,7 @@ from _user_preferences import UserPreferences, preference_key
 from _native_host import HOST_ORIGIN, launch_native_host, notify_ready, active_host_count, host_executable, startup_failure_choice
 from _browser_migration import browser_migration
 from _file_origin import explorer_paths, resolve_file_origin
-from _windows_integration import install_certificate, register_pdf, integration_status, initialize_once
+from _windows_integration import integration_status, initialize_once
 from _process_lifecycle import reap_inactive_hosts
 from _system_fonts import resolve_font
 
@@ -30,6 +30,7 @@ else:
 
 base_dir = bundle_dir
 os.chdir(base_dir)
+_PROJECT_PREVIEW = not getattr(sys, 'frozen', False) and '--project-preview' in sys.argv[1:]
 
 class AliothHTTPServer(getattr(http.server, 'ThreadingHTTPServer', http.server.HTTPServer)):
     allow_reuse_address = False
@@ -477,6 +478,9 @@ _TRANSLATION_PROVIDER_PREFERENCE = None
 _TRANSLATION_PROVIDER_PREFERENCE_SECONDS = 300
 _TRANSLATION_MODEL_STATES = {}
 _TRANSLATION_CREDENTIAL_STATES = {}
+_TRANSLATION_MODEL_RESULTS = {}
+_TRANSLATION_GROQ_CATALOGUES = {}
+_TRANSLATION_GROQ_REFRESHING = set()
 _TRANSLATION_MODEL_LOCK = threading.Lock()
 
 
@@ -552,6 +556,7 @@ class _TranslationGenerationBudget:
         self.retry_after_seconds = 0
         self.provider_waits = {}
         self.probe_token = object()
+        self.expected_translation_ids = frozenset()
 
     def note_provider_wait(self, provider, delay, replace=False):
         if delay > 0:
@@ -720,7 +725,7 @@ def _list_gemini_vision_models(key, timeout=15):
         models = cached[1] if cached else _GEMINI_MODEL_FALLBACKS
         return [model for model in models if not _vision_model_retired('gemini', model)]
 
-def _gemini_generate_json(body, keys=None, timeout=150, budget=None):
+def _gemini_generate_json(body, keys=None, timeout=150, budget=None, *, vision=False, translation=False):
     """Envía la petición con rotación de claves y modelo estable automático."""
     keys = keys if keys is not None else GEMINI_KEYS
     last_error = None
@@ -735,10 +740,15 @@ def _gemini_generate_json(body, keys=None, timeout=150, budget=None):
                 continue
             budget.timeout()
         try:
-            models = _list_gemini_models(key, budget=budget) if budget else _list_gemini_models(key)
+            if vision:
+                models = _list_gemini_vision_models(key, timeout=budget.timeout(3) if budget else 15)
+            else:
+                models = _list_gemini_models(key, budget=budget) if budget else _list_gemini_models(key)
         except urllib.error.HTTPError as exc:
             last_error = exc
             continue
+        if translation:
+            models = _order_translation_models('gemini', key, models)
         for model in models:
             if budget:
                 status, delay = _translation_model_wait('gemini', key, model)
@@ -752,12 +762,16 @@ def _gemini_generate_json(body, keys=None, timeout=150, budget=None):
             url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + urllib.parse.quote(key, safe='')
             req = urllib.request.Request(url, data=body, method='POST', headers={'Content-Type': 'application/json', 'User-Agent': UA_BROWSER})
             request_timeout = budget.timeout(generation=True) if budget else timeout
+            started = time.monotonic() if translation else None
             try:
                 if budget:
                     payload = budget.read_json(req, request_timeout, 'gemini', model, credential=key)
                 else:
                     with urllib.request.urlopen(req, timeout=request_timeout, context=_SSL_CTX) as response:
                         payload = json.loads(response.read())
+                if translation:
+                    _translation_record_model_result('gemini', key, model, budget.expected_translation_ids,
+                                                     _gemini_response_text(payload), time.monotonic() - started)
                 if budget:
                     _translation_clear_provider_cooldown('gemini', keys, '', _GEMINI_MODEL_FALLBACKS)
                 return payload, model
@@ -787,13 +801,113 @@ def _gemini_generate_json(body, keys=None, timeout=150, budget=None):
         raise RuntimeError('Gemini no respondió') from None
     raise RuntimeError(f'Gemini no respondió: {last_error or "sin modelos compatibles"}')
 
+def _read_groq_catalogue(key, timeout):
+    req = urllib.request.Request('https://api.groq.com/openai/v1/models',
+                                 headers={'Authorization': 'Bearer ' + key, 'User-Agent': UA_BROWSER})
+    with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as response:
+        models = json.loads(response.read())['data']
+    if not isinstance(models, list):
+        raise ValueError('Catálogo de Groq inválido')
+    return models
+
+
 def _list_groq_models(key):
     try:
-        req = urllib.request.Request('https://api.groq.com/openai/v1/models', headers={'Authorization': 'Bearer ' + key, 'User-Agent': UA_BROWSER})
-        with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as resp: data = json.loads(resp.read())
-        available = {item.get('id', '') for item in data.get('data', [])}
+        available = {item.get('id', '') for item in _read_groq_catalogue(key, 15)}
         return [model for model in _GROQ_MODEL_FALLBACKS if model in available]
-    except Exception: return []
+    except Exception:
+        return []
+
+
+def _refresh_translation_groq_catalogue(key, identity):
+    try:
+        available = frozenset(item['id'] for item in _read_groq_catalogue(key, 3) if item.get('active') is not False)
+    except urllib.error.HTTPError as err:
+        err.close()
+        available = None
+    except Exception:
+        available = None
+    with _TRANSLATION_MODEL_LOCK:
+        now = time.monotonic()
+        previous = _TRANSLATION_GROQ_CATALOGUES.get(identity, (None, 0, 0))
+        models, checked = (available, now) if available is not None else previous[:2]
+        if len(_TRANSLATION_GROQ_CATALOGUES) >= 64 and identity not in _TRANSLATION_GROQ_CATALOGUES:
+            oldest = min(_TRANSLATION_GROQ_CATALOGUES, key=lambda item: _TRANSLATION_GROQ_CATALOGUES[item][2])
+            del _TRANSLATION_GROQ_CATALOGUES[oldest]
+        _TRANSLATION_GROQ_CATALOGUES[identity] = (models, checked, now + (900 if available is not None else 60))
+        _TRANSLATION_GROQ_REFRESHING.discard(identity)
+
+
+def _translation_groq_models(key, models, refresh=False):
+    identity = _translation_model_identity('groq', key, '')
+    with _TRANSLATION_MODEL_LOCK:
+        available, checked, next_refresh = _TRANSLATION_GROQ_CATALOGUES.get(identity, (None, 0, 0))
+        now = time.monotonic()
+        recently_checked = bool(checked and checked + 60 > now)
+        if (identity not in _TRANSLATION_GROQ_REFRESHING and len(_TRANSLATION_GROQ_REFRESHING) < 8
+                and (now >= next_refresh or (refresh and not recently_checked))):
+            _TRANSLATION_GROQ_REFRESHING.add(identity)
+            try:
+                threading.Thread(target=_refresh_translation_groq_catalogue, args=(key, identity), daemon=True).start()
+            except RuntimeError:
+                _TRANSLATION_GROQ_REFRESHING.discard(identity)
+    if available is not None and checked + 3600 > now:
+        return [model for model in models if model in available]
+    return models
+
+
+def _translation_response_complete(text, expected):
+    try:
+        clean = re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=re.IGNORECASE)
+        items = json.loads(clean)
+        if isinstance(items, dict):
+            items = next((items[key] for key in ('translations', 'results', 'items', 'data')
+                          if isinstance(items.get(key), list)), [])
+        if not isinstance(items, list):
+            return False
+        returned = [item['unitId'] for item in items
+                    if isinstance(item, dict) and isinstance(item.get('unitId'), str)
+                    and isinstance(item.get('translatedText'), str) and item['translatedText'].strip()]
+        return len(items) == len(returned) == len(expected) and set(returned) == expected
+    except (ValueError, TypeError, RecursionError):
+        return False
+
+
+def _gemini_response_text(payload):
+    candidates = payload.get('candidates') or [{}]
+    return ''.join(part.get('text', '') for part in candidates[0].get('content', {}).get('parts', []))
+
+
+def _translation_record_model_result(provider, key, model, expected, text, elapsed):
+    if not expected:
+        return
+    identity = _translation_model_identity(provider, key, model)
+    complete = _translation_response_complete(text, expected)
+    with _TRANSLATION_MODEL_LOCK:
+        now = time.monotonic()
+        previous = _TRANSLATION_MODEL_RESULTS.get(identity)
+        samples, reliability, speed = previous[:3] if previous and previous[3] > now else (0, float(complete), elapsed)
+        reliability = 0.75 * reliability + 0.25 * complete
+        if complete:
+            speed = 0.75 * speed + 0.25 * elapsed
+        if len(_TRANSLATION_MODEL_RESULTS) >= 512 and identity not in _TRANSLATION_MODEL_RESULTS:
+            oldest = min(_TRANSLATION_MODEL_RESULTS, key=lambda item: _TRANSLATION_MODEL_RESULTS[item][3])
+            del _TRANSLATION_MODEL_RESULTS[oldest]
+        _TRANSLATION_MODEL_RESULTS[identity] = (samples + 1, reliability, speed, now + 1800)
+
+
+def _order_translation_models(provider, key, models):
+    with _TRANSLATION_MODEL_LOCK:
+        now = time.monotonic()
+        ranked = {}
+        for index, model in enumerate(models):
+            state = _TRANSLATION_MODEL_RESULTS.get(_translation_model_identity(provider, key, model))
+            if state and state[0] >= 2 and state[3] > now:
+                ranked[index] = (model, -state[1], state[2])
+    ordered = list(models)
+    for index, (model, _, _) in zip(ranked, sorted(ranked.values(), key=lambda entry: entry[1:])):
+        ordered[index] = model
+    return ordered
 
 def _list_groq_vision_models(key, timeout=15):
     cached = _GROQ_VISION_MODEL_CACHE.get(key)
@@ -991,8 +1105,11 @@ def _translation_ready_providers(specs, budget=None):
     return ready or network_cooled
 
 
-def _openai_generate_json(provider, keys, endpoint, models, prompt, temperature, budget=None):
+def _openai_generate_json(provider, keys, endpoint, models, prompt, temperature, budget=None, *, plain_text=False, vision=False, translation=False):
     last_error = None
+    messages = [{'role': 'user', 'content': prompt}]
+    if not plain_text:
+        messages.insert(0, {'role': 'system', 'content': 'Devuelve exclusivamente JSON válido, sin markdown.'})
     for key in dict.fromkeys(k for k in keys if k):
         if budget:
             if _translation_quota_wait(provider, keys, endpoint, models, budget):
@@ -1002,7 +1119,12 @@ def _openai_generate_json(provider, keys, endpoint, models, prompt, temperature,
                 budget.failures.add('PROVIDER_PAYMENT_REQUIRED')
                 budget.note_provider_wait(provider, payment_wait)
                 continue
-        for model in models:
+        available = _list_groq_vision_models(key, timeout=budget.timeout(3) if budget else 15) if vision else models
+        if translation:
+            if provider == 'groq':
+                available = _translation_groq_models(key, available)
+            available = _order_translation_models(provider, key, available)
+        for model in available:
             if budget:
                 status, delay = _translation_model_wait(provider, key, model)
                 if status:
@@ -1012,15 +1134,23 @@ def _openai_generate_json(provider, keys, endpoint, models, prompt, temperature,
                     continue
                 if _translation_quota_wait(provider, keys, endpoint, models, budget):
                     break
-            body = json.dumps({'model': model, 'messages': [{'role': 'system', 'content': 'Devuelve exclusivamente JSON válido, sin markdown.'}, {'role': 'user', 'content': prompt}], 'temperature': temperature}).encode('utf-8')
+            parameters = {'model': model, 'messages': messages, 'temperature': temperature}
+            if translation and provider == 'groq' and model == 'openai/gpt-oss-20b':
+                parameters.update(reasoning_effort='low', max_completion_tokens=4096)
+            body = json.dumps(parameters).encode('utf-8')
             request = urllib.request.Request(endpoint, data=body, method='POST', headers={'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'User-Agent': UA_BROWSER})
             request_timeout = budget.timeout(generation=True) if budget else 90
+            started = time.monotonic() if translation else None
             try:
                 if budget:
                     payload = budget.read_json(request, request_timeout, provider, model, credential=key)
                 else:
                     with urllib.request.urlopen(request, timeout=request_timeout, context=_SSL_CTX) as response: payload = json.loads(response.read())
-                text = payload.get('choices', [{}])[0].get('message', {}).get('content', '')
+                choices = (payload.get('choices') or [{}]) if translation else payload.get('choices', [{}])
+                text = choices[0].get('message', {}).get('content', '')
+                if translation:
+                    _translation_record_model_result(provider, key, model, budget.expected_translation_ids,
+                                                     text if isinstance(text, str) else '', time.monotonic() - started)
                 if isinstance(text, str) and text.strip():
                     if budget:
                         _translation_clear_provider_cooldown(provider, keys, endpoint, models)
@@ -1047,6 +1177,8 @@ def _openai_generate_json(provider, keys, endpoint, models, prompt, temperature,
                         raise RuntimeError(provider + ' no respondió a tiempo') from None
                     if isinstance(exc, urllib.error.HTTPError):
                         exc.close()
+                        if translation and provider == 'groq' and exc.code in (404, 410):
+                            _translation_groq_models(key, models, refresh=True)
                         if exc.code in (401, 402, 403) or quota_blocked:
                             break
     if budget:
@@ -1067,20 +1199,92 @@ def _generate_text_json_with_fallback(prompt, temperature=0, budget=None):
         try:
             if provider == 'gemini':
                 body = json.dumps({'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': temperature, 'responseMimeType': 'application/json'}}).encode('utf-8')
-                payload, model = _gemini_generate_json(body, timeout=90, **({'budget': budget} if budget else {}))
-                text = ''.join(part.get('text', '') for part in payload.get('candidates', [{}])[0].get('content', {}).get('parts', []))
+                payload, model = _gemini_generate_json(body, timeout=90, **({'budget': budget, 'translation': True} if budget else {}))
+                text = _gemini_response_text(payload)
             elif budget:
-                text, _, model = _openai_generate_json(provider, keys, endpoint, models, prompt, temperature, budget=budget)
+                text, _, model = _openai_generate_json(provider, keys, endpoint, models, prompt, temperature, budget=budget, translation=True)
             else:
                 text, resolved_provider = _openai_generate_json(provider, keys, endpoint, models, prompt, temperature)
                 return text, resolved_provider, models[0]
             if text.strip():
-                if budget:
+                if budget and (not budget.expected_translation_ids or _translation_response_complete(text, budget.expected_translation_ids)):
                     _translation_remember_provider(provider, specs)
                 return text.strip(), provider, model
         except Exception as exc:
             print(f'[AI {provider}] fallback activado: {type(exc).__name__}')
     raise RuntimeError(budget.error_code() if budget else 'No hay proveedor de texto disponible o todos fallaron')
+
+class _AIChatCancelled(Exception):
+    pass
+
+
+class _ChatGenerationBudget(_TranslationGenerationBudget):
+    def __init__(self, cancelled, vision):
+        super().__init__()
+        self.deadline = self.started + 22
+        self.request_limit = 9 if vision else 6
+        self.cancelled = cancelled
+
+    def timeout(self, limit=15, generation=False):
+        if self.cancelled is not None and self.cancelled.is_set():
+            raise _AIChatCancelled()
+        return super().timeout(min(limit, self.request_limit), generation)
+
+
+def _generate_chat_with_fallback(prompt, images, preferred, gemini_key='', cancelled=None):
+    budget = _ChatGenerationBudget(cancelled, bool(images))
+    budget.timeout()
+    gemini_keys = list(dict.fromkeys(key for key in [gemini_key, *GEMINI_KEYS] if key))
+    specs = [('gemini', gemini_keys, '', _GEMINI_MODEL_FALLBACKS)] if gemini_keys else []
+    specs.extend(spec for spec in _TEXT_PROVIDER_SPECS if any(spec[1]) and (not images or spec[0] == 'groq'))
+    if not specs:
+        raise RuntimeError('PROVIDER_KEY_REQUIRED')
+    ready = _translation_ready_providers(specs, budget)
+    for provider, keys, endpoint, models in sorted(specs, key=lambda spec: spec[0] != preferred):
+        if provider not in ready:
+            continue
+        try:
+            if provider == 'gemini':
+                parts = [{'text': prompt}]
+                parts.extend({'inline_data': {'mime_type': 'image/jpeg', 'data': image}} for image in images)
+                body = json.dumps({'contents': [{'parts': parts}],
+                                   'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 4096}}).encode('utf-8')
+                payload, _ = _gemini_generate_json(body, keys, budget=budget, vision=bool(images))
+                candidates = payload.get('candidates') or [{}]
+                candidate = candidates[0]
+                feedback = payload.get('promptFeedback') or {}
+                if feedback.get('blockReason') or candidate.get('finishReason') in ('SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'):
+                    break
+                text = ''.join(part.get('text', '') for part in (candidate.get('content') or {}).get('parts', []) if not part.get('thought'))
+            else:
+                content = prompt
+                if images:
+                    content = [{'type': 'text', 'text': prompt}]
+                    content.extend({'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + image}} for image in images)
+                text, _, _ = _openai_generate_json(provider, keys, endpoint, models, content, 0.7,
+                                                   budget=budget, plain_text=True, vision=bool(images))
+            if text.strip():
+                budget.timeout()
+                return text.strip()
+        except (RuntimeError, TimeoutError, ValueError, TypeError, AttributeError) as exc:
+            print(f'[Chat IA] {provider} sin respuesta: {type(exc).__name__}')
+    if cancelled is not None and cancelled.is_set():
+        raise _AIChatCancelled()
+    raise RuntimeError(budget.error_code())
+
+
+_AI_CHAT_LOCK = threading.Lock()
+_AI_CHAT_ACTIVE = {}
+_AI_CHAT_EARLY_CANCELS = {}
+
+
+def _prune_chat_cancellations():
+    now = time.monotonic()
+    for request_id, expiry in list(_AI_CHAT_EARLY_CANCELS.items()):
+        if expiry <= now:
+            del _AI_CHAT_EARLY_CANCELS[request_id]
+    while len(_AI_CHAT_EARLY_CANCELS) > 256:
+        del _AI_CHAT_EARLY_CANCELS[next(iter(_AI_CHAT_EARLY_CANCELS))]
 
 # Orígenes permitidos: solo el propio proxy local
 _ACTIVE_PORT = 8765
@@ -3252,6 +3456,10 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                 return self._delete_secure_credential()
             if self.path == '/api/ai/generate-json':
                 return self._generate_ai_json()
+            if self.path == '/api/ai/chat':
+                return self._generate_ai_chat()
+            if self.path == '/api/ai/chat/cancel':
+                return self._cancel_ai_chat()
             if self.path == '/api/diag-log':
                 return self._record_app_diag()
             if self.path == '/api/translation/metrics':
@@ -3498,6 +3706,7 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                 payload.get('sha256', ''),
                 payload.get('expected_fingerprint'),
                 payload.get('redaction_verification'),
+                payload.get('verification_password'),
             )
             return self._send_json(200, {'ok': True, 'upload_id': upload.upload_id, 'status': upload.status, 'redaction_verification': bool(upload.redaction_verification)})
         except PermissionError:
@@ -3755,6 +3964,66 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             return self._send_json(422, {'ok': False, 'error': 'TRANSLATION_NATIVE_FAILED'})
 
+    def _generate_ai_chat(self):
+        try:
+            data = json.loads(self._read_body())
+            prompt = data.get('prompt')
+            images = data.get('images', [])
+            request_id = data.get('requestId')
+            if request_id is not None and (not isinstance(request_id, str) or not re.fullmatch(r'[a-f0-9]{32}', request_id)):
+                raise ValueError()
+            if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 60000:
+                raise ValueError()
+            if not isinstance(images, list) or len(images) > 10:
+                raise ValueError()
+            for image in images:
+                if not isinstance(image, str) or not base64.b64decode(image, validate=True).startswith(b'\xff\xd8'):
+                    raise ValueError()
+            preferred = data.get('preferredProvider')
+            if preferred not in ('gemini', *(spec[0] for spec in _TEXT_PROVIDER_SPECS)):
+                preferred = 'gemini'
+        except (ValueError, AttributeError, TypeError):
+            return self._send_json(400, {'ok': False, 'error': 'INVALID_AI_CHAT'})
+
+        auth = self.headers.get('Authorization', '')
+        legacy_key = auth[7:].strip() if auth.lower().startswith('bearer ') else ''
+        cancelled = threading.Event()
+        if request_id is not None:
+            with _AI_CHAT_LOCK:
+                _prune_chat_cancellations()
+                if request_id in _AI_CHAT_ACTIVE:
+                    return self._send_json(409, {'ok': False, 'error': 'AI_CHAT_ACTIVE'})
+                if _AI_CHAT_EARLY_CANCELS.pop(request_id, None) is not None:
+                    cancelled.set()
+                _AI_CHAT_ACTIVE[request_id] = cancelled
+        try:
+            text = _generate_chat_with_fallback(prompt, images, preferred, legacy_key, cancelled)
+            return self._send_json(200, {'ok': True, 'text': text})
+        except _AIChatCancelled:
+            return self._send_json(409, {'ok': False, 'error': 'AI_CHAT_CANCELLED'})
+        except RuntimeError as exc:
+            return self._send_json(503, {'ok': False, 'error': str(exc)})
+        finally:
+            if request_id is not None:
+                with _AI_CHAT_LOCK:
+                    _AI_CHAT_ACTIVE.pop(request_id, None)
+
+    def _cancel_ai_chat(self):
+        try:
+            request_id = json.loads(self._read_body()).get('requestId')
+            if not isinstance(request_id, str) or not re.fullmatch(r'[a-f0-9]{32}', request_id):
+                raise ValueError()
+        except (ValueError, AttributeError, TypeError):
+            return self._send_json(400, {'ok': False, 'error': 'INVALID_AI_CHAT'})
+        with _AI_CHAT_LOCK:
+            active = _AI_CHAT_ACTIVE.get(request_id)
+            if active is None:
+                _AI_CHAT_EARLY_CANCELS[request_id] = time.monotonic() + 60
+                _prune_chat_cancellations()
+            else:
+                active.set()
+        return self._send_json(200, {'ok': True})
+
     def _generate_ai_json(self):
         budget = None
         metrics = None
@@ -3772,6 +4041,10 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             budget = _TranslationGenerationBudget() if data.get('task') == 'translation' else None
             if budget:
                 budget.metrics = metrics
+                expected = data.get('expectedTranslationIds')
+                if (isinstance(expected, list) and 0 < len(expected) <= 64
+                        and all(isinstance(item, str) and re.fullmatch(r'u\d{1,7}', item) for item in expected)):
+                    budget.expected_translation_ids = frozenset(expected)
             text, provider, model = _generate_text_json_with_fallback(prompt, float(temperature), **({'budget': budget} if budget else {}))
             result = {'ok': True, 'text': text, 'provider': provider, 'model': model}
             if budget:
@@ -3851,11 +4124,9 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
     def _associate_pdf_handler(self):
         try:
             # An explicit preferences action can retry a first-use policy failure.
-            try:
-                initialize_once(base64.b64decode(ALIOTH_ROOT_CERT_BASE64), *_pdf_registration_target(), force=True)
-            except OSError:
-                pass
-            register_pdf(*_pdf_registration_target())
+            result = initialize_once(base64.b64decode(ALIOTH_ROOT_CERT_BASE64), *_pdf_registration_target(), force=True)
+            if not result.get('registration', {}).get('ok'):
+                raise OSError('PDF registration failed')
             try:
                 os.startfile('ms-settings:defaultapps?registeredAppUser=AliothPDFEditor')
             except OSError:
@@ -5769,17 +6040,6 @@ def _pdf_registration_target():
     return executable, launcher, os.path.join(bundle_dir, 'ICONO 1.ico')
 
 
-def ensure_root_certificate_installed():
-    if os.name != 'nt':
-        return True
-    try:
-        return install_certificate(base64.b64decode(ALIOTH_ROOT_CERT_BASE64))
-    except OSError as error:
-        print(f'[Certificate] No se pudo instalar la raíz incluida: {error}')
-        return False
-
-
-
 def activate_browser_window(maximize=False):
     """Trae Alioth al frente y conserva su tamaño salvo al iniciar."""
     if os.name != 'nt':
@@ -5897,7 +6157,7 @@ def request_local_window(file_path=None, queued=False):
     def launch():
         global _WINDOW_LAUNCH_PENDING
         try:
-            if not ((not file_path or queued) and activate_browser_window()):
+            if _PROJECT_PREVIEW or not ((not file_path or queued) and activate_browser_window()):
                 launch_browser(_ACTIVE_PORT, [file_path] if file_path else [])
         finally:
             with _WINDOW_LAUNCH_LOCK:
@@ -5940,12 +6200,14 @@ def _browser_has_client(port):
 
 def launch_browser(port=8765, args=None):
     url = build_browser_url(port, args)
+    preview_profile = os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~'),
+                                   'AliothPDFEditor', 'ProjectPreview') if _PROJECT_PREVIEW else None
 
     def wait_for_window():
         connected = False
         for _ in range(20):
             connected = connected or _browser_has_client(port)
-            if connected and (os.name != 'nt' or activate_browser_window(maximize=True)):
+            if connected and (_PROJECT_PREVIEW or os.name != 'nt' or activate_browser_window(maximize=True)):
                 return True
             time.sleep(0.5)
         return connected
@@ -5961,7 +6223,7 @@ def launch_browser(port=8765, args=None):
                 ctypes.windll.kernel32.SetDllDirectoryW(bundle_dir)
 
     while True:
-        if launch_native_host(url, bundle_dir, launch_external):
+        if launch_native_host(url, bundle_dir, launch_external, profile=preview_profile):
             return
         if os.name != 'nt' or not host_executable(bundle_dir):
             break
@@ -6035,7 +6297,7 @@ def _client_monitor_loop(cleanup_fn):
         time.sleep(5)
         _NATIVE_SAVE_STORE.cleanup()
         _TRANSFER_STORE.cleanup()
-        if not pending_window_count():
+        if not _PROJECT_PREVIEW and not pending_window_count():
             reap_inactive_hosts(allow_current=True)
         with _CLIENTS_LOCK:
             num_clients = len(_EVENT_QUEUES)
@@ -6056,18 +6318,20 @@ def _client_monitor_loop(cleanup_fn):
 
 
 if __name__ == '__main__':
-    if check_existing_instance_and_forward(sys.argv[1:]):
+    if not _PROJECT_PREVIEW and check_existing_instance_and_forward(sys.argv[1:]):
         sys.exit(0)
 
-    reap_inactive_hosts()
-    if os.name == 'nt':
+    if not _PROJECT_PREVIEW:
+        reap_inactive_hosts()
+    if os.name == 'nt' and not _PROJECT_PREVIEW:
         try:
             initialize_once(base64.b64decode(ALIOTH_ROOT_CERT_BASE64), *_pdf_registration_target())
         except OSError as error:
             print(f'[First Run] No se pudo completar la integración: {error.__class__.__name__}')
 
     # 2. Configurar directorio seguro de runtime para port y pid (sin ensuciar directorios de usuario)
-    runtime_dir = os.path.join(tempfile.gettempdir(), 'alioth_pdf_runtime')
+    preview_runtime = tempfile.TemporaryDirectory(prefix='alioth-project-preview-') if _PROJECT_PREVIEW else None
+    runtime_dir = preview_runtime.name if preview_runtime else os.path.join(tempfile.gettempdir(), 'alioth_pdf_runtime')
     try:
         os.makedirs(runtime_dir, exist_ok=True)
     except Exception:
@@ -6080,7 +6344,8 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"[Proxy] Error al escribir PID: {e}")
 
-    local_pid_path = os.path.join(exe_dir, 'alioth.pid') if not getattr(sys, 'frozen', False) else None
+    save_project_runtime = not _PROJECT_PREVIEW and not getattr(sys, 'frozen', False)
+    local_pid_path = os.path.join(exe_dir, 'alioth.pid') if save_project_runtime else None
     if local_pid_path:
         try:
             with open(local_pid_path, 'w', encoding='utf-8') as f:
@@ -6089,18 +6354,17 @@ if __name__ == '__main__':
             pass
 
     server = None
-    port = 8765
-    for p in range(8765, 8776):
+    for p in (0,) if _PROJECT_PREVIEW else range(8765, 8776):
         try:
             server = AliothHTTPServer(('127.0.0.1', p), AliothHandler)
-            port = p
             break
         except Exception:
             continue
     if not server:
-        print("[Proxy] No se pudo vincular a ningun puerto en el rango 8765-8775")
+        print("[Proxy] No se pudo abrir un puerto local para Alioth")
         sys.exit(1)
 
+    port = server.server_address[1]
     _ACTIVE_PORT = port
     _ALLOWED_ORIGINS = {f'http://127.0.0.1:{port}', f'http://localhost:{port}', HOST_ORIGIN}
 
@@ -6111,7 +6375,7 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"[Proxy] Error al escribir puerto: {e}")
 
-    local_port_path = os.path.join(exe_dir, 'alioth.port') if not getattr(sys, 'frozen', False) else None
+    local_port_path = os.path.join(exe_dir, 'alioth.port') if save_project_runtime else None
     if local_port_path:
         try:
             with open(local_port_path, 'w', encoding='utf-8') as f:
@@ -6129,6 +6393,8 @@ if __name__ == '__main__':
                     os.remove(p)
                 except Exception:
                     pass
+        if preview_runtime:
+            preview_runtime.cleanup()
     atexit.register(_cleanup_runtime)
 
     # Iniciar monitor de inactividad de clientes

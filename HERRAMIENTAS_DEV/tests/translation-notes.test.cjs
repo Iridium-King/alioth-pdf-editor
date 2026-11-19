@@ -15,7 +15,7 @@ function textObject(text, extra = {}) {
 }
 
 function fixture(spans = []) {
-  const h = loadAppModules(['js/app.agentic.js', 'js/app.pdf.js'], {
+  const h = loadAppModules(['js/app.agentic.js', 'js/app.ocr.js', 'js/app.pdf.js'], {
     AbortController, AbortSignal, TextEncoder, TextDecoder,
     console: { log() {}, info() {}, warn() {}, error() {} }
   });
@@ -66,23 +66,37 @@ function fixture(spans = []) {
   h.app.showTextTranslationModal();
   h.node('translation-review-scope').value = 'document';
   h.closed = 0;
-  h.notes = () => h.app.docs.slice(2).flatMap(doc => doc.pages.flatMap(page => page.objects.filter(object => object.translationNote)));
+  h.notes = () => h.first.pages.flatMap(page => page.objects.filter(object => object.translationNote));
   return h;
 }
 
-test('notes preserve the original, align both columns and bypass reconstruction', async () => {
-  const h = fixture([span('Left paragraph', 0, 40, 50), span('Right paragraph', 0, 340, 70)]);
+test('notes update the source tab, align same-row columns and form one undoable edit', async () => {
+  const h = fixture([span('Left paragraph', 0, 40, 50), span('Right paragraph', 0, 340, 50)]);
   const before = JSON.stringify(h.first.pages);
   const bytes = Buffer.from(h.first.sources['source-a'].buffer);
+  const rendered = [];
+  h.app.renderCommentPins = (...args) => rendered.push(args);
+  h.app.loadPage = () => assert.fail('Adding comments does not reload the page');
   await h.app.applyTextTranslationModal();
-  assert.equal(h.app.docs.length, 3, h.node('translation-review-status').textContent);
-  assert.equal(JSON.stringify(h.first.pages), before);
+  assert.equal(h.app.docs.length, 2, h.node('translation-review-status').textContent);
+  assert.equal(JSON.stringify(h.first.pages.map(page => ({ ...page, objects: page.objects.filter(object => !object.translationNote) }))), before);
   assert.equal(h.reconstructions, 0);
   assert.deepEqual(h.notes().map(note => [note.translationSide, note.y, note.sourceText]),
-    [['left', 50, 'Left paragraph'], ['right', 70, 'Right paragraph']]);
-  assert.deepEqual(Buffer.from(h.app.docs[2].sources['source-a'].buffer), bytes);
-  assert.equal(h.app.activeDocId, h.app.docs[2].id);
+    [['left', 50, 'Left paragraph'], ['right', 50, 'Right paragraph']]);
+  assert.deepEqual(Buffer.from(h.first.sources['source-a'].buffer), bytes);
+  assert.equal(h.app.activeDocId, h.first.id);
   assert.equal(h.closed, 1);
+  assert.deepEqual(rendered, [['primary', 0]]);
+  h.app.loadPage = () => {};
+  h.app.undo();
+  assert.equal(h.notes().length, 0);
+  h.app.redo();
+  assert.equal(h.notes().length, 2);
+  h.app.showTextTranslationModal();
+  h.sent.length = 0;
+  await h.app.applyTextTranslationModal();
+  assert.deepEqual(h.sent, []);
+  assert.equal(h.notes().length, 2);
 });
 
 test('notes include native and editable text on the same page and other pages', async () => {
@@ -104,7 +118,7 @@ test('notes exclude comments, prior translations and form values from native fal
   assert.deepEqual(h.sent, ['Native paragraph']);
 });
 
-test('a page containing only comments produces no new translation copy', async () => {
+test('a page containing only comments does not request translation', async () => {
   const h = fixture();
   h.first.pages[0].objects.push(textObject('Internal comment', { type: 'comment' }));
   await h.app.applyTextTranslationModal();
@@ -120,7 +134,8 @@ test('editable-only generated pages translate without loading the PDF extractor'
   await h.app.applyTextTranslationModal();
   assert.deepEqual(h.sent, ['Generated text']);
   assert.equal(h.extractions.length, 0);
-  assert.equal(h.app.docs.length, 3);
+  assert.equal(h.app.docs.length, 2);
+  assert.equal(h.notes().length, 1);
 });
 
 test('page scope excludes native and editable text on other pages', async () => {
@@ -220,7 +235,9 @@ test('notes finished in the background preserve the active tab and another modal
     h.node('other-modal').style.display = 'flex';
   };
   await h.app.applyTextTranslationModal();
-  assert.equal(h.app.docs.length, 3);
+  assert.equal(h.app.docs.length, 2);
+  assert.equal(h.notes().length, 1);
+  assert.equal(h.second.pages[0].objects.some(object => object.translationNote), false);
   assert.equal(h.app.activeDocId, h.second.id);
   assert.equal(h.node('modal-overlay').style.display, 'flex');
   assert.equal(h.node('other-modal').style.display, 'flex');
@@ -228,11 +245,23 @@ test('notes finished in the background preserve the active tab and another modal
   assert.equal(h.app._translationReviewDocId, null);
 });
 
-test('cancelling notes during the provider request publishes no copy', async () => {
+test('cancelling notes during the provider request leaves the source untouched', async () => {
   const h = fixture([span('Source paragraph')]);
   h.beforeResponse = () => h.app.closeTextTranslationModal();
   await h.app.applyTextTranslationModal();
   assert.equal(h.app.docs.length, 2);
+  assert.equal(h.notes().length, 0);
+});
+
+test('editing the source during translation does not attach notes to stale content', async () => {
+  const h = fixture([span('Source paragraph')]);
+  h.beforeResponse = () => {
+    h.first.pages[0].objects.push(textObject('New edit'));
+    h.app.markDocumentChanged(h.first.id);
+  };
+  await h.app.applyTextTranslationModal();
+  assert.equal(h.notes().length, 0);
+  assert.match(h.node('translation-review-status').textContent, /documento cambió/);
 });
 
 test('browser OCR reads only the image crop and converts its geometry back to the page', async () => {
@@ -365,18 +394,25 @@ test('cancelled browser OCR releases its worker without loading the PDF', async 
   assert.equal(terminated, 1);
 });
 
-test('saving and reopening notes retains their source references and highlight positions', async () => {
-  const h = fixture([span('Left paragraph', 0, 40, 50), span('Right paragraph', 0, 340, 70)]);
+test('saving and reopening a cropped rotated page preserves both anchors and prevents duplicate notes', async () => {
+  const pdfjs = require('../../libs/pdf.js');
+  const spans = [span('Left paragraph', 0, 40, 50), span('Right paragraph', 0, 340, 50)];
+  const h = fixture(spans);
   const lib = vm.runInNewContext('PDFLib', h.context);
   const bytes = await vm.runInNewContext(`(async () => {
     const pdf = await PDFLib.PDFDocument.create();
-    pdf.addPage([600, 10000]).drawText('ORIGINAL_CONTENT', { x: 40, y: 9800 });
+    const page = pdf.addPage([700, 850]);
+    page.setCropBox(20, 25, 650, 800);
+    page.setRotation(PDFLib.degrees(90));
+    page.drawText('ORIGINAL_CONTENT', { x: 60, y: 775 });
     pdf.addPage([600, 10000]);
     return pdf.save();
   })()`, h.context);
-  h.first.sources['source-a'].buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const source = h.first.sources['source-a'];
+  source.buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  source.doc = await pdfjs.getDocument({ data: new Uint8Array(source.buffer.slice(0)) }).promise;
   await h.app.applyTextTranslationModal();
-  const snapshot = await h.app.captureDocumentSnapshot(h.app.docs[2].id);
+  const snapshot = await h.app.captureDocumentSnapshot(h.first.id);
   const prepared = await h.app.prepareDocumentPdf(snapshot, { purpose: 'save', compression: 'none', protection: 'preserve' });
   const reopened = await lib.PDFDocument.load(prepared.bytes);
   assert.equal(reopened.getPageCount(), 2);
@@ -384,7 +420,16 @@ test('saving and reopening notes retains their source references and highlight p
   assert.equal(annots.size(), 2);
   const notes = [0, 1].map(i => reopened.context.lookup(annots.get(i)));
   for (const note of notes) assert.match(note.get(lib.PDFName.of('Contents')).decodeText(), /Original:[\s\S]*Traducción:/);
-  assert.equal(notes[0].get(lib.PDFName.of('Rect')).asArray()[0].asNumber(), 40);
-  assert.equal(notes[1].get(lib.PDFName.of('Rect')).asArray()[0].asNumber(), 340);
+  assert.deepEqual(Array.from(notes[0].get(lib.PDFName.of('Rect')).asArray(), item => item.asNumber()), [60, 759, 260, 775]);
+  assert.deepEqual(Array.from(notes[1].get(lib.PDFName.of('Rect')).asArray(), item => item.asNumber()), [360, 759, 560, 775]);
   assert.ok(reopened.getPage(0).node.Contents());
+  const fresh = fixture(spans);
+  fresh.first.sources['source-a'].buffer = new Uint8Array(prepared.bytes).slice().buffer;
+  fresh.first.sources['source-a'].doc = await pdfjs.getDocument({ data: new Uint8Array(fresh.first.sources['source-a'].buffer.slice(0)) }).promise;
+  await fresh.app.applyTextTranslationModal();
+  assert.deepEqual(fresh.sent, []);
+  assert.equal(fresh.notes().length, 0);
+  assert.match(fresh.node('translation-review-status').textContent, /ya tienen comentarios/);
+  await source.doc.destroy();
+  await fresh.first.sources['source-a'].doc.destroy();
 });
