@@ -227,7 +227,11 @@
         }
     }
 
-    const work = parameters.get('mode') === 'export' ? exportStorage : importStorage;
+    const exporting = parameters.get('mode') === 'export';
+    if (!exporting && window.__aliothNativeHost) {
+        window.chrome.webview.postMessage({ channel: 'alioth-startup', state: 'migration-visible' });
+    }
+    const work = exporting ? exportStorage : importStorage;
     work().catch(error => {
         status.textContent = error.message === 'MIGRATION_DATABASE_BUSY'
             ? 'Otra ventana mantiene ocupada la base local. Ciérrala y pulsa Reintentar. Tus datos originales se conservan.'

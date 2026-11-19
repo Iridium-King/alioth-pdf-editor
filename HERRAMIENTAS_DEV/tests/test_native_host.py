@@ -20,6 +20,9 @@ class NativeHostTests(unittest.TestCase):
         tracking = patch.object(native, '_processes', set())
         tracking.start()
         self.addCleanup(tracking.stop)
+        software_tracking = patch.object(native, '_software_processes', set())
+        software_tracking.start()
+        self.addCleanup(software_tracking.stop)
         cleanup = patch.object(proxy, 'reap_inactive_hosts', return_value=0)
         cleanup.start()
         self.addCleanup(cleanup.stop)
@@ -44,6 +47,30 @@ class NativeHostTests(unittest.TestCase):
         with patch.object(native, 'host_executable', return_value=None), patch.object(native.subprocess, 'Popen') as launch:
             self.assertFalse(native.launch_native_host('http://127.0.0.1:8877/BASE.html', ROOT))
             launch.assert_not_called()
+
+    def test_only_a_live_software_rendered_session_changes_the_next_window(self):
+        first, second, fresh = (Mock() for _ in range(3))
+        for process in (first, second, fresh):
+            process.poll.return_value = None
+        url = 'http://127.0.0.1:8877/BASE.html'
+        def launch(arguments, **options):
+            if not native._software_processes:
+                self.assertNotIn('env', options)
+                native.notify_ready(arguments[-1], software_rendering=True)
+                return first
+            self.assertEqual(options['env']['ALIOTH_WEBVIEW_SOFTWARE'], '1')
+            native.notify_ready(arguments[-1], software_rendering=True)
+            return second
+        with patch.object(native.subprocess, 'Popen', side_effect=launch):
+            self.assertTrue(native.launch_native_host(url, ROOT))
+            self.assertTrue(native.launch_native_host(url, ROOT))
+        first.poll.return_value = second.poll.return_value = 0
+        def relaunch(arguments, **options):
+            self.assertNotIn('env', options)
+            native.notify_ready(arguments[-1])
+            return fresh
+        with patch.object(native.subprocess, 'Popen', side_effect=relaunch):
+            self.assertTrue(native.launch_native_host(url, ROOT))
 
     def test_runtime_failure_does_not_claim_a_successful_launch(self):
         process = Mock()

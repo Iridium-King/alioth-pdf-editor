@@ -37,7 +37,18 @@ const app = window.app;
         });
 
         window.app = app;
-        document.addEventListener('DOMContentLoaded', () => app.init());
+        document.addEventListener('DOMContentLoaded', async () => {
+            let state = 'editor-ready';
+            try {
+                await app.init();
+            } catch (error) {
+                state = 'editor-failed';
+                console.error('No se pudo iniciar ALIOTH PDF EDITOR.', error);
+            }
+            if (window.__aliothNativeHost) {
+                window.chrome.webview.postMessage({ channel: 'alioth-startup', state });
+            }
+        });
 
         // ── Ribbon interaction flag: prevenir blur-commit del editor de texto
         // cuando el usuario interactúa con controles del ribbon (select, color, etc.) ──

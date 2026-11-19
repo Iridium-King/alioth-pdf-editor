@@ -4,6 +4,7 @@ import sys
 import tempfile
 import os
 import subprocess
+import time
 import urllib.parse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -25,6 +26,18 @@ if '--fixture-migration' in sys.argv:
 
 class VerificationHandler(proxy.AliothHandler):
     def do_GET(self):
+        if ('--fixture-startup-asset-timeout' in sys.argv and
+                urllib.parse.urlsplit(self.path).path == '/js/preferences.js' and
+                not getattr(self.server, 'startup_asset_delayed', False)):
+            self.server.startup_asset_delayed = True
+            time.sleep(6)
+            return
+        if ('--fixture-startup-recovery' in sys.argv and
+                urllib.parse.urlsplit(self.path).path == '/js/app.bootstrap.js' and
+                not getattr(self.server, 'startup_stall_served', False)):
+            self.server.startup_stall_served = True
+            return self._send_raw(200, b'/* The first editor bootstrap never reports completion. */',
+                                  'application/javascript')
         for prefix, original in [('/__qa/original-font/', True), ('/__qa/free-font/', False)]:
             if self.path.startswith(prefix):
                 from _system_fonts import FONT_FILES, resolve_font

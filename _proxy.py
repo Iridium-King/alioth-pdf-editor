@@ -3439,7 +3439,7 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                 return self._send_json(200, {'ok': True})
             if self.path == '/api/native-host/ready':
                 data = json.loads(self._read_body())
-                return self._send_json(200, {'ok': notify_ready(data.get('token'))})
+                return self._send_json(200, {'ok': notify_ready(data.get('token'), data.get('softwareRendering') is True)})
             if self.path.startswith('/api/browser-migration/'):
                 return self._handle_browser_migration()
             if self.path == '/api/preferences':

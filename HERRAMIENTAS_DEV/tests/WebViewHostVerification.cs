@@ -9,9 +9,10 @@ internal sealed partial class HostWindow
 {
     private bool verifying;
     private readonly System.Diagnostics.Stopwatch startupClock = System.Diagnostics.Stopwatch.StartNew();
-    internal bool StartupVerification { get { var args = System.Environment.GetCommandLineArgs(); return args.Length > 6 && args[6] == "startup"; } }
+    private bool StartupAssetVerification { get { var args = System.Environment.GetCommandLineArgs(); return args.Length > 6 && args[6] == "startup-asset"; } }
+    internal bool StartupVerification { get { var args = System.Environment.GetCommandLineArgs(); return StartupAssetVerification || args.Length > 6 && args[6] == "startup"; } }
     internal bool PdfVerification { get { var args = System.Environment.GetCommandLineArgs(); return args.Length > 6 && args[6] == "pdf"; } }
-    internal bool LayoutVerification { get { var args = System.Environment.GetCommandLineArgs(); return args.Length > 6 && (args[6] == "layout" || args[6] == "failure" || args[6] == "requested-fixes" || args[6].StartsWith("stability")); } }
+    internal bool LayoutVerification { get { var args = System.Environment.GetCommandLineArgs(); return StartupAssetVerification || args.Length > 6 && (args[6] == "layout" || args[6] == "failure" || args[6] == "requested-fixes" || args[6] == "startup-recovery" || args[6].StartsWith("stability")); } }
     private bool FailureVerification { get { var args = System.Environment.GetCommandLineArgs(); return args.Length > 6 && args[6] == "failure"; } }
     private readonly System.Collections.Generic.List<string> recoveryPrompts = new System.Collections.Generic.List<string>();
     private readonly System.Collections.Generic.List<DialogResult> recoveryDecisions = new System.Collections.Generic.List<DialogResult>();
@@ -54,6 +55,11 @@ internal sealed partial class HostWindow
         if (File.Exists(previousError)) File.Delete(previousError);
         try
         {
+            if (arguments.Length > 6 && arguments[6] == "startup-recovery")
+            {
+                await VerifyStartupRecovery(directory);
+                return;
+            }
             if (StartupVerification)
             {
                 bool startupReady = false;
@@ -78,6 +84,13 @@ internal sealed partial class HostWindow
                 startupClock.Stop();
                 state["ok"] = startupReady;
                 state["elapsedMs"] = startupClock.ElapsedMilliseconds;
+                if (StartupAssetVerification)
+                {
+                    string log = File.ReadAllText(Path.Combine(Program.Profile, "native-host.log"));
+                    if (!log.Contains("startup-resource-retry") || startupRetried || Program.SoftwareRendering || !startupComplete)
+                        throw new Exception("STARTUP_ASSET_RETRY_FAILED_OR_SWITCHED_RENDERER");
+                    state["assetRetriedWithGpu"] = true;
+                }
                 if (startupReady) state["session"] = Program.Json.Deserialize<object>(await EvaluatePromise(@"(async()=>({
                     storedDocuments:await app.db.documents.count(),storedSources:await app.db.sources.count(),
                     openTabs:app.docs.length,openDocuments:app.docs.filter(doc=>doc.pages?.length).length,
@@ -670,6 +683,28 @@ internal sealed partial class HostWindow
             ok = true, nativeDrop = result, insertionAndSave = savedResult,
             busyRecoveredWithoutReload = true, unsavedMemoryRetained = true, modalPrompts = recoveryPrompts.Count
         }));
+        allowClose = true;
+        Close();
+    }
+
+    private async Task VerifyStartupRecovery(string directory)
+    {
+        RequireIsolatedLayoutProfile();
+        string source = view.CoreWebView2.Source;
+        var initialView = view;
+        await view.CoreWebView2.ExecuteScriptAsync("localStorage.setItem('alioth_qa_startup','retained')");
+        if (startupComplete || Program.SoftwareRendering || view.Enabled)
+            throw new Exception("STARTUP_ALREADY_READY_OR_USING_SOFTWARE");
+        for (int i = 0; i < 300 && view == initialView; i++) await Task.Delay(100);
+        if (view == initialView || startupClock.ElapsedMilliseconds < 25000)
+            throw new Exception("STARTUP_TIMER_DID_NOT_TRIGGER_AFTER_DEADLINE");
+        await WaitForFailureInterface();
+        if (!startupComplete || !Program.SoftwareRendering || !startupRetried || !view.Enabled ||
+            recoveryBar.Visible || view == initialView || view.CoreWebView2.Source != source || recoveryPrompts.Count != 0 ||
+            await view.CoreWebView2.ExecuteScriptAsync("localStorage.getItem('alioth_qa_startup')") != "\"retained\"")
+            throw new Exception("STARTUP_RETRY_DID_NOT_RESTORE_EDITOR");
+        File.WriteAllText(Path.Combine(directory, "startup-recovery.json"),
+            "{\"ok\":true,\"softwareRenderingActivatedAutomatically\":true,\"urlRetained\":true,\"profileRetained\":true}");
         allowClose = true;
         Close();
     }

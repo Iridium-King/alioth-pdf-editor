@@ -1,6 +1,20 @@
-const ALIOTH_VERSION = '3.2.46';
+const ALIOTH_VERSION = '3.2.48';
         window.ALIOTH_VERSION = ALIOTH_VERSION;
         const ALIOTH_CHANGELOG = [
+            {
+                version: '3.2.48',
+                date: '2026-11-19',
+                items: [
+                    { type: 'fix', text: '<strong>Arranque en Windows:</strong> Alioth reintenta las lecturas locales que se atascan. Si la interfaz sigue sin responder, intenta abrir la vista sin aceleración gráfica durante esa sesión.' }
+                ]
+            },
+            {
+                version: '3.2.47',
+                date: '2026-11-19',
+                items: [
+                    { type: 'fix', text: '<strong>Arranque en Windows:</strong> La ventana muestra el estado de carga y ofrece reintentar si la interfaz tarda en responder.' }
+                ]
+            },
             {
                 version: '3.2.46',
                 date: '2026-11-19',

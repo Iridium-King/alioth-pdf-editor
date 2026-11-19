@@ -18,6 +18,7 @@ internal static class Program
     internal const string Origin = "http://alioth.localhost";
     internal static Uri Backend;
     internal static string Assets, Profile, Session;
+    internal static bool SoftwareRendering;
     internal static CoreWebView2Environment Environment;
     internal static HostContext Context;
     private static readonly object LogLock = new object();
@@ -40,6 +41,7 @@ internal static class Program
             Profile = Path.GetFullPath(args[1]);
             Assets = Path.GetFullPath(args[2]);
             Session = args[3];
+            SoftwareRendering = System.Environment.GetEnvironmentVariable("ALIOTH_WEBVIEW_SOFTWARE") == "1";
             ServicePointManager.DefaultConnectionLimit = 32;
             CoreWebView2Environment.GetAvailableBrowserVersionString();
             try { SetProcessDpiAwarenessContext(new IntPtr(-4)); } catch (EntryPointNotFoundException) { }
@@ -78,7 +80,7 @@ internal static class Program
                 using (var request = new HttpRequestMessage(HttpMethod.Post, new Uri(Backend, "/api/native-host/ready")))
                 {
                     request.Headers.TryAddWithoutValidation("Origin", Backend.GetLeftPart(UriPartial.Authority));
-                    request.Content = new StringContent(Json.Serialize(new { token = Session }), Encoding.UTF8, "application/json");
+                    request.Content = new StringContent(Json.Serialize(new { token = Session, softwareRendering = SoftwareRendering }), Encoding.UTF8, "application/json");
                     using (var response = await Client.SendAsync(request, timeout.Token))
                     {
                         if (response.IsSuccessStatusCode)
@@ -97,10 +99,11 @@ internal static class Program
 
     internal static async Task<CoreWebView2Environment> CreateEnvironment()
     {
-        CoreWebView2EnvironmentOptions options = null;
+        string arguments = SoftwareRendering ? "--disable-gpu" : "";
 #if QA
-        options = new CoreWebView2EnvironmentOptions("--disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows");
+        arguments += " --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows";
 #endif
+        var options = arguments.Length == 0 ? null : new CoreWebView2EnvironmentOptions(arguments.Trim());
         var environment = await CoreWebView2Environment.CreateAsync(null, Profile, options);
         environment.BrowserProcessExited += delegate(object sender, CoreWebView2BrowserProcessExitedEventArgs e) {
             Log("browser-exited", e.BrowserProcessExitKind.ToString());
@@ -141,6 +144,7 @@ internal sealed class HostContext : ApplicationContext
 {
     private readonly List<HostWindow> windows = new List<HostWindow>();
     private CoreWebView2Environment failedEnvironment;
+    internal bool HasSingleWindow { get { return windows.Count == 1; } }
     internal HostWindow Open(string target, bool primary)
     {
         var window = new HostWindow(target, primary);
@@ -172,8 +176,14 @@ internal sealed partial class HostWindow : Form
     private bool allowClose, preparingClose, readyNotified;
     private string closeId;
     private readonly System.Windows.Forms.Timer closeTimer = new System.Windows.Forms.Timer { Interval = 15000 };
+    private readonly System.Windows.Forms.Timer startupTimer = new System.Windows.Forms.Timer { Interval = 25000 };
+    private TaskCompletionSource<bool> startupDeadline;
+    private string startupStage;
+    private bool startupComplete, startupRetried;
     private CoreWebView2Environment environment;
     private Panel recoveryBar;
+    private Label recoveryLabel;
+    private Button recoveryRetry;
     private string recoveryCategory, recoveryTarget, lastPromptCategory;
     private bool recoveryQueued, recoveryDialogOpen, retrying, recreateNeeded, rendererUnavailable;
     private int rendererProbeVersion;
@@ -211,17 +221,19 @@ internal sealed partial class HostWindow : Form
 #else
         Shown += async delegate {
 #endif
+            if (primary) BeginStartup();
             bool success = await Initialize();
             initialized.TrySetResult(success);
             if (!success)
             {
-                if (primary && !readyNotified) { readyNotified = true; await Program.Ready(); }
                 QueueRecovery("initialize", true);
+                await NotifyLauncher();
             }
         };
         FormClosing += PrepareClose;
         closeTimer.Tick += CloseTimedOut;
-        FormClosed += delegate { closeTimer.Stop(); closeTimer.Dispose(); view.Dispose(); };
+        startupTimer.Tick += StartupTimedOut;
+        FormClosed += delegate { closeTimer.Dispose(); startupTimer.Dispose(); view.Dispose(); };
     }
 
     protected override CreateParams CreateParams
@@ -273,16 +285,59 @@ internal sealed partial class HostWindow : Form
         }
     }
 
+    private void BeginStartup()
+    {
+        startupDeadline = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        startupStage = "environment";
+        startupTimer.Stop();
+        startupTimer.Start();
+        Program.Log("startup-begin", startupStage);
+        view.Enabled = false;
+        ShowStatusBar("Abriendo ALIOTH PDF EDITOR…", false);
+    }
+
+    private async void StartupTimedOut(object sender, EventArgs e)
+    {
+        startupTimer.Stop();
+        if (allowClose || IsDisposed || startupStage == null) return;
+        Program.Log("startup-timeout", startupStage);
+        startupDeadline.TrySetResult(false);
+        ShowRecoveryBar("startup-timeout", true);
+        if (!startupRetried && !readyNotified && !retrying && !preparingClose && !recoveryDialogOpen)
+        {
+            startupRetried = true;
+            Program.Log("startup-retry", startupStage);
+            await RetryRecovery(trySoftware: true);
+        }
+    }
+
+    private async Task NotifyLauncher()
+    {
+        if (!primary || readyNotified) return;
+        readyNotified = true;
+        await Program.Ready();
+    }
+
     private async Task<bool> Initialize(bool recreateEnvironment = false, bool recovery = false)
     {
+        var initializingView = view;
+        var deadline = startupDeadline;
+        Func<bool> pending = () => !IsDisposed && view == initializingView &&
+            (deadline == null || !deadline.Task.IsCompleted);
         try
         {
+            var nextEnvironment = Program.Environment;
             if (recreateEnvironment || Program.Environment == null)
-                Program.Environment = await Program.CreateEnvironment();
-            environment = Program.Environment;
-            await view.EnsureCoreWebView2Async(environment);
-            var core = view.CoreWebView2;
+                nextEnvironment = await Program.CreateEnvironment();
+            if (!pending()) return true;
+            environment = Program.Environment = nextEnvironment;
+            if (startupStage != null) startupStage = "controller";
+            await initializingView.EnsureCoreWebView2Async(environment);
+            if (!pending()) return true;
+            var core = initializingView.CoreWebView2;
+            if (startupStage != null) startupStage = "native-bridge";
             await core.AddScriptToExecuteOnDocumentCreatedAsync(NativeScript);
+            if (!pending()) return true;
 #if QA
             if (LayoutVerification)
             {
@@ -294,10 +349,11 @@ internal sealed partial class HostWindow : Form
                 }
             }
 #endif
+            if (!pending()) return true;
             if (primary || recovery)
             {
                 AttachCoreEvents();
-                if (recovery)
+                if (recovery && (recoveryTarget != null || !primary))
                 {
                     core.Navigate(recoveryTarget ?? (Program.Origin + (target.StartsWith("/") ? target : "/BASE.html")));
                     return true;
@@ -312,6 +368,7 @@ internal sealed partial class HostWindow : Form
         }
         catch (Exception error)
         {
+            if (!pending()) return true;
             Program.LogError("initialize-failed", error);
             rendererUnavailable = true;
             return false;
@@ -348,6 +405,15 @@ internal sealed partial class HostWindow : Form
                 if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out uri)) { e.Cancel = true; return; }
                 if (Program.IsApp(uri))
                 {
+                    if (primary && !startupComplete && uri.AbsolutePath == "/BASE.html" && startupStage == null)
+                    {
+                        // A visible migration can take longer than the editor bootstrap.
+                        view.Enabled = false;
+                        startupTimer.Start();
+                        ShowStatusBar("Abriendo ALIOTH PDF EDITOR…", false);
+                    }
+                    if (primary && !startupComplete)
+                        startupStage = uri.AbsolutePath == "/BASE.html" ? "editor" : "navigation";
                     recoveryTarget = Program.Origin + uri.PathAndQuery;
 #if QA
                     if (LegacyVerification) return;
@@ -358,7 +424,11 @@ internal sealed partial class HostWindow : Form
                 else if (uri.Scheme != "blob" && uri.Scheme != "about" && uri.Scheme != "data")
                 { e.Cancel = true; Program.OpenExternal(e.Uri); }
             };
-            core.NavigationCompleted += async delegate(object sender, CoreWebView2NavigationCompletedEventArgs e) {
+            core.NavigationCompleted +=
+#if QA
+            async
+#endif
+            delegate(object sender, CoreWebView2NavigationCompletedEventArgs e) {
                 if (IsDisposed || allowClose || !Object.ReferenceEquals(view.CoreWebView2, core)) return;
                 if (!e.IsSuccess || e.HttpStatusCode >= 400)
                 {
@@ -374,8 +444,7 @@ internal sealed partial class HostWindow : Form
                 rendererProbePending = false;
                 recreateNeeded = false;
                 lastPromptCategory = null;
-                if (recoveryBar != null) recoveryBar.Visible = false;
-                if (primary && !readyNotified) { readyNotified = true; await Program.Ready(); }
+                if ((!primary || startupComplete) && recoveryBar != null) recoveryBar.Visible = false;
 #if QA
                 if (e.IsSuccess) await VerifyInterface();
 #endif
@@ -395,30 +464,35 @@ internal sealed partial class HostWindow : Form
                         "Location: " + new Uri(Program.Backend, uri.PathAndQuery) + "\r\nCache-Control: no-store\r\n");
                     return;
                 }
-                var request = new HttpRequestMessage(new HttpMethod(e.Request.Method), new Uri(Program.Backend, uri.PathAndQuery));
-                if (e.Request.Content != null) request.Content = new StreamContent(e.Request.Content);
-                foreach (var header in e.Request.Headers)
+                using (var request = new HttpRequestMessage(new HttpMethod(e.Request.Method), new Uri(Program.Backend, uri.PathAndQuery)))
                 {
-                    if (String.Equals(header.Key, "Host", StringComparison.OrdinalIgnoreCase) ||
-                        String.Equals(header.Key, "Origin", StringComparison.OrdinalIgnoreCase) ||
-                        String.Equals(header.Key, "Referer", StringComparison.OrdinalIgnoreCase)) continue;
-                    if (!request.Headers.TryAddWithoutValidation(header.Key, header.Value) && request.Content != null)
-                        request.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    if (e.Request.Content != null) request.Content = new StreamContent(e.Request.Content);
+                    foreach (var header in e.Request.Headers)
+                    {
+                        if (String.Equals(header.Key, "Host", StringComparison.OrdinalIgnoreCase) ||
+                            String.Equals(header.Key, "Origin", StringComparison.OrdinalIgnoreCase) ||
+                            String.Equals(header.Key, "Referer", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (!request.Headers.TryAddWithoutValidation(header.Key, header.Value) && request.Content != null)
+                            request.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    }
+                    request.Headers.TryAddWithoutValidation("Origin", Program.Backend.GetLeftPart(UriPartial.Authority));
+                    request.Headers.TryAddWithoutValidation("Referer", Program.Backend + "/BASE.html");
+                    bool startupAsset = primary && !startupComplete && request.Method == HttpMethod.Get &&
+                        request.Content == null && IsStartupAsset(uri.AbsolutePath);
+                    using (var response = await (startupAsset ? FetchStartupAsset(request) :
+                        Program.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead)))
+                    {
+                        var headers = new StringBuilder();
+                        foreach (var header in response.Headers)
+                            if (!String.Equals(header.Key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
+                                headers.Append(header.Key + ": " + String.Join(", ", header.Value) + "\r\n");
+                        foreach (var header in response.Content.Headers)
+                            headers.Append(header.Key + ": " + String.Join(", ", header.Value) + "\r\n");
+                        var content = await response.Content.ReadAsByteArrayAsync();
+                        e.Response = Program.Environment.CreateWebResourceResponse(new MemoryStream(content),
+                            (int)response.StatusCode, response.ReasonPhrase, headers.ToString());
+                    }
                 }
-                request.Headers.TryAddWithoutValidation("Origin", Program.Backend.GetLeftPart(UriPartial.Authority));
-                request.Headers.TryAddWithoutValidation("Referer", Program.Backend + "/BASE.html");
-                var response = await Program.Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-                var headers = new StringBuilder();
-                foreach (var header in response.Headers)
-                    if (!String.Equals(header.Key, "Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
-                        headers.Append(header.Key + ": " + String.Join(", ", header.Value) + "\r\n");
-                foreach (var header in response.Content.Headers)
-                    headers.Append(header.Key + ": " + String.Join(", ", header.Value) + "\r\n");
-                var content = await response.Content.ReadAsByteArrayAsync();
-                e.Response = Program.Environment.CreateWebResourceResponse(new MemoryStream(content),
-                    (int)response.StatusCode, response.ReasonPhrase, headers.ToString());
-                response.Dispose();
-                request.Dispose();
             }
             catch (Exception error)
             {
@@ -430,6 +504,41 @@ internal sealed partial class HostWindow : Form
                 }
                 catch (Exception responseError) { Program.LogError("resource-response-failed", responseError); }
             }
+        }
+    }
+
+    private static bool IsStartupAsset(string path)
+    {
+        return path == "/BASE.html" || path == "/browser-migration.html" ||
+            path.StartsWith("/js/", StringComparison.Ordinal) || path.StartsWith("/css/", StringComparison.Ordinal) ||
+            path.StartsWith("/libs/", StringComparison.Ordinal) || path.StartsWith("/fonts/", StringComparison.Ordinal) ||
+            path.StartsWith("/ICONOS/", StringComparison.Ordinal);
+    }
+
+    private static async Task<HttpResponseMessage> FetchStartupAsset(HttpRequestMessage request)
+    {
+        try
+        {
+            using (var deadline = new System.Threading.CancellationTokenSource(4000))
+            {
+                var response = await Program.Client.SendAsync(request, HttpCompletionOption.ResponseContentRead, deadline.Token);
+                int status = (int)response.StatusCode;
+                if (status != 502 && status != 503 && status != 504) return response;
+                response.Dispose();
+                Program.Log("startup-resource-retry", "status=" + status);
+            }
+        }
+        catch (Exception error) when (error is HttpRequestException || error is OperationCanceledException)
+        {
+            Program.LogError("startup-resource-retry", error);
+        }
+
+        // Retry a stalled read-only request before the page parser runs out of time.
+        using (var retry = new HttpRequestMessage(HttpMethod.Get, request.RequestUri))
+        using (var deadline = new System.Threading.CancellationTokenSource(8000))
+        {
+            foreach (var header in request.Headers) retry.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            return await Program.Client.SendAsync(retry, HttpCompletionOption.ResponseContentRead, deadline.Token);
         }
     }
 
@@ -464,10 +573,18 @@ internal sealed partial class HostWindow : Form
     private async void MessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         Uri source;
-        if (!Uri.TryCreate(e.Source, UriKind.Absolute, out source) || source.GetLeftPart(UriPartial.Authority) != Program.Origin) return;
+        if (!Object.ReferenceEquals(sender, view.CoreWebView2) || !Uri.TryCreate(e.Source, UriKind.Absolute, out source) ||
+            source.GetLeftPart(UriPartial.Authority) != Program.Origin) return;
         try
         {
             var data = Program.Json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson);
+            object channel;
+            if (data.TryGetValue("channel", out channel) && Object.Equals(channel, "alioth-startup"))
+            {
+                if (primary && !startupComplete && e.Source == view.CoreWebView2.Source)
+                    await HandleStartupMessage(source.AbsolutePath, Convert.ToString(data["state"]));
+                return;
+            }
             if (data.ContainsKey("channel") && Convert.ToString(data["channel"]) == "alioth-file-paths")
             {
                 // Only DOM File objects explicitly supplied by this local page can reveal a path.
@@ -538,6 +655,28 @@ internal sealed partial class HostWindow : Form
         catch (Exception error) { Program.LogError("window-message-failed", error); }
     }
 
+    private async Task HandleStartupMessage(string path, string state)
+    {
+        if (path == "/BASE.html" && state == "editor-failed")
+        {
+            startupTimer.Stop();
+            Program.Log("startup-failed", "editor");
+            ShowRecoveryBar("startup-timeout", true);
+            return;
+        }
+        bool editorReady = path == "/BASE.html" && state == "editor-ready";
+        if (!editorReady && !(path == "/browser-migration.html" && state == "migration-visible")) return;
+        startupComplete = editorReady;
+        startupStage = null;
+        startupTimer.Stop();
+        view.Enabled = true;
+        if (recoveryCategory == "startup-timeout") recreateNeeded = false;
+        recoveryCategory = null;
+        if (recoveryBar != null) recoveryBar.Visible = false;
+        Program.Log("startup-progress", state);
+        await NotifyLauncher();
+    }
+
     internal bool MarkBrowserFailed(CoreWebView2Environment failed)
     {
         if (environment != failed || allowClose || IsDisposed) return false;
@@ -581,19 +720,28 @@ internal sealed partial class HostWindow : Form
         if (allowClose || IsDisposed) return;
         recoveryCategory = category;
         recreateNeeded = recreateNeeded || recreate;
+        ShowStatusBar(category == "startup-timeout"
+            ? "El editor no terminó de abrirse. Puedes esperar o reintentar."
+            : "La vista necesita recuperarse. Tus datos guardados se conservan.", true);
+    }
+
+    private void ShowStatusBar(string text, bool canRetry)
+    {
         if (recoveryBar == null)
         {
             recoveryBar = new Panel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(8), BackColor = Color.FromArgb(39, 54, 73) };
-            var label = new Label { Dock = DockStyle.Fill, Text = "La vista necesita recuperarse. Tus datos guardados se conservan.", ForeColor = Color.White, TextAlign = ContentAlignment.MiddleLeft };
-            var retry = new Button { Dock = DockStyle.Right, Width = 94, Text = "Reintentar" };
+            recoveryLabel = new Label { Dock = DockStyle.Fill, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleLeft };
+            recoveryRetry = new Button { Dock = DockStyle.Right, Width = 94, Text = "Reintentar" };
             var close = new Button { Dock = DockStyle.Right, Width = 76, Text = "Cerrar" };
-            retry.Click += delegate { OfferRecovery(); };
+            recoveryRetry.Click += delegate { OfferRecovery(); };
             close.Click += delegate { Close(); };
-            recoveryBar.Controls.Add(label);
-            recoveryBar.Controls.Add(retry);
+            recoveryBar.Controls.Add(recoveryLabel);
+            recoveryBar.Controls.Add(recoveryRetry);
             recoveryBar.Controls.Add(close);
             Controls.Add(recoveryBar);
         }
+        recoveryLabel.Text = text;
+        recoveryRetry.Visible = canRetry;
         recoveryBar.Visible = true;
         recoveryBar.BringToFront();
     }
@@ -601,6 +749,7 @@ internal sealed partial class HostWindow : Form
     internal void QueueRecovery(string category, bool recreate)
     {
         if (allowClose || IsDisposed) return;
+        if (!startupComplete) startupTimer.Stop();
         ShowRecoveryBar(category, recreate);
         if (preparingClose || recoveryQueued || recoveryDialogOpen || retrying || lastPromptCategory == category) return;
         recoveryQueued = true;
@@ -643,7 +792,7 @@ internal sealed partial class HostWindow : Form
         await RetryRecovery();
     }
 
-    private async Task RetryRecovery()
+    private async Task RetryRecovery(bool trySoftware = false)
     {
         if (preparingClose || retrying || allowClose || IsDisposed) return;
         retrying = true;
@@ -651,13 +800,21 @@ internal sealed partial class HostWindow : Form
         try
         {
             lastPromptCategory = null;
-            if (recreateNeeded || view.CoreWebView2 == null)
+            bool starting = primary && !startupComplete;
+            if (starting) BeginStartup();
+            if (starting || recreateNeeded || view.CoreWebView2 == null)
             {
                 var previous = view;
                 view = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(29, 30, 37) };
+                view.Enabled = !starting;
                 Controls.Add(view);
-                previous.Dispose();
-                failed = !await Initialize(true, true);
+                if (trySoftware && !Program.SoftwareRendering && Program.Context.HasSingleWindow)
+                    await SwitchToSoftwareRendering(previous);
+                else previous.Dispose();
+                if (IsDisposed || allowClose) return;
+                var initialization = Initialize(recreateNeeded || Program.Environment == null, true);
+                var completion = starting ? await Task.WhenAny(initialization, startupDeadline.Task) : initialization;
+                if (completion == initialization) failed = !await initialization;
                 if (recoveryBar != null) recoveryBar.BringToFront();
             }
             else view.CoreWebView2.Reload();
@@ -665,6 +822,30 @@ internal sealed partial class HostWindow : Form
         catch (Exception error) { Program.LogError("recovery-failed", error); failed = true; }
         finally { retrying = false; }
         if (failed) QueueRecovery("initialize", true);
+    }
+
+    private async Task SwitchToSoftwareRendering(WebView2 previous)
+    {
+        // A shared profile cannot change browser options until its last controller exits.
+        var previousEnvironment = environment ?? Program.Environment;
+        var processExited = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler<CoreWebView2BrowserProcessExitedEventArgs> onExited = (sender, args) => processExited.TrySetResult(true);
+        if (previousEnvironment != null) previousEnvironment.BrowserProcessExited += onExited;
+        try
+        {
+            previous.Dispose();
+            if (previousEnvironment == null ||
+                await Task.WhenAny(processExited.Task, Task.Delay(3500)) == processExited.Task)
+            {
+                Program.SoftwareRendering = true;
+                Program.Log("startup-software-rendering", "enabled");
+            }
+            else Program.Log("startup-software-rendering", "profile-still-in-use");
+        }
+        finally
+        {
+            if (previousEnvironment != null) previousEnvironment.BrowserProcessExited -= onExited;
+        }
     }
 
     private void PrepareClose(object sender, FormClosingEventArgs e)

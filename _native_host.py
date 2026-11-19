@@ -10,21 +10,24 @@ from _process_lifecycle import track_host
 HOST_ORIGIN = 'http://alioth.localhost'
 _sessions = {}
 _processes = set()
+_software_processes = set()
 _lock = threading.Lock()
 
 
 def active_host_count():
     with _lock:
         _processes.intersection_update(process for process in tuple(_processes) if process.poll() is None)
+        _software_processes.intersection_update(_processes)
         return len(_processes)
 
 
-def notify_ready(token):
+def notify_ready(token, software_rendering=False):
     with _lock:
         event = _sessions.get(token)
-    if event:
-        event.set()
-    return event is not None
+        if event:
+            event.software_rendering = software_rendering
+            event.set()
+        return event is not None
 
 
 def host_executable(bundle):
@@ -52,6 +55,8 @@ def _clear_late_ready(token, event, process):
         if process.poll() is not None:
             break
     with _lock:
+        if event.is_set() and getattr(event, 'software_rendering', False) is True and process.poll() is None:
+            _software_processes.add(process)
         _sessions.pop(token, None)
 
 
@@ -65,12 +70,14 @@ def launch_native_host(url, bundle, launch_external=lambda action: action(), pro
     event = threading.Event()
     with _lock:
         _sessions[token] = event
+        use_software = any(process.poll() is None for process in _software_processes)
+    options = {'env': dict(os.environ, ALIOTH_WEBVIEW_SOFTWARE='1')} if use_software else {}
     process = None
     ready = False
     late_ready = False
     try:
         process = launch_external(lambda: subprocess.Popen(
-            [str(executable), url, str(profile), str(Path(bundle).resolve()), token], cwd=executable.parent))
+            [str(executable), url, str(profile), str(Path(bundle).resolve()), token], cwd=executable.parent, **options))
         track_host(process, executable)
         with _lock:
             _processes.add(process)
@@ -78,6 +85,9 @@ def launch_native_host(url, bundle, launch_external=lambda action: action(), pro
         while time.monotonic() < until:
             if event.wait(.2):
                 ready = process.poll() is None
+                if ready and getattr(event, 'software_rendering', False) is True:
+                    with _lock:
+                        _software_processes.add(process)
                 return ready
             if process.poll() is not None:
                 return False
