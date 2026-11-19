@@ -50,7 +50,7 @@ class CLITests(unittest.TestCase):
     def test_read_commands_json_and_plain_text(self):
         info = self.run_cli("info", self.pdf.name)
         self.assertEqual(info["page_count"], 2)
-        self.assertEqual(Path(info["filepath"]), self.pdf)
+        self.assertEqual(Path(info["filepath"]), self.pdf.resolve())
         text = self.run_cli("text", self.pdf, "--page", 0)
         self.assertIn("Second page", str(text))
         plain = self.run_cli("text", self.pdf, "--page", 1, as_json=False)

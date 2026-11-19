@@ -44,7 +44,7 @@ class SharedEngineTests(unittest.TestCase):
         try:
             os.chdir(self.root)
             info = self.call('pdf_get_info', filepath=self.source.name)
-            self.assertEqual(Path(info['filepath']), self.source)
+            self.assertEqual(Path(info['filepath']), self.source.resolve())
             self.assertEqual(info['page_count'], 2)
             self.call('pdf_render_page_image', filepath=self.source.name, output_path='relative.png', dpi=72)
             self.assertTrue((self.root / 'relative.png').is_file())

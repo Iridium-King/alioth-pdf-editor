@@ -101,7 +101,7 @@ class EntrypointTests(unittest.TestCase):
         self.assertEqual(result.stderr, "")
         result = json.loads(result.stdout)
         self.assertEqual(result["page_count"], 1)
-        self.assertEqual(Path(result["filepath"]), pdf)
+        self.assertEqual(Path(result["filepath"]), pdf.resolve())
 
     def test_future_spec_routes_the_same_windowed_executable_to_alioth(self):
         import build_executables
