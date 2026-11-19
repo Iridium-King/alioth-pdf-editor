@@ -2421,16 +2421,7 @@ inspect_doc(js_pdf_data)
                     for (let i = 0; i < bytes.length; i += 49152) {
                         chunks.push(btoa(String.fromCharCode(...bytes.subarray(i, i + 49152))));
                     }
-                    const response = await fetch('/api/pdf/text', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ pdfBase64: chunks.join(''), pageIndices }),
-                        signal: AbortSignal.timeout(45000)
-                    });
-                    if (!response.ok) {
-                        if ([404, 405].includes(response.status)) this._textNativeUnavailable = true;
-                        return null;
-                    }
-                    const result = await response.json();
+                    const result = await window.AliothPDFEngine.extractText(chunks.join(''), pageIndices);
                     if (!result?.ok || !Array.isArray(result.pages) || !result.pages.every(page =>
                         Number.isInteger(page.page) && page.page > 0 && Number.isInteger(page.total) &&
                         page.total >= page.page && typeof page.text === 'string')) return null;
@@ -2439,7 +2430,8 @@ inspect_doc(js_pdf_data)
                     if (pageIndices && (result.pages.length !== pageIndices.length ||
                         result.pages.some((page, i) => page.page !== pageIndices[i] + 1))) return null;
                     return result.pages;
-                } catch (_) {
+                } catch (error) {
+                    if ([404, 405].includes(error?.status)) this._textNativeUnavailable = true;
                     return null;
                 }
             },

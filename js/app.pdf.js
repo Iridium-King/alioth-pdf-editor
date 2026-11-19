@@ -736,7 +736,7 @@ Object.assign(app, {
                 let targets = this.multiSelection.size > 0 ? Array.from(this.multiSelection) : [doc.currentIndex];
                 targets.forEach(idx => {
                     if (doc.pages[idx]) {
-                        let newRot = (doc.pages[idx].rotation + deg) % 360;
+                        let newRot = ((doc.pages[idx].rotation || 0) + deg) % 360;
                         if (newRot < 0) newRot += 360;
                         doc.pages[idx].rotation = newRot;
                         // Invalidar cache de thumbnail para forzar re-render
@@ -3060,8 +3060,9 @@ Object.assign(app, {
 
                     // 🐍 Apply styled checkbox/radio appearance streams via PyMuPDF
                     const _allStyledFields = pagesToProcess.flatMap(p => p._styledFields || []);
-                    if (_allStyledFields.length > 0 && PythonManager.isLoaded) {
+                    if (_allStyledFields.length > 0) {
                         try {
+                            await PythonManager.init();
                             document.getElementById('loader-msg').innerText = "Aplicando estilos a campos...";
                             pdfBytes = await PythonManager.applyStyledFields(pdfBytes, _allStyledFields);
                         } catch (sfErr) {
@@ -3081,8 +3082,9 @@ Object.assign(app, {
                         return { pageIndex: pi, fieldNames: fields };
                     }).filter(d => d.fieldNames.length > 0);
 
-                    if (_tabOrderData.length > 0 && PythonManager.isLoaded) {
+                    if (_tabOrderData.length > 0) {
                         try {
+                            await PythonManager.init();
                             document.getElementById('loader-msg').innerText = "Aplicando orden de tabulación...";
                             const _tabSafe = pdfBytes instanceof ArrayBuffer ? pdfBytes.slice(0) : new Uint8Array(pdfBytes).buffer.slice(0);
                             const uint8 = new Uint8Array(_tabSafe);
@@ -3194,8 +3196,9 @@ base64.b64encode(out.getvalue()).decode('ascii')
                     // 🐍 EMBED BOOKMARKS as PDF Outlines
                     const _bmData = window.BookmarkManager ? BookmarkManager.getAll(doc) : [];
 
-                    if ((_commentData.length > 0 || _bmData.length > 0) && PythonManager.isLoaded) {
+                    if ((_commentData.length > 0 || _bmData.length > 0)) {
                         try {
+                            await PythonManager.init();
                             document.getElementById('loader-msg').innerText = "Integrando comentarios y marcadores...";
                             const _annotSafe = pdfBytes instanceof ArrayBuffer ? pdfBytes.slice(0) : new Uint8Array(pdfBytes).buffer.slice(0);
                             const uint8 = new Uint8Array(_annotSafe);
@@ -3326,8 +3329,9 @@ base64.b64encode(out2.getvalue()).decode('ascii')
                     // 🐍 COPY EMBEDDED FILES (adjuntos) from source buffers to output PDF
                     const _attachSrcIds = [...new Set(pagesToProcess.map(p => p.sourceId))];
                     const _attachSources = _attachSrcIds.map(id => doc.sources[id]).filter(s => s && s.buffer);
-                    if (_attachSources.length > 0 && PythonManager.isLoaded) {
+                    if (_attachSources.length > 0) {
                         try {
+                            await PythonManager.init();
                             document.getElementById('loader-msg').innerText = "Copiando archivos adjuntos...";
 
                             // Step 1: collect all embedded file {name, b64data, filename, desc, mime} from all sources
@@ -3753,6 +3757,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                     }
                     const options = {
                         token: target.token,
+                        targetPath: target.path,
                         targetIdentity: target.identity || null,
                         expectedFingerprint: target.fingerprint || null
                     };
@@ -3771,7 +3776,8 @@ base64.b64encode(buf.getvalue()).decode("ascii")
             },
 
             pickSaveTarget: async function (suggestedName, mode = 'save') {
-                const currentName = this.getDoc()?.name || 'documento.pdf';
+                const doc = this.getDoc();
+                const currentName = doc?.name || 'documento.pdf';
                 const filename = suggestedName || (/\.pdf$/i.test(currentName) ? currentName : currentName + '.pdf');
                 const help = document.getElementById('save-target-help');
                 const button = document.getElementById('btn-pick-save-target');
@@ -3789,7 +3795,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                             'X-Alioth-Client-Id': window.__aliothWindowId || ''
                         },
                         body: JSON.stringify({ suggested_name: filename, mode: mode === 'copy' ? 'copy' : 'save-as',
-                            source_path: this.getDoc()?.originalPath || this.getDoc()?.filePath || null })
+                            source_path: doc?.originalPath || doc?.filePath || null })
                     });
                     const result = await response.json();
                     if (!response.ok || !result.ok) throw new Error(result.error || 'SAVE_TARGET_UNAVAILABLE');
@@ -3799,13 +3805,14 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                     }
                     this._pendingNativeSaveTarget = {
                         token: result.token,
+                        path: result.path || null,
                         identity: result.identity || null,
                         fingerprint: result.fingerprint || null,
                         expiresAt: result.expires_at,
                         mode
                     };
                     const field = document.getElementById('save-target-path');
-                    if (field) field.value = filename;
+                    if (field) field.value = result.path || filename;
                     if (help) help.textContent = 'Ubicación seleccionada. Pulsa Guardar para escribir el PDF.';
                     return true;
                 } catch (error) {
@@ -3978,6 +3985,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                 try {
                     await this.saveDocument(doc.id, {
                         token: this._pendingNativeSaveTarget.token,
+                        targetPath: this._pendingNativeSaveTarget.path,
                         targetIdentity: this._pendingNativeSaveTarget.identity,
                         expectedFingerprint: this._pendingNativeSaveTarget.fingerprint || null,
                         compression: compressLevel,
@@ -4035,6 +4043,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                     }
                     const saveOptions = {
                         token: this._pendingNativeSaveTarget.token,
+                        targetPath: this._pendingNativeSaveTarget.path,
                         targetIdentity,
                         expectedFingerprint: this._pendingNativeSaveTarget.fingerprint || null,
                         compression: compressLevel,
@@ -4785,9 +4794,10 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                     if (orderedFiles.length === 0) return;
 
                     // 🐍 PRO-MERGE AUTOMÁTICO: Calidad estructural si hay varios archivos
-                    if (orderedFiles.length > 1 && PythonManager.isLoaded) {
+                    if (orderedFiles.length > 1) {
                         this.toggleLoader(true, 'Python: Combinando archivos (Estructural)...');
                         try {
+                            await PythonManager.init();
                             const buffers = [];
                             const docNames = [];
                             for (const f of orderedFiles) {

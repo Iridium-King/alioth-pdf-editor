@@ -1,6 +1,33 @@
-const ALIOTH_VERSION = '3.2.36';
+const ALIOTH_VERSION = '3.2.39';
         window.ALIOTH_VERSION = ALIOTH_VERSION;
         const ALIOTH_CHANGELOG = [
+            {
+                version: '3.2.39',
+                date: '2026-11-18',
+                items: [
+                    { type: 'fix', text: '<strong>Miniaturas:</strong> Seleccionar todo marca las casillas. Girar y voltear se aplican a todas las páginas seleccionadas.' },
+                    { type: 'fix', text: '<strong>Guardar como:</strong> La copia se abre con el nombre y la ubicación elegidos y los guardados siguientes usan ese destino.' },
+                    { type: 'new', text: '<strong>CLI y MCP:</strong> El ejecutable del editor también ejecuta comandos PDF y sirve MCP por stdio. El paquete incluye el servidor MCP independiente.' }
+                ]
+            },
+            {
+                version: '3.2.38',
+                date: '2026-11-09',
+                items: [
+                    { type: 'fix', text: '<strong>Ribbon adaptable por pestaña:</strong> Contenido centrado y shortcuts visibles cuando caben. En ventanas estrechas se reducen espacios solo cuando hace falta; al ampliar la ventana se restaura la distribución original.' },
+                    { type: 'fix', text: '<strong>Guardar como:</strong> Solo el lápiz del icono se muestra verde; el resto conserva su color normal.' }
+                ]
+            },
+            {
+                version: '3.2.37',
+                date: '2026-11-09',
+                items: [
+                    { type: 'fix', text: '<strong>Ventanas pequeñas:</strong> El ribbon oculta los shortcuts hasta 1280 píxeles de ancho disponible y conserva sus asignaciones. La ventana restaurada se redimensiona desde sus cuatro bordes y esquinas.' },
+                    { type: 'fix', text: '<strong>Motor avanzado:</strong> Edición y extracción de imágenes, tablas y censura esperan la carga del motor automáticamente, con reintento si falla.' },
+                    { type: 'fix', text: '<strong>Carga bajo demanda:</strong> Firmas sin fondo, búsqueda, análisis y exportación PDF activan el motor cuando lo necesitan; se conservan las alternativas si falla.' },
+                    { type: 'fix', text: '<strong>Imágenes:</strong> La edición utiliza la página correcta del archivo original después de insertar o reordenar páginas.' }
+                ]
+            },
             {
                 version: '3.2.36',
                 date: '2026-11-05',

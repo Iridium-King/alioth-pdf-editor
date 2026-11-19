@@ -513,7 +513,8 @@ Object.assign(app, {
                     const el = document.createElement('div'); el.className = `doc-tab ${d.id === this.activeDocId ? 'active' : ''}`;
                     const isDirty = typeof this.isDocumentDirty === 'function' ? this.isDocumentDirty(d.id) : !!d.isDirty;
                     const dirtyDot = isDirty ? '<span class="doc-tab-dirty" title="Cambios sin guardar">●</span>' : '';
-                    el.innerHTML = `${dirtyDot}<span class="doc-tab-name">${d.name}</span><span class="doc-tab-close" onclick="app.closeTab('${d.id}',event, false)">✕</span>`;
+                    el.innerHTML = `${dirtyDot}<span class="doc-tab-name"></span><span class="doc-tab-close" onclick="app.closeTab('${d.id}',event, false)">✕</span>`;
+                    el.querySelector('.doc-tab-name').textContent = d.name;
                     el.title = d.name; // Tooltip con nombre completo
                     if (this._translationReviewMinimized && this._translationReviewDocId === d.id) {
                         const indicator = document.createElement('span');
@@ -1178,17 +1179,14 @@ Object.assign(app, {
                 if (targetPanel === this.splitView.activePanel) {
                     this.setPageCount(`${idx + 1} / ${doc.pages.length}`);
 
-                    // --- DIRECT SIDEBAR UPDATE (More robust) ---
-                    // Remove current selection
-                    document.querySelectorAll('.thumb-wrap.selected').forEach(el => el.classList.remove('selected'));
-
-                    // Add to new index directly
-                    const thumb = document.getElementById('thumb-' + idx);
-                    if (thumb) {
-                        thumb.classList.add('selected');
-                        thumb.scrollIntoView({ block: 'center', behavior: 'instant' });
+                    if (!document.getElementById('sidebar')?.classList.contains('fullscreen-grid')) {
+                        document.querySelectorAll('.thumb-wrap.selected').forEach(el => el.classList.remove('selected'));
+                        const thumb = document.getElementById('thumb-' + idx);
+                        if (thumb) {
+                            thumb.classList.add('selected');
+                            thumb.scrollIntoView({ block: 'center', behavior: 'instant' });
+                        }
                     }
-                    // -------------------------------------------
 
                     // Actualizar resaltado del índice
                     // ✅ CORRECCIÓN: Validación defensiva
@@ -2710,19 +2708,20 @@ Object.assign(app, {
                     d.id = 'thumb-' + i;
                     d.dataset.index = i; // Store page index for lazy loading
                     d.innerHTML = `<label class="thumb-select" title="Seleccionar página ${i + 1}"><input class="thumb-select-checkbox" type="checkbox" aria-label="Seleccionar página ${i + 1}"></label><canvas width="100" height="130"></canvas><div class="thumb-num">${i + 1}</div>`;
+                    const checkbox = d.querySelector('.thumb-select-checkbox');
+                    checkbox.checked = this.multiSelection.has(i);
+                    d.classList.toggle('selected', checkbox.checked);
+                    checkbox.onchange = () => {
+                        if (checkbox.checked) this.multiSelection.add(i);
+                        else this.multiSelection.delete(i);
+                        this.lastClickIndex = i;
+                        this.updateSidebarSelection(i);
+                    };
                     // bookmark dot — will be set by BookmarkManager.refreshThumbDots()
                     if (window.BookmarkManager) BookmarkManager._injectThumbDot(d, i);
 
                     d.onclick = (e) => {
-                        if (e.button !== 0) return; // Only left click
-                        if (e.target.closest('.thumb-select')) {
-                            const checkbox = e.target.closest('.thumb-select').querySelector('input');
-                            if (checkbox.checked) this.multiSelection.add(i);
-                            else this.multiSelection.delete(i);
-                            this.lastClickIndex = i;
-                            this.updateSidebarSelection(i);
-                            return;
-                        }
+                        if (e.button !== 0 || e.target.closest('.thumb-select')) return;
                         if (e.ctrlKey || e.metaKey) {
                             if (this.multiSelection.has(i)) this.multiSelection.delete(i);
                             else { this.multiSelection.add(i); this.lastClickIndex = i; }
@@ -2777,8 +2776,6 @@ Object.assign(app, {
                         if (top < 0) top = 4;
                         cm.style.left = left + 'px'; cm.style.top = top + 'px';
                     };
-
-                    if (this.multiSelection.has(i)) d.classList.add('selected');
 
                     d.draggable = true;
                     d.ondragstart = e => {
@@ -3010,6 +3007,7 @@ Object.assign(app, {
                 // Always sync page counter
                 const count = doc.pages.length;
                 this.setPageCount(count > 0 ? `${doc.currentIndex + 1} / ${count}` : '— / —');
+                this._updateGridSelectAllButton?.();
             },
 
             /**
@@ -3131,15 +3129,17 @@ Object.assign(app, {
 
                 // Página en blanco
                 if (p._blank || !s) {
+                    const width = p.width || 612;
+                    const height = p.height || 792;
+                    const sideways = p.rotation === 90 || p.rotation === 270;
+                    const aspectRatio = sideways ? height / width : width / height;
                     if (this._thumbTargetHeight) {
                         cvs.height = this._thumbTargetHeight;
-                        const ratio = (p.width || 612) / (p.height || 792);
-                        cvs.width = Math.round(this._thumbTargetHeight * ratio);
+                        cvs.width = Math.round(this._thumbTargetHeight * aspectRatio);
                     } else {
                         const tW = this._thumbTargetWidth || 100;
-                        const ratio = (p.height || 792) / (p.width || 612);
                         cvs.width = tW;
-                        cvs.height = Math.round(tW * ratio);
+                        cvs.height = Math.round(tW / aspectRatio);
                     }
                     const ctx = cvs.getContext('2d', { alpha: false });
                     ctx.fillStyle = '#ffffff';
@@ -6061,14 +6061,16 @@ Object.assign(app, {
                             if (panelState) panelState.pageIndex = closestIdx;
                             this._renderContinuousActivePage(panelId, closestIdx);
                             if (panelId === this.splitView.activePanel) {
-                                document.querySelectorAll('.thumb-wrap.selected').forEach(el => el.classList.remove('selected'));
-                                const thumb = document.getElementById('thumb-' + closestIdx);
-                                if (thumb) {
-                                    thumb.classList.add('selected');
-                                    if (isH) {
-                                        thumb.scrollIntoView({ inline: 'center', block: 'nearest' });
-                                    } else {
-                                        thumb.scrollIntoView({ block: 'nearest' });
+                                if (!document.getElementById('sidebar')?.classList.contains('fullscreen-grid')) {
+                                    document.querySelectorAll('.thumb-wrap.selected').forEach(el => el.classList.remove('selected'));
+                                    const thumb = document.getElementById('thumb-' + closestIdx);
+                                    if (thumb) {
+                                        thumb.classList.add('selected');
+                                        if (isH) {
+                                            thumb.scrollIntoView({ inline: 'center', block: 'nearest' });
+                                        } else {
+                                            thumb.scrollIntoView({ block: 'nearest' });
+                                        }
                                     }
                                 }
                                 const pc = document.getElementById('pageCountDisplay');

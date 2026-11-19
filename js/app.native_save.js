@@ -2,6 +2,7 @@
 
 if (!window.app) window.app = {};
 const app = window.app;
+const fileNameFromPath = path => path.split(/[\\/]/).pop();
 
 const ensureSha256 = async function (bytes, candidate) {
     if (typeof candidate === 'string' && /^[0-9a-f]{64}$/i.test(candidate)) return candidate.toLowerCase();
@@ -151,6 +152,17 @@ Object.assign(app, {
                         identity: committed.identity || options.targetIdentity || null
                     });
                     if (redactionVerification) state.redactionVerification = { ...redactionVerification, verifiedFingerprint: committed.sha256 || sha256 };
+                    if (options.targetPath) {
+                        current.name = fileNameFromPath(options.targetPath);
+                        current.originalPath = current.filePath = options.targetPath;
+                        const baselineDocument = state.baselineSnapshot?.payload.document;
+                        if (baselineDocument) {
+                            baselineDocument.name = current.name;
+                            baselineDocument.originalPath = current.originalPath;
+                        }
+                        this.renderTabs?.();
+                        this.updatePanelHeaders?.();
+                    }
                 }
                 return { writtenRevision: snapshot.revision, ...committed };
             } catch (error) {
@@ -218,10 +230,12 @@ Object.assign(app, {
             const copyId = 'doc_' + Date.now() + Math.random().toString(36).slice(2, 7);
             const copySnapshot = await this.cloneDocumentSnapshot(editedSnapshot);
             copySnapshot.docId = copyId;
-            copySnapshot.payload.document.name = /\.pdf$/i.test(doc.name || '')
-                ? doc.name
-                : (doc.name || 'documento') + '.pdf';
-            const copy = { id: copyId, name: copySnapshot.payload.document.name, pages: [], sources: {}, history: [], historyIndex: -1 };
+            const copyDocument = copySnapshot.payload.document;
+            const sourceName = copyDocument.name || 'documento';
+            copyDocument.name = options.targetPath ? fileNameFromPath(options.targetPath)
+                : (/\.pdf$/i.test(sourceName) ? sourceName : sourceName + '.pdf');
+            copyDocument.originalPath = options.targetPath || null;
+            const copy = { id: copyId, name: copyDocument.name, filePath: copyDocument.originalPath, pages: [], sources: {}, history: [], historyIndex: -1 };
             const originalIndex = this.docs.indexOf(doc);
             this.docs.splice(originalIndex + 1, 0, copy);
             await this.restoreDocumentSnapshot(copyId, copySnapshot);

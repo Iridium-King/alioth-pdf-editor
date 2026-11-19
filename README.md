@@ -1,6 +1,6 @@
 # Alioth PDF Editor
 
-Editor portable de PDF para Windows, de ALIOTH TDAH LABS. Versión 3.2.36.
+Editor portable de PDF para Windows, de ALIOTH TDAH LABS. Versión 3.2.39.
 Código propio: GNU AGPL-3.0-or-later. Consulta LICENSE y COPYING.
 
 ## Construcción pública
@@ -25,9 +25,13 @@ exclusivamente el portable de Distribución como artefacto, sin claves de firma.
 - Abrir, insertar, combinar, organizar y editar documentos PDF.
 - Editar texto, imágenes, anotaciones y formularios; imprimir y exportar.
 - OCR, conversión de Office y herramientas opcionales de IA con claves propias.
-- Guardado nativo y conservación de la ruta del primer archivo abierto.
+- Guardado nativo y edición de la copia desde el destino elegido con Guardar como.
 
 Algunas conversiones requieren Office u otro software compatible en el equipo.
+`alioth.py` y el ejecutable del editor abren la interfaz, ejecutan comandos
+PDF (`info entrada.pdf --json`, `merge a.pdf b.pdf -o unido.pdf`) y sirven MCP
+(`mcp serve`). El ZIP también incluye `Alioth_PDF_MCP.exe` para conexiones
+existentes. Consulta [la guía CLI](CLI_GUIDE.md) y [la guía MCP](MCP_GUIDE.md).
 Los servicios de IA reciben los datos necesarios solo al utilizar esas funciones.
 Nunca publiques documentos ni credenciales personales al contribuir.
 

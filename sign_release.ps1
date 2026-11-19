@@ -1,6 +1,6 @@
 param(
     [string]$ReleasePath = (Join-Path $PSScriptRoot 'RELEASE'),
-    [ValidateSet('Distribucion','Personal','both','host')][string]$Edition = 'Distribucion'
+    [ValidateSet('Distribucion','Personal','both','host','MCP')][string]$Edition = 'Distribucion'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,6 +18,8 @@ if (-not $signer) { throw 'No se encontró el certificado de firma existente.' }
 $paths = @()
 if ($Edition -eq 'host') {
     $paths += Join-Path $PSScriptRoot 'native_host/bin/AliothPDFHost.exe'
+} elseif ($Edition -eq 'MCP') {
+    $paths += Join-Path $ReleasePath 'MCP/Alioth_PDF_MCP.exe'
 } else {
     $packages = if ($Edition -eq 'both') { @('Personal','Distribucion') } else { @($Edition) }
     foreach ($package in $packages) { $paths += Join-Path (Join-Path $ReleasePath $package) "Alioth_PDF_Editor_$package.exe" }

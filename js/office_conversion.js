@@ -682,6 +682,7 @@
                         const arrayBuffer = await file.arrayBuffer();
 
                         // PPTX es un ZIP — extraer XML de diapositivas con PyMuPDF/Python
+                        await PythonManager.init();
                         PythonManager.pyodide.globals.set('_pptx_bytes', new Uint8Array(arrayBuffer));
 
                         const slidesJson = await PythonManager.pyodide.runPythonAsync(`

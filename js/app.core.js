@@ -1323,8 +1323,9 @@ Object.assign(app, {
 
                 // Intentar fetch vía Pyodide/urllib con UA antiguo → GF devuelve TTF
                 const _tryPyFetch = async (cssUrl) => {
-                    if (!window.PythonManager || !PythonManager.isLoaded) return null;
+                    if (!window.PythonManager) return null;
                     try {
+                        await PythonManager.init();
                         const b64 = await PythonManager.pyodide.runPythonAsync(`
 import urllib.request, base64, re
 _GF_UA = 'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)'

@@ -349,6 +349,58 @@ test('Save As initializes a missing baseline for a newly created tab', async () 
   assert.ok(first.documentState.baselineSnapshot);
 });
 
+test('Save As adopts the chosen filename and folder for continued editing', async () => {
+  const { app, first } = loadAppModules();
+  const originalPath = 'C:\\Original\\doc-a.pdf';
+  const targetPath = 'D:\\Copias\\Edición final.pdf';
+  first.originalPath = first.filePath = originalPath;
+  await app.setDocumentBaseline(first.id);
+  first.pages[0].rotation = 90;
+  app.markDocumentChanged(first.id, 'rotate');
+  const pickerRequests = [];
+  loadPdfModal(app, {}, {
+    fetch: async (_url, options) => {
+      pickerRequests.push(JSON.parse(options.body));
+      return { ok: true, json: async () => pickerRequests.length === 1
+        ? { ok: true, token: 'copy-token', path: targetPath, identity: 'copy-target' }
+        : { ok: true, cancelled: true } };
+    }
+  });
+  loadNativeSave(app);
+  const writes = [];
+  app.prepareDocumentPdf = async () => ({ bytes: new Uint8Array([1]), sha256: 'c'.repeat(64) });
+  app.nativeSaveTransport = {
+    begin: async ({ token }) => { writes.push(token); return { uploadId: 'upload' }; },
+    chunk: async () => {},
+    commit: async () => ({ status: 'committed', identity: 'copy-target' })
+  };
+  app.switchTab = id => { app.activeDocId = id; };
+  app.showToast = () => {};
+  app.closeAllModals = () => {};
+
+  await app.saveCopyFromModal();
+  const copy = app.getDoc();
+  assert.notEqual(copy.id, first.id);
+  assert.equal(copy.name, 'Edición final.pdf');
+  assert.equal(copy.originalPath, targetPath);
+  assert.equal(copy.filePath, targetPath);
+  assert.equal(copy.pages[0].rotation, 90);
+  assert.equal(first.name, 'doc-a.pdf');
+  assert.equal(first.originalPath, originalPath);
+  assert.equal(first.pages[0].rotation, 0);
+
+  copy.pages[0].rotation = 180;
+  app.markDocumentChanged(copy.id, 'rotate');
+  await app.saveFromHeader('save');
+  assert.equal(app.isDocumentDirty(copy.id), false);
+  await app.saveCopyFromModal();
+  assert.deepEqual(writes, ['copy-token', 'copy-token']);
+  assert.deepEqual(pickerRequests, [
+    { suggested_name: 'doc-a.pdf', mode: 'copy', source_path: originalPath },
+    { suggested_name: 'Edición final.pdf', mode: 'copy', source_path: targetPath }
+  ]);
+});
+
 test('copy rejects a destination already bound to another open document', async () => {
   const { app, first, second } = loadAppModules();
   await app.setDocumentBaseline(first.id);

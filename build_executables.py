@@ -32,6 +32,7 @@ HIDDEN_IMPORTS = [
     'win32com', 'win32com.client', 'pythoncom', 'http.server', 'mimetypes',
     'configparser', 'json', 'queue', 'urllib.request', 'ssl', 'tempfile', 'shutil',
     'subprocess', 'threading', 'time', 'webbrowser',
+    '_proxy', '_cli', '_stdio', '_pdf_engine', '_mcp_check', 'mcp_server', 'win32timezone',
 ]
 
 POPPLER_ROOT_DLLS = set('''deflate.dll freetype.dll icudt78.dll icuuc78.dll jpeg8.dll
@@ -128,11 +129,17 @@ def generate_spec(output_name, include_personal_config, version_info_path=None):
     datas_str = '[\n' + ''.join(f"        (r'{src}', r'{dst}'),\n" for src, dst in datas) + '    ]'
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 block_cipher = None
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_dynamic_libs, copy_metadata
 datas = {datas_str}
+datas += collect_data_files('mcp') + collect_data_files('mcp_types') + collect_data_files('pymupdf')
+datas += copy_metadata('mcp') + copy_metadata('mcp-types')
+automation_imports = (collect_submodules('mcp.server') + collect_submodules('mcp.shared') +
+                      collect_submodules('mcp.os') + collect_submodules('mcp_types') +
+                      collect_submodules('pymupdf'))
 a = Analysis(
-    [r'_proxy.py'], pathex=[r'{BASE_DIR}'], binaries=[], datas=datas,
-    hiddenimports={HIDDEN_IMPORTS!r}, hookspath=[], hooksconfig={{}}, runtime_hooks=[],
-    excludes=[], win_no_prefer_redirects=False, win_private_assemblies=False,
+    [r'alioth.py'], pathex=[r'{BASE_DIR}'], binaries=collect_dynamic_libs('pymupdf'), datas=datas,
+    hiddenimports={HIDDEN_IMPORTS!r} + automation_imports, hookspath=[], hooksconfig={{}}, runtime_hooks=[],
+    excludes=['mcp.cli'], win_no_prefer_redirects=False, win_private_assemblies=False,
     cipher=block_cipher, noarchive=False,
 )
 import sys

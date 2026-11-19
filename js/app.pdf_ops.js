@@ -621,7 +621,7 @@ Object.assign(app, {
                 const page = doc && doc.pages[doc.currentIndex];
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
-                if (!PythonManager.isLoaded) { this.showToast('⏳ Motor Python cargando...'); PythonManager.init(); return; }
+                if (!await this._ensurePythonEngine()) return;
 
                 this.toggleLoader(true, 'Leyendo imágenes embebidas...');
                 try {
@@ -717,7 +717,7 @@ Object.assign(app, {
                 const page = doc && doc.pages[doc.currentIndex];
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
-                if (!PythonManager.isLoaded) { this.showToast('⏳ Motor Python cargando, intenta en unos segundos...'); PythonManager.init(); return; }
+                if (!await this._ensurePythonEngine()) return;
 
                 this.toggleLoader(true, 'Extrayendo imágenes embebidas...');
                 try {
@@ -780,7 +780,7 @@ Object.assign(app, {
                 const page = doc && doc.pages[doc.currentIndex];
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
-                if (!PythonManager.isLoaded) { this.showToast('⏳ Motor Python cargando, intenta en unos segundos...'); PythonManager.init(); return; }
+                if (!await this._ensurePythonEngine()) return;
 
                 this.toggleLoader(true, 'Inspeccionando propiedades del documento...');
                 try {
@@ -2554,7 +2554,7 @@ invert_colors(js_data)
 
                     // 4b. SCAN STRATEGY A+: PIL preprocess si no se encontró nada aún
                     // Solo para PDFs escaneados o QRs de bajo contraste — no afecta QRs ya detectados
-                    if (foundQRs.length === 0 && window.PythonManager && PythonManager.isLoaded) {
+                    if (foundQRs.length === 0 && window.PythonManager) {
                         try {
                             document.getElementById('loader-msg').innerText = "Escaneando QRs (mejora PIL)...";
                             const rawDataUrl = tempCanvas.toDataURL('image/png');

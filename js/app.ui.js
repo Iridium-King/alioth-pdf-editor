@@ -1592,10 +1592,7 @@ Object.assign(app, {
             equalizePageSizes: async function () {
                 const doc = this.getDoc();
                 if (!doc) return;
-                if (!PythonManager.isLoaded) {
-                    this.showToast("🐍 Cargando motor...");
-                    await PythonManager.init();
-                }
+                if (!await this._ensurePythonEngine()) return;
 
                 this.toggleLoader(true, "⚙️ Leyendo dimensiones...");
                 try {
@@ -4799,7 +4796,7 @@ equalize_pages(js_data, js_params_json)
                     // Si el motor Python no está listo o falla, cae al loop JS como fallback.
                     let usedPython = false;
                     try {
-                        if (PythonManager.isLoaded) {
+                        if (window.PythonManager) {
                             // Reunir todos los buffers únicos del documento
                             // (un doc puede tener páginas de múltiples fuentes PDF)
                             const sourceIds = [...new Set(doc.pages.map(p => p.sourceId))];
@@ -5761,7 +5758,6 @@ equalize_pages(js_data, js_params_json)
                 const activeStyle = 'rgba(255,255,255,0.28)';
                 if (isGrid) {
                     list.classList.add('grid-mode');
-                    this._updateGridSelectAllButton();
                     if (closeBtn) closeBtn.style.display = 'flex';
                     [gridBtn, gridBtnReading].forEach(b => {
                         if (!b) return;
@@ -5782,6 +5778,7 @@ equalize_pages(js_data, js_params_json)
                         this._gridEscHandler = null;
                     }
                 }
+                this.updateSidebarSelection();
             },
 
             _updateGridSelectAllButton: function () {
@@ -5803,25 +5800,12 @@ equalize_pages(js_data, js_params_json)
                     this.lastClickIndex = 0;
                 }
                 this.updateSidebarSelection(doc.currentIndex);
-                this._updateGridSelectAllButton();
-            },
-
-            _gridGetSelectedThumb: function () {
-                return document.querySelector('#sidebarList .thumb-wrap.selected');
-            },
-
-            _gridGetPageIndex: function (thumbWrap) {
-                if (!thumbWrap) return -1;
-                const num = thumbWrap.querySelector('.thumb-num');
-                return num ? parseInt(num.textContent) - 1 : -1;
             },
 
             gridDeleteSelectedPage: function () {
                 const doc = this.getDoc(); if (!doc) return;
-                const allSelected = document.querySelectorAll('#sidebarList .thumb-wrap.selected');
-                if (!allSelected.length) { this.showToast('Selecciona una página primero'); return; }
-                const indices = Array.from(allSelected).map(tw => this._gridGetPageIndex(tw)).filter(i => i >= 0);
-                if (!indices.length) return;
+                const indices = Array.from(this.multiSelection).filter(index => doc.pages[index]);
+                if (!indices.length) { this.showToast('Selecciona una página primero'); return; }
                 if (doc.pages.length <= indices.length) { this.showToast('No se puede borrar todas las páginas'); return; }
                 if (!confirm('¿Borrar ' + indices.length + ' página(s)?')) return;
                 this.saveState();
@@ -5834,10 +5818,9 @@ equalize_pages(js_data, js_params_json)
             },
 
             gridInsertPage: function () {
-                const tw = this._gridGetSelectedThumb();
-                const idx = this._gridGetPageIndex(tw);
                 const doc = this.getDoc();
                 if (!doc) return;
+                const idx = doc.pages.findIndex((_, index) => this.multiSelection.has(index));
                 const refPage = doc.pages[idx >= 0 ? idx : 0] || doc.pages[0];
                 const docW = refPage?.width || 612;
                 const docH = refPage?.height || 792;
@@ -5851,31 +5834,17 @@ equalize_pages(js_data, js_params_json)
             },
 
             gridRotatePage: function (deg) {
-                const tw = this._gridGetSelectedThumb();
-                const idx = this._gridGetPageIndex(tw);
-                if (idx < 0) { this.showToast('Selecciona una página primero'); return; }
-                this.saveState();
-                const doc = this.getDoc();
-                const page = doc.pages[idx];
-                page.rotation = ((page.rotation || 0) + deg + 360) % 360;
-                page._thumbCache = null;
-                if (idx === doc.currentIndex) this.loadPage(idx);
-                this.renderSidebar();
-                this.showToast('Página rotada ' + (deg > 0 ? deg + '° derecha' : Math.abs(deg) + '° izquierda'));
+                const count = this.multiSelection.size;
+                if (!count) { this.showToast('Selecciona una página primero'); return; }
+                this.rotatePage(deg);
+                const direction = deg > 0 ? 'derecha' : 'izquierda';
+                const pages = count === 1 ? 'Página rotada' : `${count} páginas rotadas`;
+                this.showToast(`${pages} ${Math.abs(deg)}° a la ${direction}`);
             },
 
             gridFlipPage: function (axis) {
-                const tw = this._gridGetSelectedThumb();
-                const idx = this._gridGetPageIndex(tw);
-                if (idx < 0) { this.showToast('Selecciona una página primero'); return; }
-                this.saveState();
-                const doc = this.getDoc();
-                const page = doc.pages[idx];
-                if (axis === 'h') page.flipH = !page.flipH;
-                else page.flipV = !page.flipV;
-                page._thumbCache = null;
-                if (idx === doc.currentIndex) this.loadPage(idx);
-                this.renderSidebar();
+                if (!this.multiSelection.size) { this.showToast('Selecciona una página primero'); return; }
+                this.flipPage(axis);
                 this.showToast('Flip ' + (axis === 'h' ? 'horizontal' : 'vertical') + ' aplicado');
             },
 

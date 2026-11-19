@@ -58,6 +58,17 @@ en About → Legal → Windows y firma local.
 
 ## Pruebas
 
+Desde 3.2.39, el ejecutable usa la misma entrada que las fuentes, `alioth.py`.
+Sin argumentos abre el editor, con un comando PDF ejecuta la CLI y con
+`mcp serve` ofrece MCP por stdio. Los ZIP incluyen el servidor MCP autónomo y
+las guías. Para reconstruirlo, ejecuta `HERRAMIENTAS_DEV/build_mcp_portable.py`
+con el mismo Python usado para compilar el editor.
+
+Consulta `CLI_GUIDE.md`. Las pruebas `test_entrypoint.py`, `test_stdio.py`,
+`test_cli.py`, `test_pdf_engine.py` y `test_pdf_gui.py` se ejecutan desde Python;
+no requieren generar un ejecutable. `pythonw.exe` permite verificar pipes y
+Unicode en Windows antes de autorizar la siguiente compilación.
+
 ```powershell
 ./.build-python/python.exe -m unittest discover -s HERRAMIENTAS_DEV/tests -p 'test_*.py'
 node --test HERRAMIENTAS_DEV/tests/*.test.cjs HERRAMIENTAS_DEV/tests/regression.test.js

@@ -11,7 +11,8 @@ if _proxy_module_dir not in sys.path:
 from _native_file_dialog import DialogBusyError, NativeFileDialog
 from _native_save import NativeSaveStore
 from _transfer_store import TransferStore
-from _pdf_text import extract_pdf_text, PDF_TEXT_LIMIT
+from _pdf_engine import read_text_bytes as extract_pdf_text, PDF_TEXT_LIMIT
+from _pdf_gui import execute_file_tool, PDF_TOOL_REQUEST_LIMIT
 from _user_preferences import UserPreferences, preference_key
 from _native_host import HOST_ORIGIN, launch_native_host, notify_ready, active_host_count, host_executable, startup_failure_choice
 from _browser_migration import browser_migration
@@ -2594,13 +2595,13 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             return False
         try:
             # Normalizar y obtener la ruta real absoluta
-            norm = os.path.abspath(os.path.realpath(os.path.normpath(fpath)))
+            norm = os.path.normcase(os.path.abspath(os.path.realpath(os.path.normpath(fpath))))
             
             # 1. Bloquear accesos a directorios críticos del sistema operativo
-            windir = os.path.abspath(os.environ.get('WINDIR', r'C:\Windows'))
-            progfiles = os.path.abspath(os.environ.get('ProgramFiles', r'C:\Program Files'))
-            progfiles86 = os.path.abspath(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)'))
-            progdata = os.path.abspath(os.environ.get('ProgramData', r'C:\ProgramData'))
+            windir = os.path.normcase(os.path.abspath(os.environ.get('WINDIR', r'C:\Windows')))
+            progfiles = os.path.normcase(os.path.abspath(os.environ.get('ProgramFiles', r'C:\Program Files')))
+            progfiles86 = os.path.normcase(os.path.abspath(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')))
+            progdata = os.path.normcase(os.path.abspath(os.environ.get('ProgramData', r'C:\ProgramData')))
             
             blocked_dirs = [windir, progfiles, progfiles86]
             for bd in blocked_dirs:
@@ -2613,7 +2614,7 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             # 2. Bloquear accesos a las carpetas de inicio automático (Startup) para evitar inyección de scripts
             appdata = os.environ.get('APPDATA')
             if appdata:
-                startup_user = os.path.abspath(os.path.join(appdata, r'Microsoft\Windows\Start Menu\Programs\Startup'))
+                startup_user = os.path.normcase(os.path.abspath(os.path.join(appdata, r'Microsoft\Windows\Start Menu\Programs\Startup')))
                 try:
                     if os.path.commonpath([norm, startup_user]) == startup_user:
                         return False
@@ -2621,7 +2622,7 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                     pass
             
             try:
-                startup_common = os.path.abspath(os.path.join(progdata, r'Microsoft\Windows\Start Menu\Programs\Startup'))
+                startup_common = os.path.normcase(os.path.abspath(os.path.join(progdata, r'Microsoft\Windows\Start Menu\Programs\Startup')))
                 if os.path.commonpath([norm, startup_common]) == startup_common:
                     return False
             except Exception:
@@ -2630,7 +2631,7 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             # 3. Evitar escribir scripts/ejecutables fuera del directorio de la aplicación
             ext = os.path.splitext(norm)[1].lower()
             if ext in ('.exe', '.dll', '.sys', '.bat', '.cmd', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.ps1', '.lnk'):
-                app_dir = os.path.abspath(base_dir)
+                app_dir = os.path.normcase(os.path.abspath(base_dir))
                 try:
                     if os.path.commonpath([norm, app_dir]) != app_dir:
                         return False
@@ -3213,7 +3214,13 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
         if not self._check_origin():
             return
         try:
-            if int(self.headers.get('Content-Length', 0)) > MAX_REQUEST_BODY_BYTES:
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+                if content_length < 0:
+                    raise ValueError('INVALID_CONTENT_LENGTH')
+            except (ValueError, TypeError):
+                return self._send_json(400, {'ok': False, 'error': 'INVALID_CONTENT_LENGTH'})
+            if content_length > MAX_REQUEST_BODY_BYTES:
                 return self._send_error(413, 'La carga excede el límite de 100 MB')
             path_lower = self.path.lower()
             if self.path == '/api/activate-window':
@@ -3255,6 +3262,8 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                 return self._translate_pdf()
             if self.path == '/api/pdf/text':
                 return self._extract_pdf_text()
+            if self.path == '/api/pdf-tools':
+                return self._run_pdf_tool()
             if self.path == '/api/files/pick-save':
                 return self._pick_native_save_target()
             if self.path == '/api/files/pick-open':
@@ -3380,6 +3389,7 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
         return self._send_json(200, {
             'ok': True,
             'cancelled': False,
+            'path': str(grant.path),
             'token': grant.token,
             'identity': grant.identity,
             'fingerprint': grant.fingerprint,
@@ -3629,6 +3639,29 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
         )
         AZURE_KEYS, FISHAUDIO_KEYS = _config_keys(_CFG, 'azure'), _config_keys(_CFG, 'fishaudio')
         AZURE_ENDPOINTS = [v.strip() for k, v in _CFG.items('azure') if k.startswith('endpoint') and v.strip()] if _CFG.has_section('azure') else []
+
+    def _run_pdf_tool(self):
+        """File operations use the same engine as CLI/MCP; live bytes stay separate."""
+        if int(self.headers.get('Content-Length', 0)) > PDF_TOOL_REQUEST_LIMIT:
+            return self._send_json(413, {'ok': False, 'error': 'PDF_TOOL_REQUEST_LIMIT'})
+        if self.headers.get('Content-Type', '').split(';', 1)[0].strip().lower() != 'application/json':
+            return self._send_json(415, {'ok': False, 'error': 'JSON_CONTENT_TYPE_REQUIRED'})
+        try:
+            result = execute_file_tool(json.loads(self._read_body()), self._is_safe_path)
+        except (ValueError, TypeError) as error:
+            # Only fixed validation codes are returned; JSON parser details may contain input.
+            code = str(error)
+            if not code.startswith('INVALID_PDF_TOOL_'):
+                code = 'INVALID_PDF_TOOL_REQUEST'
+            return self._send_json(400, {'ok': False, 'error': code})
+        except Exception:
+            return self._send_json(503, {'ok': False, 'error': 'PDF_ENGINE_UNAVAILABLE'})
+        if 'error' in result:
+            return self._send_json(400, {'ok': False, **result})
+        body = json.dumps({'ok': True, 'result': result}, ensure_ascii=False).encode('utf-8')
+        if len(body) > MAX_REQUEST_BODY_BYTES:
+            return self._send_json(413, {'ok': False, 'error': 'PDF_TOOL_RESPONSE_LIMIT'})
+        return self._send_raw(200, body, 'application/json')
 
     def _extract_pdf_text(self):
         try:

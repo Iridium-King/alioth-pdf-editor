@@ -807,6 +807,22 @@ Object.assign(app, {
                 }, 200);
             },
 
+            _ensurePythonEngine: async function () {
+                try {
+                    if (!window.PythonManager) throw new Error('PythonManager no disponible');
+                    if (!PythonManager.isLoaded) {
+                        this.showToast('⏳ Preparando motor avanzado...');
+                        await PythonManager.init();
+                    }
+                    if (!PythonManager.isLoaded) throw new Error('El motor no terminó de iniciar');
+                    return true;
+                } catch (error) {
+                    console.error('No se pudo iniciar el motor avanzado', error);
+                    this.showToast('⚠️ No se pudo iniciar el motor avanzado. Vuelve a intentarlo.');
+                    return false;
+                }
+            },
+
             captureImageForEdit: async function (e) {
                 // Desactivar tras el primer click
                 this.imageEditMode = false;
@@ -824,15 +840,16 @@ Object.assign(app, {
                 if (annotationLayer) annotationLayer.style.cursor = 'default';
                 document.body.classList.remove('image-edit-mode');
 
-                if (!window.PythonManager || !PythonManager.isLoaded) {
-                    this.showToast("⚠️ El motor avanzado (Python) no está cargado.");
+                const doc = this.getDoc();
+                const pageNum = doc && doc.currentIndex;
+                const page = doc && doc.pages[pageNum];
+                const src = page && doc.sources[page.sourceId];
+                if (!src || !src.buffer || !canvas) {
+                    this.showToast('⚠️ Selecciona una página PDF primero');
                     return;
                 }
-
-                const doc = this.getDoc();
-                const pageNum = doc.currentIndex;
-                const page = doc.pages[pageNum];
-                const src = doc.sources[page.sourceId];
+                const originalBuffer = src.buffer;
+                const stillCurrent = () => this.getDoc() === doc && doc.pages[doc.currentIndex] === page && src.buffer === originalBuffer;
 
                 const rect = canvas.getBoundingClientRect();
                 const x = (e.clientX - rect.left) / this.currentScale;
@@ -846,8 +863,11 @@ Object.assign(app, {
                 this.toggleLoader(true, "Extrayendo imagen quirúrgicamente...");
 
                 try {
-                    const result = await PythonManager.extractAndEraseImageAtPoint(src.buffer, pageNum, x, y);
+                    if (!await this._ensurePythonEngine() || !stillCurrent()) return;
+                    // The page can be a reordered or inserted page from another source.
+                    const result = await PythonManager.extractAndEraseImageAtPoint(src.buffer, page.pageIndex, x, y);
 
+                    if (!stillCurrent()) return;
                     if (!result) {
                         this.showToast("❌ No se detectó ninguna imagen en ese punto.");
                         this.toggleLoader(false);
@@ -898,8 +918,9 @@ Object.assign(app, {
                 } catch (err) {
                     console.error("Error capturando imagen", err);
                     this.showToast("❌ Error al procesar imagen");
+                } finally {
+                    this.toggleLoader(false);
                 }
-                this.toggleLoader(false);
             },
 
             /**
@@ -1723,7 +1744,7 @@ Object.assign(app, {
                                     this._pendingTextureSample = tc.toDataURL();
                                     console.log(`🐍 Python: Texture sample ${twPx}x${thPx} (zona sin texto)`);
                                     // 🔥 Lanzar en paralelo con getSpecificBlock para eliminar parpadeo
-                                    this._pendingTexturePromise = (window.PythonManager && PythonManager.isLoaded)
+                                    this._pendingTexturePromise = (window.PythonManager)
                                         ? PythonManager.generateSmartTexture(this._pendingTextureSample).catch(() => null)
                                         : Promise.resolve(null);
                                 } else {
@@ -2595,7 +2616,7 @@ Object.assign(app, {
                 let finalBgAlpha = 1;
                 let isSurgical = false;
 
-                if (window.PythonManager && PythonManager.isLoaded) {
+                if (window.PythonManager) {
                     const src = doc.sources[page.sourceId];
                     // Guardar buffer pre-erase para cancel y para commit
                     this._preEraseBuffer = { sourceId: page.sourceId, pageIndex: page.pageIndex, buffer: src.buffer.slice(0) };
@@ -3107,10 +3128,10 @@ Object.assign(app, {
             // ============================================================
 
             /** Activa el modo de selección de área para redacción */
-            enableCensorMode: function () {
+            enableCensorMode: async function () {
                 const doc = this.getDoc();
                 if (!doc || doc.pages.length === 0) { this.showToast('⚠️ Abre un PDF primero'); return; }
-                if (!PythonManager.isLoaded) { this.showToast('⏳ Motor Python cargando...'); PythonManager.init(); return; }
+                if (!await this._ensurePythonEngine()) return;
                 if (this.smartPatchMode) this.cancelSmartPatch();
 
                 const btn = document.getElementById('btn-redact');
@@ -7564,7 +7585,7 @@ Object.assign(app, {
                     let minX = null, topY = null, maxX = null, height = null;
                     let usedPython = false;
 
-                    if (PythonManager.isLoaded) {
+                    if (window.PythonManager) {
                         try {
                             // searchInDocument busca en todo el doc — filtrar solo la página objetivo
                             const hits = await PythonManager.searchInDocument(src.buffer, searchText, false);

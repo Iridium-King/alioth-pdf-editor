@@ -60,8 +60,7 @@ body.compact-chrome .chrome-file-button span { display: none; }
 body.compact-chrome .header-right .chrome-file-button svg,
 body.compact-chrome #btn-header-save svg { width: var(--chrome-file-icon) !important; height: var(--chrome-file-icon) !important; max-width: 100%; max-height: 100%; flex-shrink: 0; margin: 0; }
 body.compact-chrome #btn-header-save-as svg { fill: none !important; }
-#btn-header-save-as svg { color: #4ade80; }
-body.compact-chrome #btn-header-save-as { border-bottom-color: #4ade80 !important; }
+#btn-header-save-as .save-as-pencil { stroke: #4ade80; }
 body.compact-chrome #recent-docs-btn { border-radius: 50% !important; }
 body.compact-chrome #btn-header-close { height: var(--chrome-file-size) !important; min-height: var(--chrome-file-size) !important; max-height: var(--chrome-file-size) !important; padding: 0 5px; line-height: normal; }
 body.compact-chrome #ribbon-capsule-wrapper { position: relative; z-index: 100; overflow: visible; }
@@ -202,4 +201,23 @@ body.compact-chrome.reading-mode #bookmark-panel { top: calc(var(--chrome-title-
     .chrome-brand span { display: none; }
     body.compact-chrome .header-tabs-wrapper .tab-btn { padding-left: 3px; padding-right: 3px; font-size: 9px; }
     body.compact-chrome #btn-header-close span { display: none; }
+}
+
+/* Compact fitting is chosen per tab using its actual contents and available width. */
+@media (max-width: 1280px) {
+    .toolbar-area.ribbon-fit { justify-content: center !important; }
+    .toolbar-area.ribbon-hide-shortcuts .tool-section[id^="shortcut-btn-section"] { display: none !important; }
+    .toolbar-area.ribbon-compact .tool-section,
+    .toolbar-area.ribbon-compact .group-row { gap: 0 !important; }
+    .toolbar-area.ribbon-compact .tool-group-vertical { min-width: 0 !important; }
+    .toolbar-area.ribbon-compact .tool-btn { min-width: 26px; }
+    .toolbar-area.ribbon-compact .slider-grid { column-gap: 6px; }
+    .toolbar-area.ribbon-compact .slider-item input[type="range"] { width: 62px; }
+    .toolbar-area.ribbon-tight .tool-btn { min-width: 24px; }
+    .toolbar-area.ribbon-tight .style-btn { width: 22px; }
+    .toolbar-area.ribbon-tight .control-row { gap: 2px; }
+    .toolbar-area.ribbon-tight .slider-grid { column-gap: 4px; }
+    .toolbar-area.ribbon-tight .slider-item input[type="range"] { width: 56px; }
+    /* If a much smaller window still needs scrolling, keep its first command reachable. */
+    .toolbar-area.ribbon-overflow { justify-content: flex-start !important; }
 }

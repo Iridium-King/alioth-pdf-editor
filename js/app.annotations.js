@@ -898,7 +898,7 @@ Object.assign(app, {
                     const removeBg = document.getElementById('prop-sign-remove-bg')?.checked;
                     let finalData = originalData;
 
-                    if (removeBg && PythonManager.isLoaded) {
+                    if (removeBg) {
                         try {
                             this.showToast('⏳ Quitando fondo...');
                             finalData = await PythonManager.removeImageBackground(originalData);
@@ -974,10 +974,7 @@ Object.assign(app, {
                     return;
                 }
 
-                if (!PythonManager.isLoaded) {
-                    this.showToast("🐍 Cargando motor de detección...");
-                    await PythonManager.init();
-                }
+                if (!await this._ensurePythonEngine()) return;
 
                 this.showToast("🐍 Analizando estructura nativa...");
                 const analysis = await PythonManager.analyzePage(src.buffer, page.pageIndex);

@@ -12,6 +12,7 @@ function fixture(respond) {
     fetch: async (url, options) => { calls.push(JSON.parse(options.body)); return respond(calls.length); },
     console: { log() {}, warn() {} }
   };
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../js/pdf-engine.js'), 'utf8'), context);
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, '../../js/python_manager.js'), 'utf8'), context);
   const manager = context.window.PythonManager;
   manager.init = async () => { manager.isLoaded = true; };

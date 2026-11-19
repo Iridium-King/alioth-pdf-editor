@@ -35,6 +35,7 @@
             };
             script.onerror = (err) => {
                 _scriptPromises.delete(src);
+                script.remove();
                 console.error(`[AppLazy] Error al cargar script: ${src}`, err);
                 reject(new Error(`No se pudo cargar la librería: ${src}`));
             };

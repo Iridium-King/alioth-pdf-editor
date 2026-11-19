@@ -63,7 +63,7 @@ function loadModules(relativePaths, options = {}) {
     const source = fs.readFileSync(path.join(root, relativePath), 'utf8');
     vm.runInNewContext(`(function () {\n${source}\n})();`, context, { filename: relativePath });
   }
-  return { app: window.app, document, window };
+  return { app: window.app, document, window, context };
 }
 
 function valueElement(value = '', checked = false) {
@@ -193,7 +193,7 @@ test('native-field detection neither bypasses the edit toggle nor restores suppr
     objects: [],
     deletedNativeFields: ['suprimido']
   };
-  const { app } = loadModules(['js/app.annotations.js'], {
+  const { app, context } = loadModules(['js/app.tools.js', 'js/app.annotations.js'], {
     elements: { 'switch-edit-fields': editSwitch },
     globals: {
       PythonManager: {
@@ -205,6 +205,7 @@ test('native-field detection neither bypasses the edit toggle nor restores suppr
       }
     }
   });
+  context.window.PythonManager = context.PythonManager;
   app.isFieldEditMode = false;
   app.getDoc = () => ({ currentIndex: 0, pages: [page], sources: { source: { buffer: new ArrayBuffer(2) } } });
   app.splitView = { activePanel: 'primary' };

@@ -10,7 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from _file_origin import resolve_file_origin
-from _native_file_dialog import NativeFileDialog, _windows_save_picker
+from _native_file_dialog import NativeDialogResult, NativeFileDialog, _windows_save_picker
 from _user_preferences import UserPreferences
 import _proxy as proxy
 
@@ -65,6 +65,20 @@ class OriginPreferencesTests(unittest.TestCase):
             with patch.object(proxy, '_NATIVE_FILE_DIALOG', Picker()), patch.dict(proxy._EVENT_QUEUES, {'origin-test': object()}):
                 self.assertEqual(handler._pick_native_save_target()[0], 200)
             self.assertEqual(captured, [('editado.pdf', directory)])
+
+    def test_save_endpoint_returns_the_path_chosen_in_the_native_picker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'copia ñ.pdf'
+            handler = object.__new__(proxy.AliothHandler)
+            handler.headers = {'X-Alioth-Client-Id': 'origin-test'}
+            handler._read_body = lambda: b'{"suggested_name":"base.pdf","mode":"copy"}'
+            handler._send_json = lambda code, payload: (code, payload)
+            with patch.object(proxy._NATIVE_FILE_DIALOG, 'request_save', return_value=NativeDialogResult(False, target)), \
+                    patch.dict(proxy._EVENT_QUEUES, {'origin-test': object()}):
+                status, result = handler._pick_native_save_target()
+            self.assertEqual(status, 200)
+            self.assertEqual(result['path'], str(target.resolve()))
+            self.assertTrue(result['token'])
 
     def test_preferences_survive_a_new_store_and_deletions_do_not_resurrect(self):
         with tempfile.TemporaryDirectory() as directory:

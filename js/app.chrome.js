@@ -109,6 +109,40 @@ function mountTabNavigation(titlebar) {
     sync();
 }
 
+// Measure the active tab only: hidden tabs have no geometry, and shortcut labels vary.
+function fitRibbon() {
+    const bar = document.querySelector('.toolbar-area.active');
+    if (!bar || !bar.clientWidth) return;
+    const classes = ['ribbon-fit', 'ribbon-compact', 'ribbon-tight', 'ribbon-hide-shortcuts', 'ribbon-overflow'];
+    for (const tab of document.querySelectorAll('.toolbar-area')) tab.classList.remove(...classes);
+    if (!window.matchMedia('(max-width: 1280px)').matches) return;
+    bar.classList.add('ribbon-fit');
+    bar.scrollLeft = 0;
+    const fits = () => {
+        const children = [...bar.children].filter(child => getComputedStyle(child).display !== 'none');
+        const style = getComputedStyle(bar);
+        const available = bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        const width = children.reduce((sum, child) => {
+            const css = getComputedStyle(child);
+            return sum + child.getBoundingClientRect().width + (parseFloat(css.marginLeft) || 0) + (parseFloat(css.marginRight) || 0);
+        }, 0) + Math.max(0, children.length - 1) * (parseFloat(style.columnGap) || 0);
+        return width <= available + 1;
+    };
+    if (fits()) return;
+    bar.classList.add('ribbon-compact');
+    if (fits()) return;
+    if (bar.querySelector('[id^="shortcut-btn-section"]')) {
+        bar.classList.add('ribbon-hide-shortcuts');
+        bar.classList.remove('ribbon-compact');
+        if (fits()) return;
+        bar.classList.add('ribbon-compact');
+        if (fits()) return;
+    }
+    bar.classList.add('ribbon-tight');
+    if (!fits()) bar.classList.add('ribbon-overflow');
+}
+app.fitRibbon = fitRibbon;
+
 function mount() {
     if (mounted) return;
     mounted = true;
@@ -129,7 +163,7 @@ function mount() {
         button.setAttribute('aria-label', button.title);
         for (const node of [...button.childNodes]) if (node.nodeType === Node.TEXT_NODE) node.textContent = '';
     }
-    byId('btn-header-save-as').querySelector('svg').outerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v4M7 3v6h9V3M7 21v-7h5"/><path d="m14 18 6-6 3 3-6 6-4 1zM19 13l3 3"/></svg>';
+    byId('btn-header-save-as').querySelector('svg').outerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12l4 4v4M7 3v6h9V3M7 21v-7h5"/><path class="save-as-pencil" d="m14 18 6-6 3 3-6 6-4 1zM19 13l3 3"/></svg>';
     panelButtons.forEach(id => {
         const button = byId(id);
         button.setAttribute('role', 'button');
@@ -152,6 +186,17 @@ function mount() {
     document.fonts?.addEventListener('loadingdone', syncSidebarNavigation);
     app.setPageCount(byId('pageCountDisplay').textContent);
     syncControls();
+    let fittingScheduled = false;
+    const scheduleFit = () => {
+        if (fittingScheduled) return;
+        fittingScheduled = true;
+        requestAnimationFrame(() => { fittingScheduled = false; fitRibbon(); });
+    };
+    new ResizeObserver(scheduleFit).observe(byId('ribbonContainer'));
+    new MutationObserver(scheduleFit).observe(byId('ribbonContainer'), { childList: true, subtree: true, characterData: true });
+    document.fonts?.addEventListener('loadingdone', scheduleFit);
+    window.addEventListener('resize', scheduleFit);
+    fitRibbon();
     initNativeChrome(titlebar);
 }
 
@@ -280,6 +325,7 @@ app.init = async function (...args) {
         app[name] = function (...parameters) {
             const value = original.apply(this, parameters);
             syncControls();
+            fitRibbon();
             persist();
             return value;
         };

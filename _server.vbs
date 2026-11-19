@@ -132,9 +132,9 @@ End If
 
 ' 4. Arranque en frío: el proxy lanza Edge cuando ya está listo.
 If Not proxyAlreadyRunning Then
-    proxyScript = scriptDir & "\_proxy.py"
+    proxyScript = scriptDir & "\alioth.py"
     Dim launchCommand
-    launchCommand = pythonExe & " """ & proxyScript & """ --launch-browser"
+    launchCommand = pythonExe & " """ & proxyScript & """ gui"
     If pdfArg <> "" Then launchCommand = launchCommand & " """ & pdfArg & """"
     objShell.Run launchCommand, 0, False
     WScript.Quit

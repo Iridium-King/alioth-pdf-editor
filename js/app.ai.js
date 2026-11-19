@@ -114,7 +114,7 @@ Object.assign(app, {
                     let imageData = tempCanvas.toDataURL('image/png');
 
                     // ── Pre-procesamiento PIL para mejorar accuracy de Tesseract ──
-                    if (window.PythonManager && PythonManager.isLoaded) {
+                    if (window.PythonManager) {
                         try {
                             document.getElementById('loader-msg').innerText = "OCR: Optimizando imagen con Python...";
                             imageData = await PythonManager.preprocessForOCR(imageData);
@@ -194,7 +194,7 @@ Object.assign(app, {
                 const page = doc && doc.pages[doc.currentIndex];
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
-                if (!PythonManager.isLoaded) { this.showToast('⏳ Motor Python cargando...'); PythonManager.init(); return; }
+                if (!await this._ensurePythonEngine()) return;
 
                 this.toggleLoader(true, `Analizando tablas (${strategy === 'lattice' ? 'Lattice' : 'Stream'})...`);
                 try {
@@ -440,7 +440,7 @@ Object.assign(app, {
                 const page = doc && doc.pages[doc.currentIndex];
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
-                if (!PythonManager.isLoaded) { this.showToast('⏳ Motor Python cargando...'); PythonManager.init(); return; }
+                if (!await this._ensurePythonEngine()) return;
 
                 this._ttfTables = [];
                 this._ttfAIResults = [];
@@ -1350,7 +1350,7 @@ Reglas:
                 });
 
                 // Try to enrich labels using PyMuPDF adjacent text lookup
-                if (window.PythonManager && PythonManager.isLoaded) {
+                if (window.PythonManager) {
                     try {
                         var pyCode =
                             'import fitz, json\n' +
@@ -2185,7 +2185,7 @@ Reglas:
 
             // Detecta campos nativos del PDF usando PyMuPDF (fallback sin IA)
             _ttfDetectFieldsPyMuPDF: async function(src, page, pageW, pageH) {
-                if (!window.PythonManager || !PythonManager.isLoaded) return null;
+                if (!window.PythonManager) return null;
                 var fieldTypeMap = { 'Text': 'text', 'CheckBox': 'checkbox', 'RadioButton': 'radio',
                                      'ComboBox': 'dropdown', 'ListBox': 'dropdown', 'Signature': 'text' };
                 try {
@@ -2222,7 +2222,7 @@ Reglas:
             },
 
             _ttfHeuristicDetect: async function (src, page, clipRect) {
-                if (!window.PythonManager || !PythonManager.isLoaded) return [];
+                if (!window.PythonManager) return [];
                 var pageIdx = page.pageIndex || 0;
                 var _hintsJson = JSON.stringify(this._ttfPaintHints || []);
                 var pyCode =
@@ -2455,7 +2455,7 @@ Reglas:
                 } catch(e) {}
 
                 var pageTextBlocks = '';
-                if (window.PythonManager && PythonManager.isLoaded) {
+                if (window.PythonManager) {
                     try {
                         var pyResult = await PythonManager.run(
                             'import fitz,json\ndoc=fitz.open(stream=bytes(js_pdf_bytes),filetype="pdf")\npg=doc[' + (page.pageIndex||0) + ']\nblocks=pg.get_text("blocks")\nresult=json.dumps([{"t":b[4].strip()[:80],"x0":round(b[0],1),"y0":round(b[1],1),"x1":round(b[2],1),"y1":round(b[3],1)} for b in blocks if b[4].strip()][:150])\npg.close();doc.close()\nresult',
@@ -3347,7 +3347,7 @@ Reglas:
                     let usedPythonExtract = false;
 
                     try {
-                        if (PythonManager.isLoaded) {
+                        if (window.PythonManager) {
                             // Reunir buffer del primer source (normalmente todos vienen del mismo PDF)
                             const sourceIds = [...new Set(doc.pages.map(p => p.sourceId))];
                             const primarySrc = doc.sources[sourceIds[0]];

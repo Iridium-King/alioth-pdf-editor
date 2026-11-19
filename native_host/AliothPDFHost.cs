@@ -229,8 +229,33 @@ internal sealed partial class HostWindow : Form
         get { var p = base.CreateParams; p.Style |= 0x000F0000; return p; }
     }
 
+    // Leave a native client border outside WebView2: the child HWND otherwise
+    // consumes edge hit tests and mouse events before the form can resize.
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        var border = new Padding(WindowState == FormWindowState.Normal ? 6 : 0);
+        if (Padding != border) Padding = border;
+    }
+
+    internal static int ResizeHitTest(int x, int y, int width, int height, int border)
+    {
+        if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+        bool left = x < border, right = x >= width - border;
+        bool top = y < border, bottom = y >= height - border;
+        return top ? (left ? 13 : right ? 14 : 12) :
+               bottom ? (left ? 16 : right ? 17 : 15) : left ? 10 : right ? 11 : 0;
+    }
+
     protected override void WndProc(ref Message message)
     {
+        if (message.Msg == 0x84 && WindowState == FormWindowState.Normal)
+        {
+            long position = message.LParam.ToInt64();
+            var point = PointToClient(new System.Drawing.Point((short)(position & 0xffff), (short)((position >> 16) & 0xffff)));
+            int hit = ResizeHitTest(point.X, point.Y, ClientSize.Width, ClientSize.Height, 6);
+            if (hit != 0) { message.Result = new IntPtr(hit); return; }
+        }
         if (message.Msg == 0x83 && message.WParam != IntPtr.Zero) { message.Result = IntPtr.Zero; return; }
         base.WndProc(ref message);
         if (message.Msg == 0x24)
