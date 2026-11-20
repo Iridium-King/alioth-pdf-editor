@@ -1,0 +1,21 @@
+name: Edición de texto PDF
+on:
+  push:
+    branches: [codex/pdf-text-3.2.50]
+permissions:
+  contents: read
+jobs:
+  pdf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Instalar dependencias de prueba del editor
+        run: python3 -m venv .test-env && .test-env/bin/pip install --only-binary=:all: PyMuPDF==1.26.3 Pillow==11.3.0
+      - name: Probar la edición con documentos sintéticos
+        run: |
+          .test-env/bin/python -m unittest discover -s HERRAMIENTAS_DEV/tests -p 'test_text_splice.py' -v
+          .test-env/bin/python -m unittest discover -s HERRAMIENTAS_DEV/tests -p 'test_reflow_resources.py' -v
+          node --test HERRAMIENTAS_DEV/tests/text-splice.test.cjs HERRAMIENTAS_DEV/tests/text-edit-clean-replacement.test.cjs
