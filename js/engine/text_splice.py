@@ -119,7 +119,6 @@ def _lex(data, i):
 
 def parse_ops(data):
     ops, operands, cont, op_start, i, n = [], [], [], None, 0, len(data)
-    ei_re = re.compile(rb"\sEI(?=\s|$)")
     while True:
         tok, i = _lex(data, i)
         if tok is None:
@@ -142,13 +141,8 @@ def parse_ops(data):
                 depth += 1 if t2[0] == "<<" else (-1 if t2[0] == ">>" else 0)
             tgt.append(("dict", data[s:i])); continue
         if k == "op" and not cont:
-            if v == "BI":  # Inline image
-                m = data.find(b"ID", i)
-                mm = ei_re.search(data, m + 2) if m >= 0 else None
-                end = mm.end() if mm else n
-                ops.append({"op": "BI", "args": [], "start": op_start, "end": end})
-                i, operands, op_start = end, [], None
-                continue
+            if v == "BI":
+                raise SpliceFallbackError("La imagen inline requiere el editor nativo de MuPDF")
             ops.append({"op": v, "args": operands, "start": op_start, "end": e})
             operands, op_start = [], None
             continue
@@ -452,10 +446,7 @@ def remove_spans(doc, page, spans):
         for l in b["lines"] for s in l["spans"] if s["text"].strip()
     ]
 
-    # Limpiar y unificar streams de la pagina
-    page.clean_contents(sanitize=False)
-    xrefs = page.get_contents()
-    if not xrefs:
+    if not page.get_contents():
         raise SpliceFallbackError("Pagina sin stream de contenido /Contents")
     data = page.read_contents()
     ops = parse_ops(data)
@@ -494,36 +485,126 @@ def remove_spans(doc, page, spans):
         new_op_bytes = _rewrite_op(o, by_op[oi], removed)
         buf[o["start"]:o["end"]] = new_op_bytes
 
-    doc.update_stream(xrefs[0], bytes(buf))
-    if len(xrefs) > 1:
-        page.set_contents(xrefs[0])
+    # /Contents puede estar compartido por otras páginas. Editar una copia privada.
+    previous_contents = doc.xref_get_key(page.xref, "Contents")[1]
+    private_stream = doc.get_new_xref()
+    doc.update_object(private_stream, "<<>>")
+    doc.update_stream(private_stream, bytes(buf))
+    page.set_contents(private_stream)
+    try:
+        post_dict = page.get_text("dict")
+        post_spans = [
+            s for b in post_dict["blocks"] if b["type"] == 0
+            for l in b["lines"] for s in l["spans"] if s["text"].strip()
+        ]
 
-    # ────────────────────────────────────────────────────────────
-    # 6. POST-VERIFICACION RIGUROSA
-    # ────────────────────────────────────────────────────────────
-    post_dict = page.get_text("dict")
-    post_spans = [
-        s for b in post_dict["blocks"] if b["type"] == 0
-        for l in b["lines"] for s in l["spans"] if s["text"].strip()
-    ]
+        # Verificar que el texto de cada span objetivo ya no aparece en su rectangulo
+        for span in spans:
+            target_t = span.get("text", "").strip()
+            if not target_t:
+                continue
+            clip_r = fitz.Rect(span["bbox"]) + (-1, -1, 1, 1)
+            remaining_t = page.get_text("text", clip=clip_r).strip()
+            if target_t in remaining_t:
+                raise SpliceFallbackError(f"Verificacion fallo: el texto '{target_t}' sigue presente tras splice")
 
-    # Verificar que el texto de cada span objetivo ya no aparece en su rectangulo
-    for span in spans:
-        target_t = span.get("text", "").strip()
-        if not target_t:
-            continue
-        clip_r = fitz.Rect(span["bbox"]) + (-1, -1, 1, 1)
-        remaining_t = page.get_text("text", clip=clip_r).strip()
-        if target_t in remaining_t:
-            raise SpliceFallbackError(f"Verificacion fallo: el texto '{target_t}' sigue presente tras splice")
-
-    # Verificar que no hubo destruccion colateral masiva
-    expected_reduction = len(spans)
-    if len(post_spans) < len(pre_spans) - expected_reduction - 5:
-        raise SpliceFallbackError(f"Verificacion fallo: exceso de spans desaparecidos ({len(pre_spans)} -> {len(post_spans)})")
+        # Verificar que no hubo destruccion colateral masiva
+        expected_reduction = len(spans)
+        if len(post_spans) < len(pre_spans) - expected_reduction - 5:
+            raise SpliceFallbackError(f"Verificacion fallo: exceso de spans desaparecidos ({len(pre_spans)} -> {len(post_spans)})")
+    except Exception:
+        doc.xref_set_key(page.xref, "Contents", previous_contents)
+        raise
 
     return True, {
         "glyphs_removed": len(all_hits),
         "ops_touched": len(touched),
         "spans_count": len(spans)
     }
+
+
+def isolate_resources(doc, page):
+    """Localizar los recursos heredados antes de añadir fuentes o estados gráficos."""
+    node = page.xref
+    seen = set()
+    while node not in seen:
+        seen.add(node)
+        kind, value = doc.xref_get_key(node, "Resources")
+        if kind != "null":
+            break
+        kind, parent = doc.xref_get_key(node, "Parent")
+        if kind == "null":
+            return
+        if kind != "xref":
+            raise ValueError("Referencia Parent inválida en la página")
+        node = int(parent.split()[0])
+    else:
+        raise ValueError("Referencia circular en los recursos de la página")
+
+    if kind == "xref":
+        value = doc.xref_object(int(value.split()[0]))
+    elif kind != "dict":
+        raise ValueError("Diccionario de recursos inválido")
+    if not value.lstrip().startswith("<<"):
+        raise ValueError("Diccionario de recursos inválido")
+    doc.xref_set_key(page.xref, "Resources", value)
+    for group in ("Font", "ExtGState", "XObject"):
+        key = "Resources/" + group
+        kind, value = doc.xref_get_key(page.xref, key)
+        if kind == "xref":
+            group_dict = doc.xref_object(int(value.split()[0]))
+            if not group_dict.lstrip().startswith("<<"):
+                raise ValueError("Diccionario de recursos inválido: " + group)
+            doc.xref_set_key(page.xref, key, group_dict)
+
+
+def validate_replacement(original, candidate, page_number, original_areas, insert_area, replacement):
+    """Verificar los bytes serializados antes de devolverlos al editor."""
+    from PIL import Image, ImageChops
+
+    def preview(page, scale):
+        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=fitz.csRGB, alpha=False)
+        return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+
+    def diagnostics():
+        return {line for line in fitz.TOOLS.mupdf_warnings().splitlines()
+                if line.strip() and not line.startswith("... repeated ")}
+
+    diagnostics()
+    with fitz.open(stream=original, filetype="pdf") as before:
+        source = before[page_number]
+        geometry = (source.rect, source.rotation, before.page_count)
+        scale = min(1.5, 1600 / max(source.rect.width, source.rect.height))
+        baseline = preview(source, scale)
+        source.get_text("text")
+        old_messages = diagnostics()
+
+    with fitz.open(stream=candidate, filetype="pdf") as after:
+        page = after[page_number]
+        if (page.rect, page.rotation, after.page_count) != geometry:
+            raise ValueError("La edición alteró la geometría del documento")
+        edited = preview(page, scale)
+        page.get_text("text")
+        allowed = list(original_areas) + [fitz.Rect(insert_area)]
+        # El texto alineado o con otra fuente puede rebasar la caja nominal.
+        near = fitz.Rect(insert_area) + (-2, -2, 2, 2)
+        if replacement.strip() and "\n" not in replacement.strip():
+            hits = [box for box in page.search_for(replacement.strip()) if box.intersects(near)]
+            if not hits:
+                raise ValueError("El texto insertado no se pudo verificar en su posición")
+            allowed.append(min(hits, key=lambda box: abs(box.x0 - near.x0) + abs(box.y0 - near.y0)))
+        elif replacement.strip():
+            expected = "".join(replacement.split())
+            actual = "".join(page.get_textbox(near).split())
+            if expected not in actual:
+                raise ValueError("No se pudo verificar el párrafo completo en su posición")
+        if diagnostics() - old_messages:
+            raise ValueError("La edición introdujo errores al leer o dibujar la página")
+        difference = ImageChops.difference(baseline, edited)
+        transform = page.rotation_matrix * fitz.Matrix(scale, scale)
+        for area in allowed:
+            box = ((fitz.Rect(area) + (-2, -2, 2, 2)) * transform).irect
+            if not box.is_empty:
+                difference.paste(0, tuple(box))
+        if difference.getbbox():
+            raise ValueError("La edición modificó contenido fuera del texto seleccionado")
