@@ -42,3 +42,49 @@ test('app.tools stores targetSpans for multi-span paragraph blocks', () => {
 
     assert.ok(content.includes('this.smartPatchData.targetSpans = _validSpans.map'), 'debe guardar targetSpans para parrafos y bloques multilineales');
 });
+
+
+test('El rechazo de PDF.js conserva los bytes originales y descarta la previsualización', async () => {
+    const vm = require('node:vm');
+    const original = new Uint8Array([1, 2, 3]).buffer;
+    const intermediate = new Uint8Array([8]).buffer;
+    const candidate = new Uint8Array([9]).buffer;
+    const src = { buffer: original };
+    const overlay = { id: 'edit', isRealEdit: true, bgAlpha: 0, x: 15, y: 20, width: 35, height: 12 };
+    const page = { sourceId: 'base', pageIndex: 0, objects: [overlay] };
+    const doc = { sources: { base: src }, currentIndex: 0, pages: [page] };
+    let message = '', disposed = false, tried = false, saved = false;
+    const app = {
+        getDoc: () => doc, currentScale: 1, _preEraseBuffer: { sourceId: 'base', buffer: original },
+        toggleLoader() {}, renderOverlays() {}, refreshThumbnail() {}, _restoreContinuousIfNeeded() {},
+        saveState() { saved = true; }, showToast(value) { message = value; }
+    };
+    const context = {
+        window: { app }, console: { log() {}, warn() {}, error() {} },
+        PythonManager: {
+            async removeTextSpans() { return intermediate; },
+            async applyReflowEdit(working, index, edit, before) {
+                assert.equal(working, intermediate);
+                assert.deepEqual(new Uint8Array(before), new Uint8Array(original));
+                assert.equal(src.buffer, original);
+                return { buffer: candidate };
+            }
+        },
+        pdfjsLib: {
+            getDocument(options) {
+                assert.equal(options.stopAtErrors, true);
+                tried = true;
+                const checked = { async getOperatorList() { throw Error('Invalid XObject'); } };
+                return { promise: Promise.resolve({ getPage: async () => checked }), destroy() { disposed = true; } };
+            }
+        }
+    };
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'js/app.pdf_ops.js'), 'utf8'), context);
+    const data = { x: 15, y: 20, width: 35, height: 12, fontSize: 12, targetSpans: [{text:'OLD'}] };
+    await app._applyRealTextInlineCommitNow(overlay, data, 'NEW', []);
+    assert.ok(tried && disposed);
+    assert.match(message, /Invalid XObject/);
+    assert.equal(src.buffer, original);
+    assert.equal(saved, false);
+    assert.deepEqual(page.objects, []);
+});
