@@ -60,7 +60,7 @@
 
                         // Cargar motor quirúrgico text_splice en el sistema de archivos virtual de Pyodide
                         try {
-                            const _spliceResp = await fetch('./js/engine/text_splice.py');
+                            const _spliceResp = await fetch('./js/engine/text_splice.py?v=3.2.50');
                             if (_spliceResp.ok) {
                                 const _spliceSource = await _spliceResp.text();
                                 this.pyodide.FS.writeFile('/home/pyodide/text_splice.py', _spliceSource);
@@ -1702,7 +1702,7 @@ def erase_region(data_bytes, pno, rect_json):
     page.draw_rect(_draw_rect, color=bg, fill=bg, width=0)
     print(f"🔴 [ERASE] draw_rect rect=({_draw_rect.x0:.2f},{_draw_rect.y0:.2f},{_draw_rect.x1:.2f},{_draw_rect.y1:.2f}) bg={bg}")
     out = io.BytesIO()
-    doc.save(out, garbage=3, deflate=True, clean=True)
+    doc.save(out, garbage=1, deflate=True)
     return bytes(out.getvalue())
 
 erase_region(js_pdf_data, js_pno, js_rect)
@@ -1743,7 +1743,7 @@ def do_splice(data_bytes, pno, spans_json):
     if not ok:
         raise Exception(f"text_splice failed: {info}")
     out = io.BytesIO()
-    doc.save(out, garbage=3, deflate=True)
+    doc.save(out, garbage=1, deflate=True)
     doc.close()
     return bytes(out.getvalue())
 
@@ -3414,7 +3414,7 @@ apply_real_edit(js_data, js_pno, js_edit)
              * @param {Object} editData { x, y, w, h, text, size, color, bgColor, font, origin, expandIfNeeded }
              * @returns {{ buffer: ArrayBuffer, overflow: bool, expandedH: number, originalH: number }}
              */
-            applyReflowEdit: async function (pdfBuffer, pageNum, editData) {
+            applyReflowEdit: async function (pdfBuffer, pageNum, editData, originalBuffer = pdfBuffer) {
                 if (!this.isLoaded) await this.init();
                 console.log('🐍 Python (PyMuPDF): Applying reflow edit...');
                 try {
@@ -3423,11 +3423,14 @@ apply_real_edit(js_data, js_pno, js_edit)
                     const result = await this.run(`
 import fitz, io, json, base64, os
 
-def apply_reflow_edit(data, pno, edit_json):
+from text_splice import isolate_resources, validate_replacement
+
+def apply_reflow_edit(data, pno, edit_json, original):
     if hasattr(data, 'to_py'): data = bytes(data.to_py())
     else: data = bytes(data)
     doc = fitz.open(stream=data, filetype='pdf')
     page = doc[pno]
+    isolate_resources(doc, page)
     edit = json.loads(edit_json)
 
     x, y, w, h = edit['x'], edit['y'], edit['w'], edit['h']
@@ -3813,6 +3816,8 @@ def apply_reflow_edit(data, pno, edit_json):
             print(f"🐍 [REFLOW EXISTING TEXT] text='{_sp.get('text','')}' bbox={[round(v,2) for v in _sp.get('bbox',[])]} size={_sp.get('size',0):.2f} origin={[round(v,2) for v in _sp.get('origin',[])]}")
     except Exception as _e:
         print(f"🐍 [REFLOW EXISTING TEXT] error: {_e}")
+    if not _skip_erase and any(page.annots(types=[fitz.PDF_ANNOT_REDACT]) or ()):
+        raise ValueError("La página contiene censuras pendientes de aplicar")
     if is_surgical and not _skip_erase:
         # fill=None: no genera rect de relleno en el content stream.
         # Usar el y0 real del span a borrar (el más cercano a orig_rect.y0 desde abajo),
@@ -3939,7 +3944,7 @@ def apply_reflow_edit(data, pno, edit_json):
                     })
         except Exception as _ce:
             pass
-        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_NONE)
         # ── DEBUG: estado inmediatamente tras apply_redactions ──────────────────
         print(f"🔴 [REDACT-DONE] redact_rect=({redact_rect.x0:.2f},{redact_rect.y0:.2f},{redact_rect.x1:.2f},{redact_rect.y1:.2f})")
         print(f"🔴 [REDACT-DONE] orig_rect=({orig_rect.x0:.2f},{orig_rect.y0:.2f},{orig_rect.x1:.2f},{orig_rect.y1:.2f})")
@@ -4052,7 +4057,7 @@ def apply_reflow_edit(data, pno, edit_json):
                 pass
     elif not _skip_erase:
         page.add_redact_annot(orig_rect + (-0.2, 0, 0.2, 0), fill=rgb_bg)
-        page.apply_redactions()
+        page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE, graphics=fitz.PDF_REDACT_LINE_ART_NONE)
         if edit.get('bgImage') and str(edit['bgImage']).startswith('data:'):
             img_data = base64.b64decode(edit['bgImage'].split(',')[1])
             page.insert_image(orig_rect, stream=img_data)
@@ -4766,17 +4771,24 @@ def apply_reflow_edit(data, pno, edit_json):
                 overflow = (rc2 < 0)
                 break
 
-    out = io.BytesIO()
-    doc.save(out, garbage=3, deflate=True)
+    if rc < 0 and is_surgical:
+        raise ValueError("No se pudo insertar todo el texto")
+    candidate = doc.tobytes(garbage=1, deflate=True)
+    doc.close()
+    original_bytes = bytes(original.to_py()) if hasattr(original, 'to_py') else bytes(original)
+    areas = [fitz.Rect(span['bbox']) for span in (_target_spans or []) if span.get('bbox')]
+    insert_area = fitz.Rect(insert_rect)
+    insert_area.y1 = max(insert_area.y1, y + expanded_h)
+    validate_replacement(original_bytes, candidate, pno, areas or [orig_rect], insert_area, new_text)
     return json.dumps({
-        'pdf': base64.b64encode(out.getvalue()).decode(),
+        'pdf': base64.b64encode(candidate).decode(),
         'overflow': overflow,
         'expanded_h': expanded_h,
         'original_h': h
     })
 
-apply_reflow_edit(js_data, js_pno, js_edit)
-                    `, { js_data: uint8, js_pno: pageNum, js_edit: editJson });
+apply_reflow_edit(js_data, js_pno, js_edit, js_original)
+                    `, { js_data: uint8, js_pno: pageNum, js_edit: editJson, js_original: new Uint8Array(originalBuffer) });
 
                     const parsed = JSON.parse(result);
                     const pdfBytes = Uint8Array.from(atob(parsed.pdf), c => c.charCodeAt(0));

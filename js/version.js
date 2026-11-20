@@ -1,7 +1,12 @@
-const ALIOTH_VERSION = '3.2.49';
+const ALIOTH_VERSION = '3.2.50';
 window.ALIOTH_VERSION = ALIOTH_VERSION;
 
 const ALIOTH_CHANGELOG = [
+    {
+        version: '3.2.50',
+        date: '2026-11-20',
+        items: [{ type: 'fix', text: 'La edición de texto verifica el PDF antes de aplicar el cambio y conserva los recursos gráficos de la página.' }]
+    },
     {
         version: '3.2.49',
         date: '2026-11-20',

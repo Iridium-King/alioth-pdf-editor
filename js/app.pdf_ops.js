@@ -1933,7 +1933,7 @@ invert_colors(js_data)
                     this._realEditMode = false;
                     return;
                 }
-                if (textObj._commitInProgress) {
+                if (textObj._commitInProgress || this._realTextCommitInProgress) {
                     window.__aliothDiag?.trace('TEXT-TXN', 'commit-duplicate-blocked', {
                         transactionId: _diagTxnId,
                         objectId: textObj.id
@@ -1948,14 +1948,10 @@ invert_colors(js_data)
                     view: window.__aliothDiag?.view(this.splitView?.activePanel)
                 });
 
-                // La edición real modifica los bytes del PDF, por lo que su historial
-                // debe conservar ambos extremos de la transacción. En modo quirúrgico
-                // `_preEraseBuffer` es el único original limpio previo al borrado.
-                const _transactionBeforeBuffer = (
-                    this._preEraseBuffer &&
-                    this._preEraseBuffer.sourceId === page.sourceId &&
-                    this._preEraseBuffer.buffer
-                ) ? this._preEraseBuffer.buffer.slice(0) : src.buffer.slice(0);
+                const sourceAtStart = src.buffer;
+                const _transactionBeforeBuffer = sourceAtStart.slice(0);
+                let workingBuffer = _transactionBeforeBuffer;
+                let publishedBuffer = null;
                 let _transactionCommitted = false;
 
                 // Mantener la máscara hasta que el canvas ya contenga el PDF actualizado.
@@ -1997,13 +1993,12 @@ invert_colors(js_data)
                                     spansCount: _spansToSplice.length
                                 });
                                 const _splicedBuf = await PythonManager.removeTextSpans(
-                                    this._preEraseBuffer.buffer,
+                                    workingBuffer,
                                     page.pageIndex,
                                     _spansToSplice
                                 );
                                 if (_splicedBuf && (_splicedBuf.byteLength || _splicedBuf.length)) {
-                                    src.buffer = _splicedBuf;
-                                    src.doc = null;
+                                    workingBuffer = _splicedBuf;
                                     _didSplice = true;
                                     this._pendingEraseRect = null;
                                     window.__aliothDiag?.trace('TEXT-TXN', 'splice-attempt-success', {
@@ -2029,14 +2024,11 @@ invert_colors(js_data)
                                 eraseRect: this._pendingEraseRect
                             });
                             const _erasedBuf = await PythonManager.eraseTextRegion(
-                                this._preEraseBuffer.buffer,
+                                workingBuffer,
                                 page.pageIndex,
                                 this._pendingEraseRect
                             );
-                            // Actualizar buffer en src para que applyReflowEdit trabaje sobre él
-                            // (pero _preEraseBuffer sigue apuntando al original pre-erase para undo)
-                            src.buffer = _erasedBuf;
-                            src.doc = null;
+                            workingBuffer = _erasedBuf;
                             window.__aliothDiag?.trace('TEXT-TXN', 'lazy-erase-finish', {
                                 transactionId: _diagTxnId,
                                 outputBytes: _erasedBuf?.byteLength || _erasedBuf?.length || null
@@ -2328,14 +2320,11 @@ invert_colors(js_data)
                     console.log(`🟣 [COMMIT-textObj] textObj.x=${textObj.x?.toFixed(2)} textObj.y=${textObj.y?.toFixed(2)} textObj.w=${textObj.width?.toFixed(2)} textObj.h=${textObj.height?.toFixed(2)} textObj.size=${textObj.size?.toFixed(2)}`);
                     console.log(`🟣 [COMMIT-scale] currentScale=${this.currentScale} | data.y/scale=${(data.y/this.currentScale)?.toFixed(2)} | textObj.y/scale=${(textObj.y/this.currentScale)?.toFixed(2)}`);
 
-                    // Para surgical: src.buffer ya tiene el erase aplicado (lazy erase al inicio del commit).
-                    const _srcBuffer = src.buffer;
-                    console.log(`🟣 [COMMIT-BUF] isSurgical=${_isSurgical} using=src.buffer (post-lazy-erase)`);
                     window.__aliothDiag?.trace('TEXT-TXN', 'python-start', {
                         transactionId: _diagTxnId,
-                        inputBytes: _srcBuffer?.byteLength || _srcBuffer?.length || null
+                        inputBytes: workingBuffer.byteLength
                     });
-                    const result = await PythonManager.applyReflowEdit(_srcBuffer, page.pageIndex, editData);
+                    const result = await PythonManager.applyReflowEdit(workingBuffer, page.pageIndex, editData, _transactionBeforeBuffer);
                     window.__aliothDiag?.trace('TEXT-TXN', 'python-finish', {
                         transactionId: _diagTxnId,
                         outputBytes: result.buffer?.byteLength || result.buffer?.length || null,
@@ -2343,7 +2332,25 @@ invert_colors(js_data)
                         expandedH: result.expandedH
                     });
 
-                    src.buffer = result.buffer;
+                    // Comprobar también el motor que dibuja la página en el visor.
+                    const loadingTask = pdfjsLib.getDocument({
+                        data: result.buffer.slice(0),
+                        password: src.password,
+                        stopAtErrors: true,
+                        isEvalSupported: false
+                    });
+                    try {
+                        const checkedPage = await (await loadingTask.promise).getPage(page.pageIndex + 1);
+                        await checkedPage.getOperatorList();
+                        await checkedPage.getTextContent();
+                    } finally {
+                        await loadingTask.destroy();
+                    }
+                    if (src.buffer !== sourceAtStart || doc.sources[page.sourceId] !== src || !doc.pages.includes(page)) {
+                        throw new Error('El documento cambió mientras se verificaba la edición');
+                    }
+                    publishedBuffer = result.buffer;
+                    src.buffer = publishedBuffer;
                     this.releasePdfSource?.(src);
                     src.doc = null;
                     this.saveState();
@@ -2420,16 +2427,10 @@ invert_colors(js_data)
                         stack: e.stack
                     });
                     _removeCover();
-                    if (!_transactionCommitted) {
-                        src.buffer = _transactionBeforeBuffer;
+                    if (!_transactionCommitted && publishedBuffer && src.buffer === publishedBuffer) {
+                        this.releasePdfSource?.(src);
+                        src.buffer = sourceAtStart;
                         src.doc = null;
-                        // Evitar texto fantasma superpuesto: si la edición física falló y restauramos
-                        // el objeto como anotación visual, NO debe ser transparente para no solaparse.
-                        textObj.bgColor = data.bgColor || '#ffffff';
-                        textObj.bgAlpha = 1;
-                        if (!page.objects.includes(textObj)) {
-                            page.objects.splice(Math.max(0, idx), 0, textObj);
-                        }
                     }
                     this.showToast('❌ Error en reflow: ' + e.message, 5000);
                     this.renderOverlays();
