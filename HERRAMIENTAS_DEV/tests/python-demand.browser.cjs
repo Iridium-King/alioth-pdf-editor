@@ -51,8 +51,9 @@ doc.close()
 encoded
 `);
       const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
-      const extracted = await PythonManager.extractAndEraseImageAtPoint(bytes.buffer, 1, 40, 40);
-      const noImage = await PythonManager.extractAndEraseImageAtPoint(bytes.buffer, 0, 40, 40);
+      const selection = { width: 200, height: 200, transform: [1, 0, 0, -1, 0, 200], point: [40, 40] };
+      const extracted = await PythonManager.liftPdfImage(bytes.buffer, 1, selection);
+      const noImage = await PythonManager.liftPdfImage(bytes.buffer, 0, selection);
       const transparent = await PythonManager.removeImageBackground(extracted.base64);
       return { ready, image: !!extracted.base64, erased: extracted.buffer.byteLength > 0,
         correctPage: !noImage, transparent: transparent.startsWith('data:image/') };

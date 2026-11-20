@@ -50,7 +50,7 @@ Object.assign(app, {
                 delete source._pdfLoadingPromise;
             },
 
-            releaseBackgroundCanvas: function (canvas) {
+            releaseBackgroundCanvas: function (canvas, { keepPixels = false } = {}) {
                 canvas._renderRequestToken = null;
                 try { canvas._activeRenderTask?.cancel(); } catch (_) {}
                 canvas._activeRenderTask = null;
@@ -59,7 +59,7 @@ Object.assign(app, {
                 canvas._renderedScale = null;
                 canvas._pdfPage = null;
                 canvas._pdfViewport = null;
-                canvas.width = canvas.height = 0;
+                if (!keepPixels) canvas.width = canvas.height = 0;
             },
 
             releasePageThumbnail: function (page) {
@@ -5549,8 +5549,7 @@ Object.assign(app, {
                         const containerEnd = document.getElementById('canvas-container' + (panel === 'secondary' ? '-secondary' : ''));
                         if (containerEnd) { containerEnd.classList.remove('zooming'); containerEnd.style.transform = ''; containerEnd.style.transformOrigin = ''; }
                         await this.renderPanelContent(panel, frame);
-                        if (frame) frame();
-                        else if (zoomAnchor) this._restoreZoomAnchor(zoomAnchor);
+                        if (!frame && zoomAnchor) this._restoreZoomAnchor(zoomAnchor);
                         window.__aliothDiag?.trace('ZOOM-TRACE', 'render-finish', {
                             id: zoomDiag?.id,
                             elapsedMs: zoomDiag ? Math.round((performance.now() - zoomDiag.startedAt) * 10) / 10 : null,
@@ -5728,6 +5727,9 @@ Object.assign(app, {
                 const mainView = elements.mainView;
                 const cContainer = elements.canvasContainer;
                 if (!mainView || !cContainer) return;
+                const scrollSession = Symbol();
+                mainView._continuousScrollSession = scrollSession;
+                mainView.onscroll = null;
                 const pointerZoomAnchor = this._pendingZoomAnchor && this._pendingZoomAnchor.panelId === panelId
                     ? this._pendingZoomAnchor
                     : null;
@@ -5942,7 +5944,8 @@ Object.assign(app, {
                 this._moveCContainerToWrapper(panelId, activeIdxBeforeZoom);
                 // Tras redimensionar wrappers, restaurar el ancla antes del primer await.
                 // Así el navegador no alcanza a pintar una posición intermedia.
-                if (pointerZoomAnchor) this._restoreZoomAnchor(pointerZoomAnchor);
+                if (framePage) framePage();
+                else if (pointerZoomAnchor) this._restoreZoomAnchor(pointerZoomAnchor);
 
                 // ── Restaurar scroll al mismo punto dentro de la misma página ──
                 // Helper: calcula scrollTop vertical para centrar o restaurar offset
@@ -5986,6 +5989,8 @@ Object.assign(app, {
 
                 // ── Renderizar la página activa en el cContainer ──
                 await this._renderContinuousActivePage(panelId, activeIdxBeforeZoom, sessionToken);
+                if (mainView._continuousScrollSession !== scrollSession) return;
+                if (framePage) framePage();
 
                 // Segundo intento post-render: ahora los wrappers tienen tamaño real
                 requestAnimationFrame(() => {
@@ -6042,45 +6047,45 @@ Object.assign(app, {
                 }, 300);
 
                 const _setupScroll = () => {
+                    if (mainView._continuousScrollSession !== scrollSession || !mainView.contains(stack) || this.viewMode !== 'continuous') return;
                     let _scrollRafPending = false;
+                    let lastLeft = mainView.scrollLeft, lastTop = mainView.scrollTop;
+                    const trackingPaused = () => this._suppressScrollTracking || this._layoutChanging ||
+                        (this._pendingZoomFrame && this._zoomTargetPanel === panelId);
                     mainView.onscroll = () => {
                         if (this.viewMode !== 'continuous') { mainView.onscroll = null; return; }
-                        if (this._suppressScrollTracking) return;
-                        if (this._layoutChanging) return;
+                        if (trackingPaused()) return;
                         if (_scrollRafPending) return;
                         _scrollRafPending = true;
                         requestAnimationFrame(() => {
                         _scrollRafPending = false;
-                        if (this._suppressScrollTracking) return;
+                        if (trackingPaused() || mainView._continuousScrollSession !== scrollSession) return;
+                        if (mainView.scrollLeft === lastLeft && mainView.scrollTop === lastTop) return;
+                        lastLeft = mainView.scrollLeft;
+                        lastTop = mainView.scrollTop;
                         const wrappers = stack.querySelectorAll('.page-wrapper');
                         const isH = document.body.classList.contains('h-layout');
-                        const scrollMid = isH
-                            ? mainView.scrollLeft + mainView.clientWidth / 2
-                            : mainView.scrollTop + mainView.clientHeight / 2;
-                        let closestIdx = doc.currentIndex, minDiff = Infinity;
-                        wrappers.forEach((w, i) => {
-                            if (isH) {
-                                if (w.offsetWidth === 0) return;
-                                const wCenter = w.offsetLeft + w.offsetWidth / 2;
-                                const diff = Math.abs(wCenter - scrollMid);
-                                if (diff < minDiff) { minDiff = diff; closestIdx = i; }
-                            } else if (_isTwoUp) {
-                                if (w.offsetHeight === 0) return;
-                                const wCenterY = w.offsetTop + w.offsetHeight / 2;
-                                const diffY = Math.abs(wCenterY - scrollMid);
-                                const wCenterX = w.offsetLeft + w.offsetWidth / 2;
-                                const scrollMidX = mainView.scrollLeft + mainView.clientWidth / 2;
-                                const diffX = Math.abs(wCenterX - scrollMidX);
-                                const combinedDiff = diffY * 1000 + diffX;
-                                if (combinedDiff < minDiff) { minDiff = combinedDiff; closestIdx = i; }
-                            } else {
-                                if (w.offsetHeight === 0) return;
-                                const wCenter = w.offsetTop + w.offsetHeight / 2;
-                                const diff = Math.abs(wCenter - scrollMid);
-                                if (diff < minDiff) { minDiff = diff; closestIdx = i; }
+                        const view = mainView.getBoundingClientRect();
+                        const centerX = view.left + mainView.clientWidth / 2;
+                        const centerY = view.top + mainView.clientHeight / 2;
+                        const activeIndex = panelState?.pageIndex ?? doc.currentIndex;
+                        let closestIdx = activeIndex, minDistance = Infinity, minCrossDistance = Infinity;
+                        wrappers.forEach(w => {
+                            const rect = w.getBoundingClientRect();
+                            if (!rect.width || !rect.height) return;
+                            const dx = Math.max(rect.left - centerX, 0, centerX - rect.right);
+                            const dy = Math.max(rect.top - centerY, 0, centerY - rect.bottom);
+                            const distance = isH ? dx : dy;
+                            const crossDistance = _isTwoUp ? dx : 0;
+                            const index = Number(w.dataset.index);
+                            if (distance < minDistance || (distance === minDistance &&
+                                (crossDistance < minCrossDistance || (crossDistance === minCrossDistance && index === activeIndex)))) {
+                                closestIdx = index;
+                                minDistance = distance;
+                                minCrossDistance = crossDistance;
                             }
                         });
-                        if (closestIdx !== doc.currentIndex) {
+                        if (closestIdx !== activeIndex) {
                             this._moveCContainerToWrapper(panelId, closestIdx);
                             doc.currentIndex = closestIdx;
                             if (panelState) panelState.pageIndex = closestIdx;

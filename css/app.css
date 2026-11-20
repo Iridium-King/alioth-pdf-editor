@@ -2,6 +2,7 @@
            1. VARIABLES & THEMING
            ==================================================== */
         :root {
+            --color-control-radius: 30%;
             --primary: #334155;
             --accent: #ff0000;
             --bg-ribbon: #e2e8f0;
@@ -56,13 +57,15 @@
             --bg-group: rgba(255, 255, 255, 0.04);
         }
 
-        /* Color picker circular styling */
         input[type="color"] {
-            -webkit-appearance: none;
-            -moz-appearance: none;
             appearance: none;
+            box-sizing: border-box;
+            width: var(--color-control-size, 24px);
+            height: var(--color-control-size, 24px);
+            flex-shrink: 0;
             border: none;
-            border-radius: 50%;
+            border-radius: var(--color-control-radius);
+            background: transparent;
             cursor: pointer;
             overflow: hidden;
             padding: 0;
@@ -70,17 +73,20 @@
 
         input[type="color"]::-webkit-color-swatch-wrapper {
             padding: 0;
-            border-radius: 50%;
         }
 
         input[type="color"]::-webkit-color-swatch {
             border: none;
-            border-radius: 50%;
+            border-radius: var(--color-control-radius);
         }
 
         input[type="color"]::-moz-color-swatch {
             border: none;
-            border-radius: 50%;
+            border-radius: var(--color-control-radius);
+        }
+
+        .color-preset, .bm-color-swatch, .comment-color-swatch {
+            border-radius: var(--color-control-radius);
         }
 
         /* ============================================================
@@ -2525,7 +2531,7 @@
         .bm-modal-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(24,90,189,0.12); }
         .bm-color-row { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
         .bm-color-swatch {
-            width: 21px; height: 21px; border-radius: 50%; cursor: pointer;
+            width: 21px; height: 21px; cursor: pointer;
             border: 2.5px solid transparent;
             transition: transform 0.12s, border-color 0.12s;
             box-shadow: 0 1px 4px rgba(0,0,0,0.22);
@@ -3352,64 +3358,13 @@
             border-color: rgba(255, 255, 255, 0.2);
         }
 
-        .color-picker-simple {
-            width: 20px;
-            height: 20px;
-            min-width: 20px;
-            min-height: 20px;
-            padding: 0;
+        .color-picker-simple, .color-picker-micro {
+            --color-control-size: 20px;
             border: 1px solid rgba(128, 128, 128, 0.3);
-            background: transparent;
-            cursor: pointer;
-            border-radius: 50%;
-            overflow: hidden;
-            aspect-ratio: 1 / 1;
-            flex-shrink: 0;
-            -webkit-appearance: none;
-            appearance: none;
         }
 
-        #drawColor {
-            width: 17px;
-            height: 17px;
-            min-width: 17px;
-            min-height: 17px;
-        }
-
-        .color-picker-micro {
-            width: 15px;
-            height: 15px;
-            min-width: 15px;
-            min-height: 15px;
-            padding: 0;
-            border: 1px solid rgba(128, 128, 128, 0.3);
-            background: transparent;
-            cursor: pointer;
-            border-radius: 50%;
-            overflow: hidden;
-            aspect-ratio: 1 / 1;
-            flex-shrink: 0;
-            -webkit-appearance: none;
-            appearance: none;
-        }
-
-        .color-picker-simple::-webkit-color-swatch-wrapper,
-        .color-picker-micro::-webkit-color-swatch-wrapper {
-            padding: 0;
-            border-radius: 50%;
-        }
-
-        .color-picker-simple::-webkit-color-swatch,
-        .color-picker-micro::-webkit-color-swatch {
-            border: none;
-            border-radius: 50%;
-        }
-
-        .color-picker-simple::-moz-color-swatch,
-        .color-picker-micro::-moz-color-swatch {
-            border: none;
-            border-radius: 50%;
-        }
+        #drawColor { --color-control-size: 17px; }
+        .color-picker-micro { --color-control-size: 15px; }
 
         .vertical-control-group {
             display: flex;
@@ -5064,14 +5019,18 @@
             z-index: 200;
         }
 
-        /* Modo editar imagen: forzar crosshair en TODO */
-        body.image-edit-mode,
-        body.image-edit-mode *,
-        body.image-edit-mode .draggable,
-        body.image-edit-mode #the-canvas,
-        body.image-edit-mode #overlay-layer,
-        body.image-edit-mode #annotation-layer {
+        .image-edit-mode :is(.page-wrapper, .canvas-container, .canvas-container *) {
             cursor: crosshair !important;
+            touch-action: none;
+        }
+
+        .image-edit-selection {
+            position: fixed;
+            box-sizing: border-box;
+            border: 1px dashed #2563eb;
+            background: rgba(59, 130, 246, 0.2);
+            pointer-events: none;
+            z-index: 11000;
         }
 
         #capture-overlay {
@@ -6015,10 +5974,10 @@
             backdrop-filter: blur(12px) !important;
             -webkit-backdrop-filter: blur(12px) !important;
         }
-        .glass-box input:not([type="radio"]):not([type="checkbox"]),
+        .glass-box input:not([type="radio"], [type="checkbox"], [type="color"]),
         .glass-box select,
         .glass-box textarea,
-        #properties-modal > div input:not([type="radio"]):not([type="checkbox"]),
+        #properties-modal > div input:not([type="radio"], [type="checkbox"], [type="color"]),
         #properties-modal > div select,
         #properties-modal > div textarea,
         #firmas-dropdown select {
@@ -6683,7 +6642,7 @@
         }
         .iem-row label { min-width: 90px; color: rgba(200,215,255,0.75); flex-shrink:0; }
         .iem-row input[type=range] { flex:1; accent-color: var(--accent,#4f8ef7); }
-        .iem-row input[type=color] { width:28px; height:22px; border:none; border-radius:4px; cursor:pointer; padding:0; background:none; }
+        .iem-row input[type=color] { --color-control-size: 22px; }
         .iem-row span.val { min-width:36px; text-align:right; color:rgba(200,215,255,0.6); font-size:10px; }
         .iem-toggle-btns { display:flex; gap:6px; flex-wrap:wrap; }
         .iem-toggle-btn {

@@ -115,7 +115,8 @@ function fitRibbon() {
     if (!bar || !bar.clientWidth) return;
     const classes = ['ribbon-fit', 'ribbon-compact', 'ribbon-tight', 'ribbon-hide-shortcuts', 'ribbon-overflow'];
     for (const tab of document.querySelectorAll('.toolbar-area')) tab.classList.remove(...classes);
-    if (!window.matchMedia('(max-width: 1280px)').matches) return;
+    const scale = Number(getComputedStyle(byId('ribbon-capsule-wrapper')).zoom) || 1;
+    if (window.innerWidth / scale > 1280) return;
     bar.classList.add('ribbon-fit');
     bar.scrollLeft = 0;
     const fits = () => {
@@ -124,7 +125,7 @@ function fitRibbon() {
         const available = bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
         const width = children.reduce((sum, child) => {
             const css = getComputedStyle(child);
-            return sum + child.getBoundingClientRect().width + (parseFloat(css.marginLeft) || 0) + (parseFloat(css.marginRight) || 0);
+            return sum + child.getBoundingClientRect().width / scale + (parseFloat(css.marginLeft) || 0) + (parseFloat(css.marginRight) || 0);
         }, 0) + Math.max(0, children.length - 1) * (parseFloat(style.columnGap) || 0);
         return width <= available + 1;
     };
@@ -143,6 +144,33 @@ function fitRibbon() {
 }
 app.fitRibbon = fitRibbon;
 
+function mountAppearance() {
+    const controls = [...document.querySelectorAll('[data-interface-scale]')];
+    function apply(control, value, save = false) {
+        control.value = value;
+        const key = control.dataset.interfaceScale;
+        const percent = control.valueAsNumber;
+        document.documentElement.style.setProperty(`--interface-scale-${key}`, percent / 100);
+        control.nextElementSibling.value = percent + '%';
+        control.setAttribute('aria-valuetext', percent + '%');
+        if (save) localStorage.setItem(`alioth_interface_scale_${key}`, String(percent));
+    }
+    for (const control of controls) {
+        const stored = Number(localStorage.getItem(`alioth_interface_scale_${control.dataset.interfaceScale}`));
+        apply(control, stored >= Number(control.min) && stored <= Number(control.max) ? stored : 100);
+        control.addEventListener('input', () => apply(control, control.value, true));
+        control.addEventListener('change', () => window.aliothPreferences?.flush());
+    }
+    byId('pref-reset-interface-scale').addEventListener('click', () => {
+        controls.forEach(control => apply(control, 100, true));
+        window.aliothPreferences?.flush();
+    });
+    byId('pref-open-themes').addEventListener('click', () => {
+        app.closeAllModals();
+        byId('themeBtn').click();
+    });
+}
+
 function mount() {
     if (mounted) return;
     mounted = true;
@@ -158,6 +186,7 @@ function mount() {
     const toggles = document.querySelector('.links-bar-right');
     toggles.id = 'view-toggle-widget';
     byId('ribbon-capsule-wrapper').appendChild(toggles);
+    mountAppearance();
     for (const button of document.querySelectorAll('.header-right .header-btn:not(.btn-danger)')) {
         button.classList.add('chrome-file-button');
         button.setAttribute('aria-label', button.title);

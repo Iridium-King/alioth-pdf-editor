@@ -752,59 +752,116 @@ Object.assign(app, {
             // EDITAR IMÁGENES (Surgical Extraction)
             // ============================================================
 
-            /**
-             * Activa el modo para tocar una imagen y extraerla
-             */
             enableImageEdit: function () {
+                if (this.imageEditMode) return this.cancelImageEdit();
+                if (this._imageEditBusy) return;
                 const doc = this.getDoc();
-                if (!doc || doc.pages.length === 0) {
-                    this.showToast("⚠️ Abre un documento primero");
+                if (!doc?.pages.length) {
+                    this.showToast(window.i18n.t('image_select_open'));
                     return;
                 }
-
-                console.log('🖼️ Edit Image: Activando modo...');
 
                 if (this.isTextSelectMode) this.toggleTextSelectMode();
                 if (this.isHandMode) this.toggleHandMode();
                 if (this.isDrawingMode) this.setDrawTool('none');
-                if (this.smartPatchMode) {
-                    this.smartPatchMode = false;
-                    const btn = document.getElementById('btn-smart-patch');
-                    if (btn) btn.classList.remove('active');
-                    window.removeEventListener('mouseup', this.smartPatchMouseUp);
-                }
-                // FIX: Pausar vista continua (incompatible con captureImageForEdit)
-                this._exitContinuousIfNeeded();
+                if (this.smartPatchMode) this.cancelSmartPatch();
 
+                const panelId = this.splitView.activePanel;
+                const state = this.splitView[panelId];
+                const { mainView, canvas } = this.getPanelElements(panelId);
+                if (!mainView || !canvas) return;
+
+                const controller = new AbortController();
+                const options = { capture: true, signal: controller.signal };
+                const button = document.getElementById('btn-edit-image');
+                const marquee = document.createElement('div');
+                marquee.className = 'image-edit-selection';
+                marquee.setAttribute('aria-hidden', 'true');
                 this.imageEditMode = true;
-
-                const canvas = document.getElementById('the-canvas');
-                const overlayLayer = document.getElementById('overlay-layer');
-                const annotationLayer = document.getElementById('annotation-layer');
-
-                if (canvas) canvas.style.cursor = 'crosshair';
-                if (overlayLayer) overlayLayer.style.cursor = 'crosshair';
-                if (annotationLayer) annotationLayer.style.cursor = 'crosshair';
-                document.body.classList.add('image-edit-mode');
-
-                const btn = document.getElementById('btn-edit-image');
-                if (btn) btn.classList.add('active');
-
-                this.showToast("🖼️ Haz click sobre una imagen para hacerla interactiva", 4000);
-
-                this.imageEditMouseUp = (e) => {
-                    if (!this.imageEditMode) return;
-                    if (e.target.closest('.modal') || e.target.closest('.toast') || e.target.closest('.toolbar')) return;
-
-                    this.captureImageForEdit(e);
+                button?.classList.add('active');
+                button?.setAttribute('aria-pressed', 'true');
+                mainView.classList.add('image-edit-mode');
+                this._stopImageEdit = () => {
+                    controller.abort();
+                    marquee.remove();
+                    mainView.classList.remove('image-edit-mode');
+                    button?.classList.remove('active');
+                    button?.setAttribute('aria-pressed', 'false');
                 };
+                this.showToast(window.i18n.t('tit_760996'), 4000);
 
-                // setTimeout evita que el mouseup del botón active el listener inmediatamente
-                setTimeout(() => {
-                    if (this.imageEditMode) {
-                        window.addEventListener('mouseup', this.imageEditMouseUp);
+                let drag;
+                const clamp = value => Math.min(1, Math.max(0, value));
+                const pagePoint = (event, bounds) => [
+                    clamp((event.clientX - bounds.left) / bounds.width),
+                    clamp((event.clientY - bounds.top) / bounds.height)
+                ];
+                function selectionAt(event) {
+                    const bounds = drag.surface.getBoundingClientRect();
+                    const [x, y] = pagePoint(event, bounds);
+                    const [startX, startY] = drag.start;
+                    return { bounds, rect: [Math.min(x, startX), Math.min(y, startY), Math.max(x, startX), Math.max(y, startY)] };
+                }
+
+                window.addEventListener('pointerdown', event => {
+                    if (event.button !== 0 || !event.isPrimary || drag || !mainView.contains(event.target)) return;
+                    if (this.getDoc() !== doc || this.splitView.activePanel !== panelId) {
+                        this.cancelImageEdit();
+                        return;
                     }
-                }, 200);
+                    const wrapper = event.target.closest('.page-wrapper');
+                    const surface = wrapper || canvas;
+                    const index = wrapper ? Number(wrapper.dataset.index) : state.pageIndex ?? doc.currentIndex;
+                    const page = doc.pages[index];
+                    const bounds = surface.getBoundingClientRect();
+                    if (!page || !bounds.width || !bounds.height ||
+                        event.clientX < bounds.left || event.clientX >= bounds.right ||
+                        event.clientY < bounds.top || event.clientY >= bounds.bottom) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    drag = { surface, index, page, pointerId: event.pointerId, start: pagePoint(event, bounds) };
+                    drag.clientStart = [event.clientX, event.clientY];
+                }, options);
+                window.addEventListener('pointermove', event => {
+                    if (drag?.pointerId !== event.pointerId) return;
+                    if (!drag.surface.isConnected) { this.cancelImageEdit(); return; }
+                    const { bounds, rect: [left, top, right, bottom] } = selectionAt(event);
+                    if (!marquee.isConnected) document.body.appendChild(marquee);
+                    Object.assign(marquee.style, {
+                        left: `${bounds.left + left * bounds.width}px`,
+                        top: `${bounds.top + top * bounds.height}px`,
+                        width: `${(right - left) * bounds.width}px`,
+                        height: `${(bottom - top) * bounds.height}px`
+                    });
+                }, options);
+                window.addEventListener('pointerup', event => {
+                    if (drag?.pointerId !== event.pointerId) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const { start, index, page, clientStart, surface } = drag;
+                    const { bounds, rect } = selectionAt(event);
+                    this.cancelImageEdit();
+                    if (!surface.isConnected || !bounds.width || !bounds.height) return;
+                    const dragged = Math.abs(event.clientX - clientStart[0]) > 4 || Math.abs(event.clientY - clientStart[1]) > 4;
+                    if (dragged && ((rect[2] - rect[0]) * bounds.width < 4 || (rect[3] - rect[1]) * bounds.height < 4)) {
+                        this.showToast(window.i18n.t('image_select_small'));
+                        return;
+                    }
+                    this.captureImageForEdit({ doc, panelId, index, page, point: start, rect: dragged ? rect : null });
+                }, options);
+                window.addEventListener('pointercancel', () => this.cancelImageEdit(), options);
+                window.addEventListener('keydown', event => {
+                    if (event.key !== 'Escape') return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    this.cancelImageEdit();
+                }, options);
+            },
+
+            cancelImageEdit: function () {
+                this._stopImageEdit?.();
+                this._stopImageEdit = null;
+                this.imageEditMode = false;
             },
 
             _ensurePythonEngine: async function () {
@@ -823,102 +880,101 @@ Object.assign(app, {
                 }
             },
 
-            captureImageForEdit: async function (e) {
-                // Desactivar tras el primer click
-                this.imageEditMode = false;
-                window.removeEventListener('mouseup', this.imageEditMouseUp);
-
-                const btn = document.getElementById('btn-edit-image');
-                if (btn) btn.classList.remove('active');
-
-                // Restaurar cursores
-                const canvas = document.getElementById('the-canvas');
-                const overlayLayer = document.getElementById('overlay-layer');
-                const annotationLayer = document.getElementById('annotation-layer');
-                if (canvas) canvas.style.cursor = 'default';
-                if (overlayLayer) overlayLayer.style.cursor = 'default';
-                if (annotationLayer) annotationLayer.style.cursor = 'default';
-                document.body.classList.remove('image-edit-mode');
-
-                const doc = this.getDoc();
-                const pageNum = doc && doc.currentIndex;
-                const page = doc && doc.pages[pageNum];
-                const src = page && doc.sources[page.sourceId];
-                if (!src || !src.buffer || !canvas) {
-                    this.showToast('⚠️ Selecciona una página PDF primero');
+            captureImageForEdit: async function ({ doc, panelId, index, page, point, rect }) {
+                const src = doc.sources[page.sourceId];
+                if (!src?.buffer || page._blank) {
+                    this.showToast(window.i18n.t('image_select_empty'));
                     return;
                 }
-                const originalBuffer = src.buffer;
-                const stillCurrent = () => this.getDoc() === doc && doc.pages[doc.currentIndex] === page && src.buffer === originalBuffer;
-
-                const rect = canvas.getBoundingClientRect();
-                const x = (e.clientX - rect.left) / this.currentScale;
-                const y = (e.clientY - rect.top) / this.currentScale;
-
-                // PDF points Y goes from bottom up para PyMuPDF get_images en algunas versiones, 
-                // Pero wait, fitz.Point(x,y) en nuestro backend usaba el Y estandar Top-Down de PyMuPDF.
-                // PyMuPDF usa coordinadas Top-Down (origen en top-left) a menos que se transforme.
-                // Así que enviaremos 'y' directamente (origen top-left del canvas calza con top-left de fitz).
-
-                this.toggleLoader(true, "Extrayendo imagen quirúrgicamente...");
+                const beforeBuffer = src.buffer;
+                const beforeIndex = doc.currentIndex;
+                const rotation = page.rotation || 0;
+                const { flipH, flipV } = page;
+                const stillCurrent = () => this.getDoc() === doc && this.splitView.activePanel === panelId &&
+                    doc.currentIndex === beforeIndex && doc.pages[index] === page &&
+                    (page.rotation || 0) === rotation && page.flipH === flipH && page.flipV === flipV &&
+                    doc.sources[page.sourceId] === src && src.buffer === beforeBuffer;
+                this._imageEditBusy = true;
+                this.toggleLoader(true, window.i18n.t('image_select_processing'));
 
                 try {
                     if (!await this._ensurePythonEngine() || !stillCurrent()) return;
-                    // The page can be a reordered or inserted page from another source.
-                    const result = await PythonManager.extractAndEraseImageAtPoint(src.buffer, page.pageIndex, x, y);
+                    const pdf = await this.loadSourcePdf(src);
+                    const pdfPage = await pdf.getPage(page.pageIndex + 1);
+                    if (!stillCurrent()) return;
+                    const { width, height, transform } = pdfPage.getViewport({ scale: 1, rotation: pdfPage.rotate + rotation });
+                    const selection = { width, height, transform };
+                    const toViewport = ([x, y]) => [(flipH ? 1 - x : x) * width, (flipV ? 1 - y : y) * height];
+                    if (rect) {
+                        const [x0, y0] = toViewport(rect);
+                        const [x1, y1] = toViewport(rect.slice(2));
+                        selection.rect = [Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1)];
+                    } else {
+                        selection.point = toViewport(point);
+                    }
 
+                    const result = await PythonManager.liftPdfImage(beforeBuffer, page.pageIndex, selection, src.password);
                     if (!stillCurrent()) return;
                     if (!result) {
-                        this.showToast("❌ No se detectó ninguna imagen en ese punto.");
-                        this.toggleLoader(false);
+                        this.showToast(window.i18n.t('image_select_empty'));
                         return;
                     }
 
-                    // Guardar buffer original ANTES de modificar, luego guardar estado CON overlay
-                    const origBuffer = src.buffer.slice(0);
+                    const newPdf = await pdfjsLib.getDocument({ data: result.buffer.slice(0) }).promise;
+                    if (!stillCurrent()) {
+                        newPdf.destroy()?.catch?.(() => {});
+                        return;
+                    }
 
-                    // Actualizar el PDF subyacente
-                    src.buffer = result.buffer;
-                    src.doc = null; // Forzar recarga de pdfjs
-                    await this.loadPage(doc.currentIndex);
-
-                    // Insertar imagen como objeto frontal
-                    const o = {
-                        id: 'img_surg_' + Date.now(),
+                    const [x, y, right, bottom] = result.bounds;
+                    const image = {
+                        id: 'img_surg_' + crypto.randomUUID(),
                         type: 'image',
-                        x: result.bbox.x,
-                        y: result.bbox.y,
-                        width: result.bbox.w,
-                        height: result.bbox.h,
-                        src: result.base64,
-                        rotation: 0,
-                        scaleX: 1,
-                        scaleY: 1,
-                        opacity: 100
+                        x, y, width: right - x, height: bottom - y,
+                        src: result.base64, rotation: 0, scaleX: 1, scaleY: 1, opacity: 100
                     };
-
-                    page.objects.push(o);
-
-                    // Guardar estado DESPUÉS de agregar overlay (así undo mantiene el objeto)
-                    // y también guardar buffer original para restaurar en undo
-                    this.saveState();
-                    // Asociar buffer original al último estado para restaurarlo en undo
-                    const lastIdx = doc.historyIndex;
-                    if (!doc._historyBuffers) doc._historyBuffers = {};
-                    doc._historyBuffers[lastIdx] = { sourceId: page.sourceId, buffer: origBuffer };
-
-                    this.selectedObj = o;
+                    const snapshot = { sourceId: page.sourceId, beforeBuffer, afterBuffer: result.buffer };
+                    this.saveState(doc.id, { skipDuplicate: true });
+                    this.releasePdfSource(src);
+                    src.buffer = result.buffer;
+                    src.doc = newPdf;
+                    if (src.originalBuffer) {
+                        snapshot.beforeOriginalBuffer = src.originalBuffer;
+                        snapshot.afterOriginalBuffer = src.originalBuffer = result.buffer;
+                    }
+                    (page.objects ||= []).push(image);
+                    for (const entry of doc.pages) {
+                        if (entry.sourceId !== page.sourceId || entry.pageIndex !== page.pageIndex) continue;
+                        this.releasePageThumbnail?.(entry);
+                        delete entry._bgBitmap;
+                    }
+                    for (const owner of ['primary', 'secondary']) {
+                        if (this.splitView[owner]?.docId !== doc.id && owner !== panelId) continue;
+                        const view = this.getPanelElements(owner).mainView;
+                        view?.querySelectorAll('.page-wrapper').forEach(wrapper => {
+                            if (doc.pages[Number(wrapper.dataset.index)]?.sourceId !== page.sourceId) return;
+                            const background = wrapper.querySelector('.bg-page-canvas');
+                            if (background) this.releaseBackgroundCanvas(background, { keepPixels: true });
+                        });
+                    }
+                    this.saveState(doc.id);
+                    (doc._historyBuffers ||= {})[doc.historyIndex] = snapshot;
+                    this.trimDocumentHistory(doc);
+                    if (this.viewMode === 'continuous') this._suppressScrollIntoView = true;
+                    await this.loadPage(index, panelId);
+                    if (this.getDoc() !== doc || doc.pages[doc.currentIndex] !== page) return;
+                    this.selectedObj = image;
                     this.multiObjectSelection.clear();
-                    this.multiObjectSelection.add(o.id);
-
-                    this.renderOverlays();
+                    this.multiObjectSelection.add(image.id);
+                    this.renderOverlays(panelId);
                     this.renderSidebar();
-                    this.showToast("✅ Imagen aislada exitosamente!");
-
-                } catch (err) {
-                    console.error("Error capturando imagen", err);
-                    this.showToast("❌ Error al procesar imagen");
+                    this.showToast(window.i18n.t('image_select_ready'));
+                } catch (error) {
+                    console.error('PDF image selection failed', error);
+                    this.showToast(window.i18n.t(error.message.includes('PDF_INLINE_IMAGE_REGION')
+                        ? 'image_select_inline' : 'image_select_error'));
                 } finally {
+                    this._imageEditBusy = false;
                     this.toggleLoader(false);
                 }
             },
@@ -4148,9 +4204,10 @@ Object.assign(app, {
                     return;
                 }
 
-                this.saveState();
                 const doc = this.getDoc();
-                const p = doc.pages[doc.currentIndex];
+                const p = doc?.pages[doc.currentIndex];
+                if (!p || (!this.selectedObj && !this.multiObjectSelection.size)) return;
+                this.saveState(doc.id, { skipDuplicate: true });
                 if (this.multiObjectSelection.size > 0) {
                     let deleted = 0;
                     const idsToDelete = [...this.multiObjectSelection].filter(id => {
@@ -4178,6 +4235,7 @@ Object.assign(app, {
                     p.objects = p.objects.filter(o => o !== this.selectedObj);
                     this.selectedObj = null;
                 }
+                this.saveState(doc.id);
                 this.renderOverlays();
                 this.renderSidebar();
                 document.getElementById('context-menu').style.display = 'none';
@@ -6722,7 +6780,8 @@ Object.assign(app, {
                     const seen = new Set();
                     let bytes = doc.history.reduce((sum, value) => sum + value.length * 2, 0);
                     for (const snapshot of Object.values(doc._historyBuffers || {})) {
-                        for (const buffer of [snapshot.beforeBuffer, snapshot.afterBuffer, snapshot.buffer]) {
+                        for (const buffer of [snapshot.beforeBuffer, snapshot.afterBuffer, snapshot.buffer,
+                            snapshot.beforeOriginalBuffer, snapshot.afterOriginalBuffer]) {
                             if (buffer && !seen.has(buffer)) { seen.add(buffer); bytes += buffer.byteLength || 0; }
                         }
                     }
@@ -6768,8 +6827,11 @@ Object.assign(app, {
                     const snapshot = doc._historyBuffers[curIdx];
                     const previousBuffer = snapshot.beforeBuffer || snapshot.buffer;
                     if (previousBuffer && doc.sources[snapshot.sourceId]) {
-                        doc.sources[snapshot.sourceId].buffer = previousBuffer.slice(0);
-                        doc.sources[snapshot.sourceId].doc = null;
+                        const source = doc.sources[snapshot.sourceId];
+                        this.releasePdfSource?.(source);
+                        source.doc = null;
+                        source.buffer = previousBuffer.slice(0);
+                        if (snapshot.beforeOriginalBuffer) source.originalBuffer = snapshot.beforeOriginalBuffer;
                     }
                 }
                 doc.historyIndex--;
@@ -6811,8 +6873,11 @@ Object.assign(app, {
                 // Los snapshots transaccionales conservan el PDF posterior para rehacer.
                 const snapshot = doc._historyBuffers && doc._historyBuffers[doc.historyIndex];
                 if (snapshot && snapshot.afterBuffer && doc.sources[snapshot.sourceId]) {
-                    doc.sources[snapshot.sourceId].buffer = snapshot.afterBuffer.slice(0);
-                    doc.sources[snapshot.sourceId].doc = null;
+                    const source = doc.sources[snapshot.sourceId];
+                    this.releasePdfSource?.(source);
+                    source.doc = null;
+                    source.buffer = snapshot.afterBuffer.slice(0);
+                    if (snapshot.afterOriginalBuffer) source.originalBuffer = snapshot.afterOriginalBuffer;
                 }
                 const state = JSON.parse(doc.history[doc.historyIndex]);
                 this.releaseDocumentThumbnails?.(doc);

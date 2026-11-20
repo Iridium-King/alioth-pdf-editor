@@ -1,21 +1,11 @@
-<!--
-=======================================================================
-  ⚠️  INSTRUCCIÓN PARA IA (Claude, GPT, Gemini, etc.)
-  Antes de entregar CUALQUIER modificación a este archivo:
-  1. Busca la ÚNICA fuente de versión: const ALIOTH_VERSION =
-  2. Incrementa el número en 0.01 (ej: 10.89 → 10.90)
-  3. Añade un objeto al INICIO de ALIOTH_CHANGELOG describiendo el cambio.
-  NOTA: El About y los botones se actualizan automáticamente desde
-  esta constante. NO hay otros lugares donde actualizar la versión.
-  Esta instrucción aplica en TODA conversación, sin excepción.
-=======================================================================
--->
+<!-- La versión y el changelog público se mantienen en js/version.js.
+     Registra funciones, mejoras relevantes y correcciones que afecten al uso del editor. -->
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
     <meta charset="UTF-8">
-    <script src="js/preferences.js"></script>
+    <script src="js/preferences.js?v=appearance-1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ALIOTH PDF EDITOR</title>
     <link rel="icon" type="image/x-icon" href="ICONOS/ICONO 1.ico">
@@ -30,17 +20,13 @@
          OFFLINE MODE: Local Libraries & Fonts
          ============================================================ -->
 
-    <!-- ═══════════════════════════════════════════════════════════════
-         ⚠️  IA: Incrementa ALIOTH_VERSION en 0.01 antes de entregar.
-              Añade entrada al INICIO de ALIOTH_CHANGELOG.
-         ═══════════════════════════════════════════════════════════════ -->
-    <!-- Local Font Definitions -->
+        <!-- Local Font Definitions -->
     <link rel="preload" href="fonts/standard_fonts/ARIALN.TTF" as="font" type="font/ttf" crossorigin>
     <link rel="preload" href="fonts/standard_fonts/ARIALNB.TTF" as="font" type="font/ttf" crossorigin>
     <link rel="stylesheet" href="css/fonts.css?v=3.2.29">
-    <link rel="stylesheet" href="css/app.css?v=3.2.45">
-    <link rel="stylesheet" href="css/components.css?v=3.2.46">
-    <link rel="stylesheet" href="css/app.chrome.css?v=3.2.41">
+    <link rel="stylesheet" href="css/app.css?v=appearance-1">
+    <link rel="stylesheet" href="css/components.css?v=appearance-1">
+    <link rel="stylesheet" href="css/app.chrome.css?v=appearance-1">
     <style>
         /* Zoom bajo paneles en h-layout — paneles tienen z-index:9999 */
         body.h-layout #zoom-float-widget { z-index: 8000 !important; }
@@ -60,7 +46,7 @@
     <!-- ============================================================
          i18n - Motor de Internacionalización (9 idiomas)
          ============================================================ -->
-    <script src="js/i18n.js?v=ribbon-image-1"></script>
+    <script src="js/i18n.js?v=appearance-1"></script>
     <script src="js/legal.js"></script>
 
     <!-- ============================================================
@@ -74,7 +60,7 @@
          ============================================================ -->
     <script src="js/pdf_link_cleanup.js"></script>
     <script src="js/pdf-engine.js"></script>
-    <script src="js/python_manager.js?v=ribbon-image-1"></script>
+    <script src="js/python_manager.js?v=image-edit-1"></script>
 
 <body class="compact-chrome">
 <!-- ═══════════════════════════════════════════
@@ -1006,7 +992,7 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                             </svg><span data-i18n="dyn_t_1023">Insertar</span>
                         </label>
                         <button class="tool-btn" id="btn-edit-image" onclick="app.enableImageEdit()"
-                            title="Convertir imagen del PDF a objeto movible" data-i18n-title="tit_760996">
+                            title="Haz clic para seleccionar una imagen o arrastra para seleccionar un área" data-i18n-title="tit_760996" aria-pressed="false">
                             <svg viewBox="0 0 28 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display: block !important; width: 28px !important; height: 17px !important;">
                                 <!-- Marco de Imagen Centrado -->
                                 <rect x="2" y="2" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" />
@@ -2475,7 +2461,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                         <circle cx="50" cy="33" r="7" fill="white"/>
                         <rect x="43" y="46" width="14" height="26" rx="5" fill="white"/>
                     </svg>
-                    <span id="about-btn-label">About v13.26</span>
+                    <span id="about-btn-label">About</span>
                 </button>
                 <div class="sidebar-resizer" id="sidebarResizer"></div>
                 <!-- Pestaña para ocultar/mostrar la sidebar (dentro de la sidebar, attached al borde lateral derecho) -->
@@ -2868,6 +2854,10 @@ Arrastra para seleccionar el área · Esc para cancelar">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                         <span data-i18n="pref_tab_general_short">General</span>
                     </button>
+                    <button class="pref-tab-btn" onclick="app.switchPreferencesTab('pref-appearance')">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M9 9v11"/></svg>
+                        <span data-i18n="pref_appearance">Apariencia</span>
+                    </button>
                     <button class="pref-tab-btn" onclick="app.switchPreferencesTab('pref-shortcuts')">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><path d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M6 12h.001M10 12h.001M14 12h.001M18 12h.001M8 16h8"/></svg>
                         <span>Atajos</span>
@@ -2896,6 +2886,27 @@ Arrastra para seleccionar el área · Esc para cancelar">
             </div>
 
             <div class="preferences-content">
+                <div id="pref-appearance" class="pref-pane">
+                    <div class="pref-pane-header">
+                        <h4 data-i18n="pref_appearance">Apariencia</h4>
+                        <p data-i18n="pref_appearance_desc">Ajusta el tamaño de la interfaz. Los cambios se aplican y se guardan al instante.</p>
+                    </div>
+                    <div class="pref-appearance-scales pref-setting-card">
+                        <label for="pref-scale-header" data-i18n="pref_appearance_header">Cabecera</label>
+                        <input id="pref-scale-header" type="range" min="80" max="150" step="5" value="100" data-interface-scale="header">
+                        <output for="pref-scale-header">100%</output>
+                        <label for="pref-scale-sidebar" data-i18n="pref_appearance_sidebar">Barra lateral</label>
+                        <input id="pref-scale-sidebar" type="range" min="80" max="150" step="5" value="100" data-interface-scale="sidebar">
+                        <output for="pref-scale-sidebar">100%</output>
+                        <label for="pref-scale-ribbon" data-i18n="pref_appearance_ribbon">Cinta de herramientas</label>
+                        <input id="pref-scale-ribbon" type="range" min="80" max="150" step="5" value="100" data-interface-scale="ribbon">
+                        <output for="pref-scale-ribbon">100%</output>
+                    </div>
+                    <div class="pref-appearance-actions">
+                        <button id="pref-open-themes" type="button" class="security-btn-save" data-i18n="pref_appearance_themes">Temas y colores</button>
+                        <button id="pref-reset-interface-scale" type="button" class="pref-key-btn-save" data-i18n="pref_appearance_reset">Restablecer escala</button>
+                    </div>
+                </div>
                 <!-- PESTAÑA: SEGURIDAD -->
                 <div id="pref-security" class="pref-pane">
                     <div class="pref-pane-header">
@@ -3895,7 +3906,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; gap:4px;">
                         <label style="font-size:11px;">Color:</label>
                         <input type="color" id="link-color" value="#0066cc"
-                            style="width:26px; height:26px; padding:0; border:2px solid var(--border); cursor:pointer; border-radius:50%; -webkit-appearance:none; -moz-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:26px; padding:0; border:2px solid var(--border); cursor:pointer; -webkit-appearance:none; -moz-appearance:none; appearance:none; overflow:hidden;">
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <label style="font-size:11px;"><input type="checkbox" id="link-bold"> <b>N</b></label>
@@ -3973,7 +3984,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                         <div style="display:flex; align-items:center; gap:4px;">
                             <label style="font-size:11px;">Color:</label>
                             <input type="color" id="emoji-color" value="#000000"
-                                style="width:24px; height:24px; padding:0; border:2px solid var(--border); cursor:pointer; border-radius:50%; -webkit-appearance:none; -moz-appearance:none; appearance:none; overflow:hidden;">
+                                style="--color-control-size:24px; padding:0; border:2px solid var(--border); cursor:pointer; -webkit-appearance:none; -moz-appearance:none; appearance:none; overflow:hidden;">
                         </div>
                     </div>
                     <!-- Opciones de Borde -->
@@ -3986,7 +3997,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                         <div style="display:flex; align-items:center; gap:4px;">
                             <label style="font-size:10px;">Color:</label>
                             <input type="color" id="emoji-border-color" value="#000000"
-                                style="width:22px; height:22px; padding:0; border:2px solid var(--border); cursor:pointer; border-radius:50%; -webkit-appearance:none; -moz-appearance:none; appearance:none; overflow:hidden;">
+                                style="--color-control-size:22px; padding:0; border:2px solid var(--border); cursor:pointer; -webkit-appearance:none; -moz-appearance:none; appearance:none; overflow:hidden;">
                         </div>
                         <div style="display:flex; align-items:center; gap:4px;">
                             <label style="font-size:10px;">Grosor:</label>
@@ -4118,7 +4129,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                                 <div style="display:flex;align-items:center;gap:4px;font-size:10px;">
                                     <span style="min-width:44px;">C.borde</span>
                                     <input type="color" id="ttf-style-border-color" value="#000000"
-                                        style="width:18px;height:18px;min-width:18px;border:1px solid var(--border);border-radius:50%;cursor:pointer;padding:0;overflow:hidden;flex-shrink:0;-webkit-appearance:none;appearance:none;"
+                                        style="--color-control-size:18px;min-width:18px;border:1px solid var(--border);cursor:pointer;padding:0;overflow:hidden;flex-shrink:0;-webkit-appearance:none;appearance:none;"
                                         oninput="app._ttfRenderOverlaySVGCurrent()">
                                     <input type="number" id="ttf-style-border-width" value="1.5" min="0" max="5" step="0.5"
                                         style="width:28px;background:var(--bg-secondary,#1a1a2e);border:1px solid var(--border);border-radius:4px;color:var(--text-main);font-size:10px;padding:1px 3px;"
@@ -4127,7 +4138,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                                 <div style="display:flex;align-items:center;gap:4px;font-size:10px;">
                                     <span style="min-width:44px;">C.fondo</span>
                                     <input type="color" id="ttf-style-bg-color" value="#ffffff"
-                                        style="width:18px;height:18px;min-width:18px;border:1px solid var(--border);border-radius:50%;cursor:pointer;padding:0;overflow:hidden;flex-shrink:0;-webkit-appearance:none;appearance:none;"
+                                        style="--color-control-size:18px;min-width:18px;border:1px solid var(--border);cursor:pointer;padding:0;overflow:hidden;flex-shrink:0;-webkit-appearance:none;appearance:none;"
                                         oninput="app._ttfRenderOverlaySVGCurrent()">
                                 </div>
                                 <div style="display:flex;align-items:center;gap:4px;font-size:10px;">
@@ -4606,7 +4617,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                                 <button class="style-btn" id="pagenum-italic" onclick="this.classList.toggle('active')"
                                     style="width:20px;height:20px;font-style:italic;">I</button>
                                 <input type="color" id="pagenum-color" value="#000000"
-                                    style="width:20px; height:20px; border:none; padding:0; background:none;">
+                                    style="--color-control-size:20px; border:none; padding:0; background:none;">
                             </div>
                             <div style="display:flex; align-items:center; gap:5px;">
                                 <label style="font-size:10px; color:var(--text-dim);">Opacidad Texto:</label>
@@ -4620,7 +4631,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                             </label>
                             <div style="display:flex; gap:5px; align-items:center; margin-top:2px;">
                                 <input type="color" id="pagenum-bg-color" value="#ffffff"
-                                    style="width:20px; height:20px; border:none; padding:0;">
+                                    style="--color-control-size:20px; border:none; padding:0;">
                                 <label style="font-size:10px; color:var(--text-dim);">Opacidad:</label>
                                 <input type="range" id="pagenum-bg-alpha" min="0.1" max="1" step="0.1" value="1"
                                     style="flex:1; height:4px;" title="Opacidad Fondo" data-i18n-title="tit_166553">
@@ -4632,7 +4643,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                             </label>
                             <div style="display:flex; gap:5px; align-items:center; margin-top:2px;">
                                 <input type="color" id="pagenum-border-color" value="#000000"
-                                    style="width:20px; height:20px; border:none; padding:0;">
+                                    style="--color-control-size:20px; border:none; padding:0;">
                                 <input type="number" id="pagenum-border-width" value="1" min="1" max="10"
                                     style="width:35px;" title="Grosor" data-i18n-title="tit_641252"> px
                             </div>
@@ -4717,7 +4728,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                             <input type="number" id="bates-size" value="10" min="6" max="36"
                                 style="width:35px; padding:2px; font-size:11px;" title="Tamaño" data-i18n-title="tit_444410" oninput="app._batesUpdatePreview()">
                             <input type="color" id="bates-color" value="#000000"
-                                style="width:20px; height:20px; border:none; padding:0;" onchange="app._batesUpdatePreview()">
+                                style="--color-control-size:20px; border:none; padding:0;" onchange="app._batesUpdatePreview()">
                         </div>
                         <div style="display:flex; align-items:center; gap:8px; font-size:11px;">
                             <label style="color:var(--text-dim); white-space:nowrap;">Comenzar desde folio:</label>
@@ -4745,28 +4756,28 @@ Arrastra para seleccionar el área · Esc para cancelar">
             </p>
             <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom:20px;">
                 <div class="color-preset" onclick="app.setHighlightColor('#ffff00')" title="Amarillo" data-i18n-title="tit_776922"
-                    style="background:#ffff00; width:40px; height:40px; border-radius:50%; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                    style="background:#ffff00; width:40px; height:40px; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
                 </div>
                 <div class="color-preset" onclick="app.setHighlightColor('#00ff00')" title="Verde" data-i18n-title="tit_54788"
-                    style="background:#00ff00; width:40px; height:40px; border-radius:50%; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                    style="background:#00ff00; width:40px; height:40px; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
                 </div>
                 <div class="color-preset" onclick="app.setHighlightColor('#00ffff')" title="Cian" data-i18n-title="tit_965536"
-                    style="background:#00ffff; width:40px; height:40px; border-radius:50%; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                    style="background:#00ffff; width:40px; height:40px; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
                 </div>
                 <div class="color-preset" onclick="app.setHighlightColor('#ff00ff')" title="Magenta" data-i18n-title="tit_359727"
-                    style="background:#ff00ff; width:40px; height:40px; border-radius:50%; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                    style="background:#ff00ff; width:40px; height:40px; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
                 </div>
                 <div class="color-preset" onclick="app.setHighlightColor('#ff9900')" title="Naranja" data-i18n-title="tit_987484"
-                    style="background:#ff9900; width:40px; height:40px; border-radius:50%; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                    style="background:#ff9900; width:40px; height:40px; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
                 </div>
                 <div class="color-preset" onclick="app.setHighlightColor('#ff0000')" title="Rojo" data-i18n-title="tit_206434"
-                    style="background:#ff0000; width:40px; height:40px; border-radius:50%; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                    style="background:#ff0000; width:40px; height:40px; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
                 </div>
                 <div class="color-preset" onclick="app.setHighlightColor('#5c5cff')" title="Azul" data-i18n-title="tit_419485"
-                    style="background:#5c5cff; width:40px; height:40px; border-radius:50%; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                    style="background:#5c5cff; width:40px; height:40px; cursor:pointer; border:2px solid white; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
                 </div>
                 <div class="color-preset" onclick="app.setHighlightColor('#ffffff')" title="Blanco" data-i18n-title="tit_728785"
-                    style="background:#ffffff; width:40px; height:40px; border-radius:50%; cursor:pointer; border:2px solid #ccc; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
+                    style="background:#ffffff; width:40px; height:40px; cursor:pointer; border:2px solid #ccc; box-shadow:0 2px 4px rgba(0,0,0,0.2);">
                 </div>
             </div>
             <div
@@ -4774,7 +4785,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 <span style="font-size:11px;">Personalizado:</span>
                 <input type="color" id="highlight-custom-color" value="#ffff00"
                     onchange="app.setHighlightColor(this.value)"
-                    style="width:40px; height:30px; border:none; cursor:pointer; background:transparent;">
+                    style="--color-control-size:30px; border:none; cursor:pointer; background:transparent;">
             </div>
             <div style="display:flex; justify-content:center; gap:10px;">
                 <button class="capsule-btn secondary" onclick="app.closeAllModals()">Cancelar</button>
@@ -5194,12 +5205,8 @@ Arrastra para seleccionar el área · Esc para cancelar">
         </div>
     </div>
 
-    <!-- ═══════════════════════════════════════════════════════════════
-         ⚠️  IA: Incrementa ALIOTH_VERSION en 0.01 antes de entregar.
-              Añade entrada al INICIO de ALIOTH_CHANGELOG.
-         ═══════════════════════════════════════════════════════════════ -->
-    <script>window.i18n.setLanguage(window.i18n.getCurrentLanguage());</script>
-    <script type="module" src="js/main.js?v=3.2.48"></script>
+        <script>window.i18n.setLanguage(window.i18n.getCurrentLanguage());</script>
+    <script type="module" src="js/main.js?v=3.2.49"></script>
     <!-- MODAL PROPIEDADES CAMPO -->
     <div id="properties-modal"
         style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
@@ -5338,7 +5345,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
                     <label style="font-size:12px; font-weight:600; white-space:nowrap;">Color de palomita:</label>
                     <input type="color" id="prop-check-color" value="#333333"
-                        style="width:36px; height:28px; border:none; border-radius:4px; cursor:pointer; padding:0;">
+                        style="--color-control-size:28px; border:none; cursor:pointer; padding:0;">
                 </div>
                 <!-- Grupo checkbox -->
                 <div style="margin-bottom:10px;">
@@ -5374,7 +5381,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
                     <label style="font-size:12px; font-weight:600; white-space:nowrap;">Color del punto:</label>
                     <input type="color" id="prop-dot-color" value="#333333"
-                        style="width:36px; height:28px; border:none; border-radius:4px; cursor:pointer; padding:0;">
+                        style="--color-control-size:28px; border:none; cursor:pointer; padding:0;">
                 </div>
                 <!-- Grupo radio -->
                 <div style="margin-bottom:10px;">
@@ -5500,38 +5507,38 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; gap:5px;">
                         <label style="font-size:11px;">Encabezado:</label>
                         <input type="color" id="prop-cal-header-color" value="#f0f0f0"
-                            style="width:28px; height:28px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:28px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                     </div>
                     <div style="display:flex; align-items:center; gap:5px;">
                         <label style="font-size:11px;">Selección:</label>
                         <input type="color" id="prop-cal-select-color" value="#ff0000"
-                            style="width:28px; height:28px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:28px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                     </div>
                     <div style="display:flex; align-items:center; gap:5px;">
                         <label style="font-size:11px;">Fondo:</label>
                         <input type="color" id="prop-cal-bg-color" value="#ffffff"
-                            style="width:28px; height:28px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:28px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                     </div>
                 </div>
                 <div style="display:flex; gap:10px; margin-bottom:10px; align-items: center; flex-wrap:wrap;">
                     <div style="display:flex; align-items:center; gap:3px;">
                         <label style="font-size:10px;">Título:</label>
                         <input type="color" id="prop-cal-header-text-color" value="#000000"
-                            style="width:24px; height:24px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:24px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                         <input type="number" id="prop-cal-header-font-size" value="12" min="6" max="48"
                             style="width:45px; padding:2px 4px; background: var(--input-bg); border: 1px solid var(--border); color: var(--text-main); text-align:center;">
                     </div>
                     <div style="display:flex; align-items:center; gap:3px;">
                         <label style="font-size:10px;">Semana:</label>
                         <input type="color" id="prop-cal-weekday-text-color" value="#333333"
-                            style="width:24px; height:24px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:24px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                         <input type="number" id="prop-cal-weekday-font-size" value="10" min="6" max="36"
                             style="width:45px; padding:2px 4px; background: var(--input-bg); border: 1px solid var(--border); color: var(--text-main); text-align:center;">
                     </div>
                     <div style="display:flex; align-items:center; gap:3px;">
                         <label style="font-size:10px;">Días:</label>
                         <input type="color" id="prop-cal-day-text-color" value="#000000"
-                            style="width:24px; height:24px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:24px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                         <input type="number" id="prop-cal-day-font-size" value="10" min="6" max="36"
                             style="width:45px; padding:2px 4px; background: var(--input-bg); border: 1px solid var(--border); color: var(--text-main); text-align:center;">
                     </div>
@@ -5585,7 +5592,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; gap:5px;">
                         <label style="font-size:11px;">Borde:</label>
                         <input type="color" id="prop-border-color" value="#000000"
-                            style="width:28px; height:28px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:28px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                     </div>
 
                     <!-- Border Width -->
@@ -5612,7 +5619,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; gap:5px;">
                         <label style="font-size:11px;">Fuente:</label>
                         <input type="color" id="prop-font-color" value="#000000"
-                            style="width:28px; height:28px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:28px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                     </div>
                 </div>
 
@@ -5621,7 +5628,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; gap:5px;">
                         <label style="font-size:11px;">Fondo:</label>
                         <input type="color" id="prop-bg-color" value="#ffffff"
-                            style="width:28px; height:28px; border-radius:50%; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
+                            style="--color-control-size:28px; border:2px solid var(--border); cursor:pointer; padding:0; -webkit-appearance:none; appearance:none; overflow:hidden;">
                     </div>
 
                     <!-- Background opacity slider (replaces Sin Fondo checkbox) -->
@@ -5724,7 +5731,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <label style="font-size:12px; display:block; margin-bottom:5px; color: var(--text-main);">Borde</label>
             <div style="display:flex; gap:10px; align-items:center;">
                 <input type="color" id="tbl-prop-border-color" value="#000000"
-                    style="width:40px; height:36px; border:none; cursor:pointer; background: transparent; padding: 0;">
+                    style="--color-control-size:36px; border:none; cursor:pointer; background: transparent; padding: 0;">
                 <div style="display: flex; align-items: center; gap: 5px; flex: 1;">
                     <input type="number" id="tbl-prop-border-width" value="1" min="0" max="10" step="0.5"
                         style="width:100%; padding:8px; background:var(--input-bg); border:1px solid var(--border); color:var(--text-main); border-radius:4px; box-sizing: border-box;">
@@ -5738,7 +5745,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <label style="font-size:12px; display:block; margin-bottom:5px; color: var(--text-main);">Fondo</label>
             <div style="display:flex; gap:10px; align-items:center;">
                 <input type="color" id="tbl-prop-bg-color" value="#ffffff"
-                    style="width:40px; height:36px; border:none; cursor:pointer; background: transparent; padding: 0;">
+                    style="--color-control-size:36px; border:none; cursor:pointer; background: transparent; padding: 0;">
                 <label style="font-size:12px; color: var(--text-main); display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none;">
                     <input type="checkbox" id="tbl-prop-transparent" checked> Transparente
                 </label>
@@ -5767,7 +5774,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <div style="display:flex; align-items:center; gap:6px;">
                 <label style="font-size:12px; color:var(--text-main);">Color texto:</label>
                 <input type="color" id="tbl-prop-text-color" value="#000000"
-                    style="width:32px; height:32px; border:none; cursor:pointer; background: transparent; padding: 0;">
+                    style="--color-control-size:32px; border:none; cursor:pointer; background: transparent; padding: 0;">
             </div>
             <label style="font-size:12px; color:var(--text-main); display:flex; align-items:center; gap:5px; cursor:pointer;">
                 <input type="checkbox" id="tbl-prop-autosize"> Texto autoajustable
@@ -5827,7 +5834,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     Texto</label>
                 <div style="display:flex; align-items:center; gap:8px;">
                     <input type="color" id="cell-text-color" value="#000000"
-                        style="width:40px; height:36px; border:1px solid var(--border); cursor:pointer; border-radius:4px; padding:2px;">
+                        style="--color-control-size:36px; border:1px solid var(--border); cursor:pointer; padding:2px;">
                     <span id="cell-text-color-hex" style="font-size:11px; color:var(--text-muted);">#000000</span>
                 </div>
             </div>
@@ -5876,7 +5883,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 Fondo</label>
             <div style="display:flex; gap:10px; align-items:center;">
                 <input type="color" id="cell-bg-color" value="#ffffff"
-                    style="width:40px; height:36px; border:1px solid var(--border); cursor:pointer; border-radius:4px; padding:2px;">
+                    style="--color-control-size:36px; border:1px solid var(--border); cursor:pointer; padding:2px;">
                 <span id="cell-bg-color-hex"
                     style="font-size:11px; color:var(--text-muted); min-width:60px;">#ffffff</span>
                 <label
@@ -5945,7 +5952,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span style="font-size:11px; color:var(--text-muted); width:45px;">Color:</span>
-                        <input type="color" id="modalShapeFill" value="#ff0000" oninput="document.getElementById('modalShapeFillHex').value = this.value; app.updateShapeFromModal();" style="width:34px; height:28px; border-radius:4px; border:none; cursor:pointer;">
+                        <input type="color" id="modalShapeFill" value="#ff0000" oninput="document.getElementById('modalShapeFillHex').value = this.value; app.updateShapeFromModal();" style="--color-control-size:28px; border:none; cursor:pointer;">
                         <input type="text" id="modalShapeFillHex" value="#ff0000" onchange="document.getElementById('modalShapeFill').value = this.value; app.updateShapeFromModal();" style="width:70px; font-size:11px; padding:3px 6px;">
                     </div>
                     <div style="display:flex; flex-direction:column; gap:4px;">
@@ -5967,7 +5974,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
                         <span style="font-size:11px; color:var(--text-muted); width:45px;">Color:</span>
-                        <input type="color" id="modalShapeStroke" value="#000000" oninput="document.getElementById('modalShapeStrokeHex').value = this.value; app.updateShapeFromModal();" style="width:34px; height:28px; border-radius:4px; border:none; cursor:pointer;">
+                        <input type="color" id="modalShapeStroke" value="#000000" oninput="document.getElementById('modalShapeStrokeHex').value = this.value; app.updateShapeFromModal();" style="--color-control-size:28px; border:none; cursor:pointer;">
                         <input type="text" id="modalShapeStrokeHex" value="#000000" onchange="document.getElementById('modalShapeStroke').value = this.value; app.updateShapeFromModal();" style="width:70px; font-size:11px; padding:3px 6px;">
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
@@ -6004,7 +6011,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                 <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; align-items:center;">
                     <div style="display:flex; align-items:center; gap:6px;">
                         <span style="font-size:10px; color:var(--text-muted);">Color:</span>
-                        <input type="color" id="modalShapeShadowColor" value="#000000" oninput="app.updateShapeFromModal()" style="width:28px; height:24px; border:none; cursor:pointer;">
+                        <input type="color" id="modalShapeShadowColor" value="#000000" oninput="app.updateShapeFromModal()" style="--color-control-size:24px; border:none; cursor:pointer;">
                     </div>
                     <div style="display:flex; align-items:center; gap:6px;">
                         <span style="font-size:10px; color:var(--text-muted);">Opacidad:</span>
@@ -6122,7 +6129,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-panel); padding:2px 7px; border-radius:6px; border:1px solid var(--border); min-height:23px;">
                         <span style="font-size:10px; font-weight:600; color:var(--text-main); text-align:left; flex:1;">Cabecera</span>
                         <input type="color" id="modalHeaderColor"
-                            style="width:20px; height:18px; border:none; padding:0; background:none; cursor:pointer; border-radius:3px;"
+                            style="--color-control-size:18px; border:none; padding:0; background:none; cursor:pointer;"
                             oninput="app.setCustomColor('header', this.value)">
                     </div>
 
@@ -6130,7 +6137,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-panel); padding:2px 7px; border-radius:6px; border:1px solid var(--border); min-height:23px;">
                         <span style="font-size:10px; font-weight:600; color:var(--text-main); text-align:left; flex:1;">Cinta</span>
                         <input type="color" id="modalRibbonColor"
-                            style="width:20px; height:18px; border:none; padding:0; background:none; cursor:pointer; border-radius:3px;"
+                            style="--color-control-size:18px; border:none; padding:0; background:none; cursor:pointer;"
                             oninput="app.setCustomColor('ribbon', this.value)">
                     </div>
 
@@ -6138,7 +6145,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-panel); padding:2px 7px; border-radius:6px; border:1px solid var(--border); min-height:23px;">
                         <span style="font-size:10px; font-weight:600; color:var(--text-main); text-align:left; flex:1;">Lienzo</span>
                         <input type="color" id="modalBgAppColor" value="#0f172a" aria-label="Color de fondo del lienzo"
-                            style="width:20px; height:18px; border:none; padding:0; background:none; cursor:pointer; border-radius:3px;"
+                            style="--color-control-size:18px; border:none; padding:0; background:none; cursor:pointer;"
                             oninput="app.setCustomColor('bgApp', this.value)">
                     </div>
 
@@ -6146,7 +6153,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-panel); padding:2px 7px; border-radius:6px; border:1px solid var(--border); min-height:23px;">
                         <span style="font-size:10px; font-weight:600; color:var(--text-main); text-align:left; flex:1;">Acentuación</span>
                         <input type="color" id="modalAccentColor" value="#185abd"
-                            style="width:20px; height:18px; border:none; padding:0; background:none; cursor:pointer; border-radius:3px;"
+                            style="--color-control-size:18px; border:none; padding:0; background:none; cursor:pointer;"
                             oninput="app.setCustomColor('accent', this.value)">
                     </div>
 
@@ -6154,7 +6161,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
                     <div style="display:flex; align-items:center; justify-content:space-between; background:var(--bg-panel); padding:2px 7px; border-radius:6px; border:1px solid var(--border); min-height:23px;">
                         <span style="font-size:10px; font-weight:600; color:var(--text-main); text-align:left; flex:1;">Resaltado campos</span>
                         <input type="color" id="form-field-highlight-color" value="#f59e0b" aria-label="Color de resaltado de campos"
-                            style="width:20px; height:18px; border:none; padding:0; background:none; cursor:pointer; border-radius:3px;"
+                            style="--color-control-size:18px; border:none; padding:0; background:none; cursor:pointer;"
                             oninput="app.setFormFieldHighlightColor(this.value)">
                     </div>
 
@@ -6779,12 +6786,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
         </div>
     </div>
     <!-- ══ ABOUT MODAL ══ -->
-    <!-- ═══════════════════════════════════════════════════════════════
-         ALIOTH VERSION SYSTEM
-         IA: incrementa ALIOTH_VERSION en 0.01 en cada entrega.
-         Agrega un objeto al inicio de ALIOTH_CHANGELOG con el cambio.
-    ═══════════════════════════════════════════════════════════════ -->
-
+    
     <div id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-modal-title" style="display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);align-items:center;justify-content:center;" onclick="if(event.target===this)this.style.display='none';">
         <div class="about-dialog" style="background:#1a1a2e !important;border:1px solid rgba(99,102,241,0.4);border-radius:18px;padding:26px 30px;max-width:760px;width:min(92vw,760px);box-shadow:0 24px 60px rgba(0,0,0,0.7);position:relative;max-height:88vh;overflow-y:auto;color:#ffffff;">
             <button type="button" class="app-close-button" onclick="document.getElementById('about-modal').style.display='none'" aria-label="Cerrar modal" title="Cerrar" style="position:absolute;right:16px;top:16px;z-index:10;"></button>
@@ -6824,11 +6826,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
 
     <!-- ══ ABOUT BUTTON ══ -->
 
-    <!-- ═══════════════════════════════════════════════════════════════
-         ⚠️  FIN DEL ARCHIVO — IA: ¿Ya incrementaste ALIOTH_VERSION
-              en 0.01 y añadiste entrada al INICIO de ALIOTH_CHANGELOG?
-         ═══════════════════════════════════════════════════════════════ -->
-
+    
     <script>
     // ── AUTO SCROLL WIDGET ──
     (function(){

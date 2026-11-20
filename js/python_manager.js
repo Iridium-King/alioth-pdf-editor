@@ -1859,113 +1859,41 @@ delete_images_by_xref(js_pdf_data, js_xrefs, js_pages)
                 }
             },
 
-            extractAndEraseImageAtPoint: async function (pdfBuffer, pageNum, x, y) {
-                if (!this.isLoaded) await this.init();
-                console.log(`🐍 Python (PyMuPDF): Checking for image at (${x.toFixed(1)}, ${y.toFixed(1)})...`);
+            liftPdfImage: async function (pdfBuffer, pageNum, selection, password = '') {
+                if (!this._imageEditSource) {
+                    this._imageEditSource = fetch('./js/pdf_image_edit.py').then(response => {
+                        if (!response.ok) throw new Error('PDF_IMAGE_ENGINE_UNAVAILABLE');
+                        return response.text();
+                    }).catch(error => {
+                        this._imageEditSource = null;
+                        throw error;
+                    });
+                }
+                const source = await this._imageEditSource;
+                const result = await this.run(`
+import json
+if '_alioth_lift_pdf_image' not in globals():
+    _image_edit_namespace = {}
+    exec(js_image_edit_source, _image_edit_namespace)
+    _alioth_lift_pdf_image = _image_edit_namespace['lift_pdf_image']
+    del _image_edit_namespace
+del js_image_edit_source
+_alioth_lift_pdf_image(bytes(globals().pop('js_image_edit_data').to_py()), globals().pop('js_image_edit_page'),
+                       json.loads(globals().pop('js_image_edit_selection')), globals().pop('js_image_edit_password'))
+                `, {
+                    js_image_edit_source: source,
+                    js_image_edit_data: new Uint8Array(pdfBuffer),
+                    js_image_edit_page: pageNum,
+                    js_image_edit_selection: JSON.stringify(selection),
+                    js_image_edit_password: password
+                });
+                if (!result) return null;
                 try {
-                    const uint8 = new Uint8Array(pdfBuffer);
-                    const result = await this.run(`
-import fitz, json, io, base64
-
-def extract_erase_image(data_bytes, pno, pt_x, pt_y):
-    if hasattr(data_bytes, 'to_py'):
-        data_bytes = bytes(data_bytes.to_py())
-    else:
-        data_bytes = bytes(data_bytes)
-        
-    doc = fitz.open(stream=data_bytes, filetype="pdf")
-    page = doc[pno]
-    
-    # 1. Obtener lista completa de imágenes de la página
-    image_list = page.get_images(full=True)
-    if not image_list:
-        return json.dumps({"found": False})
-
-    target_img_bbox = None
-    target_xref = None
-    
-    # Tolerancia al hacer clic
-    click_pt = fitz.Point(pt_x, pt_y)
-    
-    for img in image_list:
-        xref = img[0]
-        # Obtener los rectángulos donde se dibuja esta imagen específica en esta página
-        rects = page.get_image_rects(xref)
-        for r in rects:
-            if r.contains(click_pt):
-                target_img_bbox = r
-                target_xref = xref
-                break
-        if target_img_bbox:
-            break
-            
-    if not target_img_bbox or not target_xref:
-        return json.dumps({"found": False})
-        
-    # 2. Extraer la imagen seleccionada como Base64 (PNG preferido para transparencias o conversiones seguras)
-    try:
-        pix = fitz.Pixmap(doc, target_xref)
-        if pix.n - pix.alpha > 3: # CMYK o más
-            temp_pix = fitz.Pixmap(fitz.csRGB, pix)
-            img_bytes = temp_pix.tobytes("png")
-            temp_pix = None
-        else:
-            img_bytes = pix.tobytes("png")
-            
-        b64_str = "data:image/png;base64," + base64.b64encode(img_bytes).decode('utf-8')
-        pix = None
-    except Exception as e:
-        return json.dumps({"found": False, "error": str(e)})
-
-    # 3. Borrar físicamente el rectángulo que ocupaba la imagen mediante una redacción sin relleno
-    # page.delete_image(xref) a veces afecta a otras páginas si la imagen es compartida,
-    # así que redactar el área exacta en esta página concreta es la via más segura para edición "quirúrgica".
-    # Usaremos una redacción que SÓLO elimine imágenes cruzando esa zona.
-    page.add_redact_annot(target_img_bbox, fill=None)
-    page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE) # Obligamos a purgar imágenes bajo la redacción
-
-    # Guardar PDF resultante (Optimizado para que los stream desechados desaparezcan)
-    out = io.BytesIO()
-    doc.save(out, garbage=3, deflate=True, clean=True)
-    
-    # 4. Devolver payload unificado
-    pdf_b64 = base64.b64encode(out.getvalue()).decode('utf-8')
-    
-    return json.dumps({
-        "found": True,
-        "pdf_base64": pdf_b64,
-        "base64": b64_str,
-        "bbox": {
-            "x": target_img_bbox.x0,
-            "y": target_img_bbox.y0,
-            "w": target_img_bbox.width,
-            "h": target_img_bbox.height
-        }
-    })
-
-extract_erase_image(js_pdf_data, js_pno, js_x, js_y)
-                    `, { js_pdf_data: uint8, js_pno: pageNum, js_x: x, js_y: y });
-
-                    const parsed = JSON.parse(result);
-                    if (!parsed.found) return null; // No image at coordinates
-
-                    // Convert returned Base64 PDF back to ArrayBuffer
-                    const binary_string = window.atob(parsed.pdf_base64);
-                    const len = binary_string.length;
-                    const bytes = new Uint8Array(len);
-                    for (let i = 0; i < len; i++) {
-                        bytes[i] = binary_string.charCodeAt(i);
-                    }
-
-                    return {
-                        buffer: bytes.buffer,
-                        base64: parsed.base64,
-                        bbox: parsed.bbox
-                    };
-
-                } catch (e) {
-                    console.error("🐍 Python: Image extracting/erasing failed", e);
-                    return null;
+                    const [bytes, png, bounds] = result.toJs();
+                    return { buffer: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+                        base64: 'data:image/png;base64,' + png, bounds };
+                } finally {
+                    result.destroy();
                 }
             },
 

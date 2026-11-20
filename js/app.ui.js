@@ -35,6 +35,7 @@ Object.assign(app, {
             closeAllModals: function () {
                 // MODAL MASTER CLEANUP: Robustly hide and reset all UI overlays
                 try {
+                    this.cancelImageEdit?.();
                     this.cancelPendingSignature?.();
                     if (this._iemMagicImage) this._iemResetMagicCanvas();
                     if (document.getElementById('translation-review-modal')?.style.display === 'flex') {
@@ -1286,6 +1287,7 @@ Object.assign(app, {
             },
 
             switchRibbon: function (t) {
+                if (t !== 'image') this.cancelImageEdit?.();
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
                 document.getElementById('tab-btn-' + t).classList.add('active');
                 document.querySelectorAll('.toolbar-area').forEach(x => x.classList.remove('active'));
@@ -5448,7 +5450,7 @@ equalize_pages(js_data, js_params_json)
                     PIN_COLORS.forEach(c => {
                         const sw = document.createElement('div');
                         sw.className = 'comment-color-swatch' + (obj?.color === c ? ' active' : '');
-                        sw.style.cssText = `width:17px;height:17px;border-radius:50%;background:${c};cursor:pointer;flex-shrink:0;border:2px solid ${obj?.color===c?'#fff':'transparent'};transition:transform 0.12s;`;
+                        sw.style.cssText = `width:17px;height:17px;background:${c};cursor:pointer;flex-shrink:0;border:2px solid ${obj?.color===c?'#fff':'transparent'};transition:transform 0.12s;`;
                         sw.addEventListener('click', (ev) => {
                             ev.stopPropagation();
                             if (!obj) return;
@@ -5633,14 +5635,14 @@ equalize_pages(js_data, js_params_json)
                             + `<div class="ctx-divider"></div>`
                             + `<div style="padding:2px 8px;font-size:9px;color:rgba(255,255,255,0.6);text-transform:uppercase;font-weight:600;">Color Rápido</div>`
                             + `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px 6px;">`
-                            + `  <div onclick="app.setShapeFillColor('#ef4444')" title="Rojo" style="width:20px;height:20px;border-radius:50%;background:#ef4444;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeFillColor('#3b82f6')" title="Azul" style="width:20px;height:20px;border-radius:50%;background:#3b82f6;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeFillColor('#10b981')" title="Verde" style="width:20px;height:20px;border-radius:50%;background:#10b981;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeFillColor('#f59e0b')" title="Amarillo" style="width:20px;height:20px;border-radius:50%;background:#f59e0b;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeFillColor('#8b5cf6')" title="Morado" style="width:20px;height:20px;border-radius:50%;background:#8b5cf6;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeFillColor('#f97316')" title="Naranja" style="width:20px;height:20px;border-radius:50%;background:#f97316;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeFillColor('#ffffff')" title="Blanco" style="width:20px;height:20px;border-radius:50%;background:#ffffff;cursor:pointer;border:1px solid rgba(0,0,0,0.3);"></div>`
-                            + `  <div onclick="app.setShapeFillColor('#000000')" title="Negro" style="width:20px;height:20px;border-radius:50%;background:#000000;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeFillColor('#ef4444')" title="Rojo" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#ef4444;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeFillColor('#3b82f6')" title="Azul" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#3b82f6;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeFillColor('#10b981')" title="Verde" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#10b981;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeFillColor('#f59e0b')" title="Amarillo" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#f59e0b;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeFillColor('#8b5cf6')" title="Morado" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#8b5cf6;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeFillColor('#f97316')" title="Naranja" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#f97316;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeFillColor('#ffffff')" title="Blanco" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#ffffff;cursor:pointer;border:1px solid rgba(0,0,0,0.3);"></div>`
+                            + `  <div onclick="app.setShapeFillColor('#000000')" title="Negro" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#000000;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
                             + `</div>`
                             + `<div class="ctx-divider"></div>`
                             + `<div style="padding:2px 8px;font-size:9px;color:rgba(255,255,255,0.6);text-transform:uppercase;font-weight:600;">Opacidad Relleno</div>`
@@ -5669,10 +5671,10 @@ equalize_pages(js_data, js_params_json)
                             + `<div class="ctx-divider"></div>`
                             + `<div style="padding:2px 8px;font-size:9px;color:rgba(255,255,255,0.6);text-transform:uppercase;font-weight:600;">Color Borde</div>`
                             + `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px 6px;">`
-                            + `  <div onclick="app.setShapeStrokeColor('#000000')" title="Negro" style="width:20px;height:20px;border-radius:50%;background:#000000;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeStrokeColor('#ef4444')" title="Rojo" style="width:20px;height:20px;border-radius:50%;background:#ef4444;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeStrokeColor('#3b82f6')" title="Azul" style="width:20px;height:20px;border-radius:50%;background:#3b82f6;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
-                            + `  <div onclick="app.setShapeStrokeColor('#ffffff')" title="Blanco" style="width:20px;height:20px;border-radius:50%;background:#ffffff;cursor:pointer;border:1px solid rgba(0,0,0,0.3);"></div>`
+                            + `  <div onclick="app.setShapeStrokeColor('#000000')" title="Negro" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#000000;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeStrokeColor('#ef4444')" title="Rojo" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#ef4444;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeStrokeColor('#3b82f6')" title="Azul" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#3b82f6;cursor:pointer;border:1px solid rgba(255,255,255,0.3);"></div>`
+                            + `  <div onclick="app.setShapeStrokeColor('#ffffff')" title="Blanco" style="width:20px;height:20px;border-radius:var(--color-control-radius);background:#ffffff;cursor:pointer;border:1px solid rgba(0,0,0,0.3);"></div>`
                             + `</div>`
                             + `</div></div>`;
 
@@ -5924,7 +5926,9 @@ equalize_pages(js_data, js_params_json)
 
                 window.addEventListener('mousemove', (e) => {
                     if (!isResizing) return;
-                    let newWidth = e.clientX;
+                    const container = document.getElementById('sidebarContainer');
+                    const scale = Number(getComputedStyle(container).zoom) || 1;
+                    let newWidth = (e.clientX - container.getBoundingClientRect().left) / scale;
                     if (newWidth < 100) newWidth = 100;
                     if (newWidth > 400) newWidth = 400;
                     sidebar.style.width = newWidth + 'px';

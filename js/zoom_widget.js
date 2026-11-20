@@ -89,7 +89,8 @@
             const partner = spread ? index + ((index - cover) % 2 === 0 ? 1 : -1) : -1;
             const otherIndex = partner >= 0 && doc.pages[partner] ? partner : -1;
             const current = () => request === fitRequest && app.getDoc() === doc
-                && panelId === app.splitView.activePanel && state.pageIndex === index;
+                && panelId === app.splitView.activePanel && (state.pageIndex ?? doc.currentIndex) === index
+                && doc.pages[index] === record;
             let size, otherSize;
             try {
                 [size, otherSize] = await Promise.all([
@@ -102,6 +103,13 @@
             }
             if (!current()) return;
 
+            const wrapper = pageIndex => document.getElementById(`page-wrapper-${panelId}-${pageIndex}`);
+            const target = () => continuous ? wrapper(index) : canvasContainer;
+            const before = target()?.getBoundingClientRect();
+            const beforeView = mainView.getBoundingClientRect();
+            const yRatio = before?.height
+                ? Math.max(0.02, Math.min(0.98, (beforeView.top + mainView.clientHeight / 2 - before.top) / before.height))
+                : 0.5;
             const sideMargin = document.getElementById('ai-floating-btn')?.getBoundingClientRect().width || 1;
             if (!fullPage) mainView.style.setProperty('--fit-width-margin', sideMargin + 'px');
             mainView.classList.toggle('fit-width', !fullPage);
@@ -126,17 +134,17 @@
 
             function framePage() {
                 if (!current()) return;
-                const wrapper = pageIndex => document.getElementById(`page-wrapper-${panelId}-${pageIndex}`);
-                const target = continuous ? wrapper(index) : canvasContainer;
-                if (!target) return;
-                const page = target.getBoundingClientRect();
+                const page = target()?.getBoundingClientRect();
+                if (!page?.height) return;
                 const other = otherIndex >= 0 ? wrapper(otherIndex)?.getBoundingClientRect() : null;
                 const centerX = (Math.min(page.left, other?.left ?? page.left) + Math.max(page.right, other?.right ?? page.right)) / 2;
                 const centerY = (Math.min(page.top, other?.top ?? page.top) + Math.max(page.bottom, other?.bottom ?? page.bottom)) / 2;
                 const viewport = mainView.getBoundingClientRect();
                 mainView.scrollTo({
                     left: mainView.scrollLeft + centerX - viewport.left - mainView.clientWidth / 2,
-                    top: fullPage ? mainView.scrollTop + centerY - viewport.top - (mainView.clientHeight + top - bottom) / 2 : mainView.scrollTop,
+                    top: mainView.scrollTop + (fullPage
+                        ? centerY - viewport.top - (mainView.clientHeight + top - bottom) / 2
+                        : page.top + page.height * yRatio - viewport.top - mainView.clientHeight / 2),
                     behavior: 'instant'
                 });
             }

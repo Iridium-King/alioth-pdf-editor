@@ -39,6 +39,9 @@ body.compact-chrome .app-titlebar #docTabsWrapper .doc-tab.active { height: var(
 body.compact-chrome .app-titlebar .doc-tab-add { width: 23px !important; height: 23px !important; flex-shrink: 0; margin-bottom: 2px; }
 body.compact-chrome .tabs-container { display: none !important; }
 body.compact-chrome .app-header { height: var(--chrome-header-height) !important; min-height: var(--chrome-header-height); flex-shrink: 0; gap: 6px; }
+body.compact-chrome .app-header { zoom: var(--interface-scale-header, 1); }
+#sidebarContainer { zoom: var(--interface-scale-sidebar, 1); }
+#ribbon-capsule-wrapper { zoom: var(--interface-scale-ribbon, 1); }
 body.compact-chrome .chrome-search-tools { order: initial !important; gap: 4px !important; margin-left: 2px !important; min-width: 0; }
 body.compact-chrome .chrome-search-tools .dark-toggle-btn,
 body.compact-chrome .header-tabs-wrapper #darkToggle {
@@ -171,7 +174,7 @@ body.compact-chrome.reading-mode .app-titlebar .doc-tab-add { width: 20.7px !imp
 body.compact-chrome.reading-mode .chrome-tab-nav { flex-basis: 18px; width: 18px; height: 18px; }
 body.compact-chrome.reading-mode #toggleAutoScrollReading.active { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 body.compact-chrome.reading-mode #index-panel-sidebar,
-body.compact-chrome.reading-mode #bookmark-panel { top: calc(var(--chrome-title-height) + var(--chrome-header-height) + 23px) !important; }
+body.compact-chrome.reading-mode #bookmark-panel { top: calc(var(--chrome-title-height) + var(--chrome-header-height) * var(--interface-scale-header, 1) + 23px) !important; }
 @media (max-width: 1100px) {
     body.compact-chrome .header-tabs-wrapper { position: static; transform: none; margin: 0 auto; min-width: 0; gap: 2px; }
     body.compact-chrome .header-tabs-wrapper .tab-btn { padding-left: 7px; padding-right: 7px; }
@@ -184,20 +187,18 @@ body.compact-chrome.reading-mode #bookmark-panel { top: calc(var(--chrome-title-
 }
 
 /* Compact fitting is chosen per tab using its actual contents and available width. */
-@media (max-width: 1280px) {
-    .toolbar-area.ribbon-fit { justify-content: center !important; }
-    .toolbar-area.ribbon-hide-shortcuts .tool-section[id^="shortcut-btn-section"] { display: none !important; }
-    .toolbar-area.ribbon-compact .tool-section,
-    .toolbar-area.ribbon-compact .group-row { gap: 0 !important; }
-    .toolbar-area.ribbon-compact .tool-group-vertical { min-width: 0 !important; }
-    .toolbar-area.ribbon-compact .tool-btn { min-width: 26px; }
-    .toolbar-area.ribbon-compact .slider-grid { column-gap: 6px; }
-    .toolbar-area.ribbon-compact .slider-item input[type="range"] { width: 62px; }
-    .toolbar-area.ribbon-tight .tool-btn { min-width: 24px; }
-    .toolbar-area.ribbon-tight .style-btn { width: 22px; }
-    .toolbar-area.ribbon-tight .control-row { gap: 2px; }
-    .toolbar-area.ribbon-tight .slider-grid { column-gap: 4px; }
-    .toolbar-area.ribbon-tight .slider-item input[type="range"] { width: 56px; }
-    /* If a much smaller window still needs scrolling, keep its first command reachable. */
-    .toolbar-area.ribbon-overflow { justify-content: flex-start !important; }
-}
+.toolbar-area.ribbon-fit { justify-content: center !important; }
+.toolbar-area.ribbon-hide-shortcuts .tool-section[id^="shortcut-btn-section"] { display: none !important; }
+.toolbar-area.ribbon-compact .tool-section,
+.toolbar-area.ribbon-compact .group-row { gap: 0 !important; }
+.toolbar-area.ribbon-compact .tool-group-vertical { min-width: 0 !important; }
+.toolbar-area.ribbon-compact .tool-btn { min-width: 26px; }
+.toolbar-area.ribbon-compact .slider-grid { column-gap: 6px; }
+.toolbar-area.ribbon-compact .slider-item input[type="range"] { width: 62px; }
+.toolbar-area.ribbon-tight .tool-btn { min-width: 24px; }
+.toolbar-area.ribbon-tight .style-btn { width: 22px; }
+.toolbar-area.ribbon-tight .control-row { gap: 2px; }
+.toolbar-area.ribbon-tight .slider-grid { column-gap: 4px; }
+.toolbar-area.ribbon-tight .slider-item input[type="range"] { width: 56px; }
+/* If a much smaller window still needs scrolling, keep its first command reachable. */
+.toolbar-area.ribbon-overflow { justify-content: flex-start !important; }

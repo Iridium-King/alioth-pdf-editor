@@ -14,7 +14,7 @@ _KEYS = {
 }
 _ALIOTH = re.compile(r'alioth_(?:theme(?:_favorites|_order)?|last_preset|custom_themes|preset_overrides|'
                      r'(?:group_borders|invert_colors|sidebar_as_header|glass_effect|white_icons)(?:_dark|_light)?|'
-                     r'border_ribbon_value|reading_mode|ui_state|custom_shortcut(?:[23]|_form[12])?|shortcut_tab_[a-z0-9_-]+|'
+                     r'border_ribbon_value|reading_mode|ui_state|interface_scale_(?:header|sidebar|ribbon)|custom_shortcut(?:[23]|_form[12])?|shortcut_tab_[a-z0-9_-]+|'
                      r'autosave_(?:enabled|interval)|default_(?:zoom|page-mode|ai_provider|open_mode)|'
                      r'(?:capture_)?search_provider|comment_author|ai_font_size|tts_voice_[a-z0-9_]+)')
 

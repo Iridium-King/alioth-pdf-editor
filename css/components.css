@@ -707,7 +707,25 @@ body.dark-mode .security-input-group input {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    overflow-y: auto;
 }
+
+#modal-overlay:has(#preferences-modal[style*="flex"] #pref-appearance.active) {
+    background-color: rgba(0, 0, 0, 0.22) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.pref-setting-card.pref-appearance-scales {
+    display: grid;
+    grid-template-columns: minmax(92px, 1fr) minmax(70px, 2fr) 4ch;
+    align-items: center;
+    gap: 16px 12px;
+}
+
+.pref-appearance-scales input { width: 100%; accent-color: var(--accent); }
+.pref-appearance-scales output { text-align: right; font-variant-numeric: tabular-nums; }
+.pref-appearance-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 
 .pref-tab-btn {
     background: transparent;

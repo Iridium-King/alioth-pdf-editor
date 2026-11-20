@@ -2731,11 +2731,9 @@ invert_colors(js_data)
                 // Helper: color row with square swatch + hex input
                 const colorRow = (id, label, defVal) => `
                     <div style="flex:1;">
-                        <label style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">${label}</label>
+                        <label for="${id}" style="font-size:11px;font-weight:600;display:block;margin-bottom:4px;">${label}</label>
                         <div style="display:flex;align-items:center;gap:6px;">
-                            <div style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);overflow:hidden;flex-shrink:0;cursor:pointer;" onclick="document.getElementById('${id}').click()">
-                                <input type="color" id="${id}" value="${defVal}" style="width:200%;height:200%;margin:-25%;border:none;padding:0;cursor:pointer;" oninput="document.getElementById('${id}_hex').value=this.value; app._previewBarcode()">
-                            </div>
+                            <input type="color" id="${id}" value="${defVal}" style="--color-control-size:28px;border:1px solid var(--border);" oninput="document.getElementById('${id}_hex').value=this.value; app._previewBarcode()">
                             <input id="${id}_hex" type="text" value="${defVal}" maxlength="7"
                                 style="width:70px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg);color:var(--text-main);font-size:11px;font-family:monospace;"
                                 oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('${id}').value=this.value;app._previewBarcode();}">

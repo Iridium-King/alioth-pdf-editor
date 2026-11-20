@@ -109,12 +109,12 @@
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // ── CHANGELOG HÍBRIDO (Búsqueda + Agrupación + Paginación) ───
+        // ── CHANGELOG ───
         // ═══════════════════════════════════════════════════════════════
         let changelogSearch = '';
         let changelogTypeFilter = 'all';
-        let recentLimit = 5;
-        const seriesLimits = { '13': 3, '12': 3, '11': 3, '10': 3 };
+        const CHANGELOG_PAGE_SIZE = 5;
+        let recentLimit = CHANGELOG_PAGE_SIZE;
 
         const OUTLINE_ICONS = {
             check: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;display:inline-block;"><polyline points="20 6 9 17 4 12"/></svg>',
@@ -132,34 +132,6 @@
             improvement: { label: 'Mejoras', icon: OUTLINE_ICONS.zap, color: '#3b82f6' },
             change: { label: 'Cambios', icon: OUTLINE_ICONS.sparkle, color: '#a855f7' },
             ui: { label: 'Interfaz', icon: OUTLINE_ICONS.sparkle, color: '#a855f7' }
-        };
-
-        const SERIES_META = {
-            '3': {
-                name: 'Serie v3.x',
-                subtitle: 'Versiones públicas',
-                desc: 'Numeración pública actual de Alioth PDF Editor.'
-            },
-            '13': {
-                name: 'Serie v13.x',
-                subtitle: 'Arquitectura On-Demand, Firmas & IA Avanzada',
-                desc: 'Incorporación de firmas digitales con IndexedDB, carga bajo demanda de módulos pesados (OCR, Pyodide, Office), reflow en traducción con IA y visor sincronizado entre ventanas.'
-            },
-            '12': {
-                name: 'Serie v12.x',
-                subtitle: 'Edición Vectorial Real & Formularios Universales',
-                desc: 'Parcheado geométrico de texto nativo sobre PDF.js, tablas dinámicas, compresión de documentos y compatibilidad estricta con lectores externos.'
-            },
-            '11': {
-                name: 'Serie v11.x',
-                subtitle: 'Formularios Automáticos & Dibujo Avanzado',
-                desc: 'Detección automática de celdas para formularios, cálculo dinámico de AutoSize y herramientas ampliadas de anotación, formas y resaltado.'
-            },
-            '10': {
-                name: 'Serie v10.x',
-                subtitle: 'Arquitectura Base & Conversión con IA',
-                desc: 'Primeros hitos de conversión de tablas a formularios mediante IA, atajos de teclado y motor central de renderizado en navegador.'
-            }
         };
 
         function renderChangelogItem(item, highlight) {
@@ -199,67 +171,6 @@
             return html;
         }
 
-        function renderCompactVersionRow(entry, highlight, isOpen) {
-            const items = entry.items || [];
-            let countSummary = `${items.length} ${items.length === 1 ? 'cambio' : 'cambios'}`;
-            let html = `<details class="about-ver-row" data-version="${entry.version}" ${isOpen ? 'open' : ''} style="margin-bottom:6px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;background:rgba(255,255,255,0.02);overflow:hidden;">`;
-            html += `<summary style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;font-size:11px;cursor:pointer;user-select:none;color:rgba(220,225,255,0.9);">`;
-            html += `<div style="display:flex;align-items:center;gap:8px;">`;
-            html += `<span style="font-weight:700;color:#c7d2fe;">v${entry.version}</span>`;
-            if (entry.date) {
-                html += `<span style="font-size:10px;color:rgba(180,190,220,0.5);">${entry.date}</span>`;
-            }
-            html += `</div>`;
-            html += `<span style="font-size:10px;color:rgba(150,160,255,0.7);display:inline-flex;align-items:center;gap:4px;">${countSummary} <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>`;
-            html += `</summary>`;
-            html += `<div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.05);background:rgba(0,0,0,0.15);">`;
-            html += `<ul style="list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px;">`;
-            items.forEach(it => {
-                html += renderChangelogItem(it, highlight);
-            });
-            html += `</ul></div></details>`;
-            return html;
-        }
-
-        function renderSeriesAccordion(major, versions, openSeries, openVersions) {
-            const meta = SERIES_META[major] || {
-                name: `Serie v${major}.x`,
-                subtitle: 'Versiones históricas',
-                desc: 'Registro consolidado de versiones previas.'
-            };
-            const limit = seriesLimits[major] || 3;
-            const visible = versions.slice(0, limit);
-            const remaining = versions.length - limit;
-            const isOpen = !!openSeries[major];
-
-            let html = `<details class="about-series-accordion" data-series="${major}" ${isOpen ? 'open' : ''} style="margin-bottom:10px;border:1px solid rgba(99,102,241,0.22);border-radius:12px;background:rgba(99,102,241,0.04);overflow:hidden;">`;
-            html += `<summary style="cursor:pointer;list-style:none;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;user-select:none;background:rgba(99,102,241,0.08);">`;
-            html += `<div style="display:flex;align-items:center;gap:10px;">`;
-            html += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#818cf8;flex-shrink:0;"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>`;
-            html += `<div>`;
-            html += `<div style="font-size:12px;font-weight:700;color:#e0e7ff;">${meta.name} <span style="font-weight:400;color:rgba(200,210,255,0.65);font-size:11px;">— ${meta.subtitle}</span></div>`;
-            html += `<div style="font-size:10px;color:rgba(160,170,220,0.6);margin-top:1px;">${versions.length} versiones registradas</div>`;
-            html += `</div></div>`;
-            html += `<span style="font-size:11px;color:#818cf8;font-weight:600;display:inline-flex;align-items:center;gap:3px;">Desplegar <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>`;
-            html += `</summary>`;
-            html += `<div style="padding:12px 14px;">`;
-            if (meta.desc) {
-                html += `<div style="margin-bottom:10px;padding:8px 12px;border-left:3px solid #6366f1;background:rgba(99,102,241,0.08);border-radius:4px;font-size:11px;color:rgba(220,225,255,0.85);line-height:1.45;">`;
-                html += `<strong>Hitos clave:</strong> ${meta.desc}`;
-                html += `</div>`;
-            }
-            visible.forEach(v => {
-                html += renderCompactVersionRow(v, '', openVersions[v.version]);
-            });
-            if (remaining > 0) {
-                html += `<button type="button" class="about-cl-load-series-btn" data-series="${major}" style="width:100%;margin-top:6px;padding:8px;background:rgba(99,102,241,0.12);border:1px dashed rgba(99,102,241,0.35);border-radius:8px;color:#c7d2fe;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;">`;
-                html += `<span><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polyline points="6 9 12 15 18 9"/></svg>Mostrar más de ${meta.name} (${remaining} restantes)</span>`;
-                html += `</button>`;
-            }
-            html += `</div></details>`;
-            return html;
-        }
-
         function getChangelogStats() {
             let total = ALIOTH_CHANGELOG.length;
             let fixes = 0, news = 0, improves = 0;
@@ -279,16 +190,6 @@
             const statusEl = container.querySelector('#about-cl-status');
             const filtersEl = container.querySelector('#about-cl-filters');
             if (!listEl) return;
-
-            // Preservar estados abiertos de los acordeones
-            const openSeries = {};
-            container.querySelectorAll('.about-series-accordion').forEach(el => {
-                if (el.open && el.dataset.series) openSeries[el.dataset.series] = true;
-            });
-            const openVersions = {};
-            container.querySelectorAll('.about-ver-row').forEach(el => {
-                if (el.open && el.dataset.version) openVersions[el.dataset.version] = true;
-            });
 
             // Actualizar botones de filtro
             if (filtersEl) {
@@ -359,52 +260,24 @@
                 }
 
                 let html = '';
-                filtered.forEach((entry, idx) => {
-                    html += renderVersionCard(entry, idx === 0 && !q && tf === 'all', q);
+                filtered.forEach(entry => {
+                    html += renderVersionCard(entry, entry.version === ALIOTH_VERSION, q);
                 });
                 listEl.innerHTML = html;
             } else {
-                // Modo híbrido normal: Recientes + Acordeones por serie
                 if (statusEl) statusEl.replaceChildren();
 
-                const seriesGrouped = {};
-                ALIOTH_CHANGELOG.forEach(e => {
-                    const major = e.version ? e.version.split('.')[0] : 'other';
-                    if (!seriesGrouped[major]) seriesGrouped[major] = [];
-                    seriesGrouped[major].push(e);
-                });
-
-                let html = '';
-
-                // 1. Serie pública actual
-                const currentSeries = ALIOTH_VERSION.split('.')[0];
-                const recentVersions = seriesGrouped[currentSeries] || [];
-                const visibleRecent = recentVersions.slice(0, recentLimit);
-                const remainingRecent = recentVersions.length - recentLimit;
-
-                html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">`;
-                html += `<span style="font-size:11px;font-weight:700;color:rgba(180,190,255,0.9);text-transform:uppercase;letter-spacing:0.06em;">Novedades Recientes (Serie v${currentSeries}.x)</span>`;
-                html += `<span style="font-size:10px;color:rgba(160,170,220,0.6);">${recentVersions.length} versiones</span>`;
-                html += `</div>`;
-
-                visibleRecent.forEach((entry, idx) => {
-                    html += renderVersionCard(entry, idx === 0, '');
-                });
-
-                if (remainingRecent > 0) {
-                    html += `<button type="button" id="about-cl-more-13" style="width:100%;padding:9px;margin-bottom:16px;background:rgba(99,102,241,0.14);border:1px dashed rgba(99,102,241,0.4);border-radius:10px;color:#c7d2fe;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">`;
-                    html += `<span style="display:inline-flex;align-items:center;gap:6px;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>Cargar 5 versiones más de v${currentSeries}.x (${remainingRecent} restantes)</span>`;
-                    html += `</button>`;
+                let html = ALIOTH_CHANGELOG.slice(0, recentLimit)
+                    .map(entry => renderVersionCard(entry, entry.version === ALIOTH_VERSION, ''))
+                    .join('');
+                const remaining = ALIOTH_CHANGELOG.length - recentLimit;
+                if (remaining > 0) {
+                    const count = Math.min(CHANGELOG_PAGE_SIZE, remaining);
+                    const label = count === 1 ? 'versión anterior' : 'versiones anteriores';
+                    html += `<button type="button" id="about-cl-more" style="width:100%;padding:9px;margin-bottom:16px;background:rgba(99,102,241,0.14);border:1px dashed rgba(99,102,241,0.4);border-radius:10px;color:#c7d2fe;font-size:11px;font-weight:600;cursor:pointer;">
+                        Ver ${count} ${label}
+                    </button>`;
                 }
-
-                // 2. Historial de Series Anteriores
-                html += `<div style="font-size:11px;font-weight:700;color:rgba(150,160,255,0.7);text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 10px;">Historial de Versiones Anteriores</div>`;
-
-                ['13', '12', '11', '10'].filter(major => major !== currentSeries).forEach(major => {
-                    if (seriesGrouped[major]) {
-                        html += renderSeriesAccordion(major, seriesGrouped[major], openSeries, openVersions);
-                    }
-                });
 
                 listEl.innerHTML = html;
             }
@@ -449,12 +322,8 @@
                 if (target.classList.contains('about-cl-filter-btn')) {
                     changelogTypeFilter = target.dataset.filter;
                     updateChangelogView(container);
-                } else if (target.id === 'about-cl-more-13') {
-                    recentLimit += 5;
-                    updateChangelogView(container);
-                } else if (target.classList.contains('about-cl-load-series-btn')) {
-                    const ser = target.dataset.series;
-                    seriesLimits[ser] = (seriesLimits[ser] || 3) + 15;
+                } else if (target.id === 'about-cl-more') {
+                    recentLimit += CHANGELOG_PAGE_SIZE;
                     updateChangelogView(container);
                 } else if (target.id === 'about-cl-reset-btn') {
                     changelogSearch = '';

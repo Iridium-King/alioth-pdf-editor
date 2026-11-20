@@ -2,7 +2,7 @@
     const seed = window.__aliothPreferences || {};
     delete window.__aliothPreferences;
     const keyAllowed = key => /^(?:app_language|ribbonCollapsed|h-layout|ai_btn_pos|ai_panel_width|custom(?:HeaderColor|RibbonColor|AccentColor|BgApp)|dex_(?:profiles|default_profile|use_multi|xl_[a-zA-Z0-9_-]{1,100})|alioth-form-field-highlight-color|alioth_custom_shortcuts|alioth_bookmarks_[A-Za-z0-9+/=]{1,40})$/.test(key) ||
-        /^alioth_(?:theme(?:_favorites|_order)?|last_preset|custom_themes|preset_overrides|(?:group_borders|invert_colors|sidebar_as_header|glass_effect|white_icons)(?:_dark|_light)?|border_ribbon_value|reading_mode|ui_state|custom_shortcut(?:[23]|_form[12])?|shortcut_tab_[a-z0-9_-]+|autosave_(?:enabled|interval)|default_(?:zoom|page-mode|ai_provider|open_mode)|(?:capture_)?search_provider|comment_author|ai_font_size|tts_voice_[a-z0-9_]+)$/.test(key);
+        /^alioth_(?:theme(?:_favorites|_order)?|last_preset|custom_themes|preset_overrides|(?:group_borders|invert_colors|sidebar_as_header|glass_effect|white_icons)(?:_dark|_light)?|border_ribbon_value|reading_mode|ui_state|interface_scale_(?:header|sidebar|ribbon)|custom_shortcut(?:[23]|_form[12])?|shortcut_tab_[a-z0-9_-]+|autosave_(?:enabled|interval)|default_(?:zoom|page-mode|ai_provider|open_mode)|(?:capture_)?search_provider|comment_author|ai_font_size|tts_voice_[a-z0-9_]+)$/.test(key);
     const pending = new Map();
     const storage = window.localStorage;
     const originalSet = Storage.prototype.setItem;
