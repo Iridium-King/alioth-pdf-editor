@@ -13,7 +13,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Instalar dependencias de prueba del editor
-        run: python3 -m venv .test-env && .test-env/bin/pip install --only-binary=:all: PyMuPDF==1.26.3 Pillow==11.3.0
+        run: |
+          python3 -m venv .test-env
+          .test-env/bin/pip install --only-binary=:all: PyMuPDF==1.26.3 Pillow==11.3.0
       - name: Probar la edición con documentos sintéticos
         run: |
           .test-env/bin/python -m unittest discover -s HERRAMIENTAS_DEV/tests -p 'test_text_splice.py' -v
