@@ -979,6 +979,109 @@ Object.assign(app, {
                 }
             },
 
+            _filterSameColumnCluster: function (candidateItems, seedItems, opts = {}) {
+                if (!Array.isArray(candidateItems) || candidateItems.length === 0) return candidateItems || [];
+                if (!Array.isArray(seedItems) || seedItems.length === 0) return candidateItems;
+
+                const avgSize = Math.max(4, Number(opts.avgSize) || Math.abs(seedItems[0]?.transform?.[3] || 10));
+                const isSingleLine = Boolean(opts.isSingleLine);
+                const maxGap = isSingleLine ? Math.max(9.5, avgSize * 0.95) : Math.max(18, avgSize * 1.8);
+                const rowTol = Math.max(3, avgSize * 0.5);
+
+                const seedSet = new Set(seedItems);
+                const seedMinX = Math.min(...seedItems.map(it => it.transform[4]));
+                const seedMaxX = Math.max(...seedItems.map(it => it.transform[4] + Math.max(0, it.width || 0)));
+
+                const sorted = [...candidateItems].sort((a, b) => {
+                    const yd = b.transform[5] - a.transform[5];
+                    if (Math.abs(yd) > rowTol) return yd > 0 ? 1 : -1;
+                    return a.transform[4] - b.transform[4];
+                });
+
+                const rows = [];
+                let curRow = [], curY = sorted[0].transform[5];
+                for (const it of sorted) {
+                    if (Math.abs(it.transform[5] - curY) > rowTol) {
+                        rows.push(curRow);
+                        curRow = [];
+                        curY = it.transform[5];
+                    }
+                    curRow.push(it);
+                }
+                if (curRow.length) rows.push(curRow);
+
+                const kept = [];
+                for (const row of rows) {
+                    row.sort((a, b) => a.transform[4] - b.transform[4]);
+                    const clusters = [[row[0]]];
+                    for (let i = 1; i < row.length; i++) {
+                        const prevCluster = clusters[clusters.length - 1];
+                        const prev = prevCluster[prevCluster.length - 1];
+                        const prevEnd = prev.transform[4] + Math.max(0, prev.width || 0);
+                        const curr = row[i];
+                        if ((curr.transform[4] - prevEnd) > maxGap) {
+                            clusters.push([curr]);
+                        } else {
+                            prevCluster.push(curr);
+                        }
+                    }
+                    for (const cluster of clusters) {
+                        const hasSeed = cluster.some(it => seedSet.has(it));
+                        if (isSingleLine) {
+                            if (hasSeed) kept.push(...cluster);
+                        } else {
+                            const cMinX = Math.min(...cluster.map(it => it.transform[4]));
+                            const cMaxX = Math.max(...cluster.map(it => it.transform[4] + Math.max(0, it.width || 0)));
+                            const overlapsSeedCol = cMinX <= (seedMaxX + maxGap * 0.5) && cMaxX >= (seedMinX - maxGap * 0.5);
+                            if (hasSeed || overlapsSeedCol) {
+                                kept.push(...cluster);
+                            }
+                        }
+                    }
+                }
+                return kept;
+            },
+
+            _collectSingleLineMultiSpanItems: function (validTextItems, selBox) {
+                if (!Array.isArray(validTextItems) || !selBox || !(selBox.x1 > selBox.x0)) {
+                    return null;
+                }
+                const hits = validTextItems.filter(item => {
+                    const itemX0 = item.transform[4];
+                    const itemW = Math.max(0, item.width || 0);
+                    const itemX1 = itemX0 + itemW;
+                    const itemYmin = item.transform[5];
+                    const itemYmax = itemYmin + Math.abs(item.transform[3] || 10);
+                    const overlapX = Math.min(itemX1, selBox.x1) - Math.max(itemX0, selBox.x0);
+                    const minOverlapX = Math.min(2.0, Math.max(0.5, itemW * 0.2));
+                    const intersectsY = itemYmin < (selBox.yMax + 2) && itemYmax > (selBox.yMin - 2);
+                    return overlapX >= minOverlapX && intersectsY;
+                });
+                if (hits.length <= 1) return null;
+
+                const ys = hits.map(it => it.transform[5]).sort((a, b) => a - b);
+                const medY = ys[Math.floor(ys.length / 2)];
+                const avgH = hits.reduce((s, it) => s + Math.abs(it.transform[3] || 10), 0) / hits.length;
+                const rowTol = Math.max(3, avgH * 0.5);
+                const multiItems = hits
+                    .filter(it => Math.abs(it.transform[5] - medY) <= rowTol)
+                    .sort((a, b) => a.transform[4] - b.transform[4]);
+                if (multiItems.length <= 1) return null;
+
+                let joinedText = '';
+                for (let i = 0; i < multiItems.length; i++) {
+                    const item = multiItems[i];
+                    if (i === 0) { joinedText = item.str; continue; }
+                    const prev = multiItems[i - 1];
+                    const prevEnd = prev.transform[4] + Math.max(0, prev.width || 0);
+                    const gap = item.transform[4] - prevEnd;
+                    const thr = Math.abs(item.transform[0] || avgH) * 0.25;
+                    const needsSpace = gap > thr && !joinedText.endsWith(' ') && !item.str.startsWith(' ');
+                    joinedText += (needsSpace ? ' ' : '') + item.str;
+                }
+                return { items: multiItems, text: joinedText.trim() };
+            },
+
             /**
              * Captura el área de texto donde el usuario hizo click o selección
              */
@@ -1170,9 +1273,13 @@ Object.assign(app, {
                                 // en las mismas filas Y y expandir texto + ancho al total real.
                                 const _ltFull = Math.max(3, Math.abs(selectedItems[0].transform[3]) * 0.5);
                                 const _selYKeys = [...new Set(selectedItems.map(it => Math.round(it.transform[5] / _ltFull)))];
-                                const _fullItems = validTextItems.filter(it => {
+                                const _rawFullItems = validTextItems.filter(it => {
                                     const yk = Math.round(it.transform[5] / _ltFull);
                                     return _selYKeys.some(k => Math.abs(yk - k) <= 1);
+                                });
+                                const _fullItems = this._filterSameColumnCluster(_rawFullItems, selectedItems, {
+                                    avgSize: avgH,
+                                    isSingleLine: lines.length <= 1
                                 });
                                 const _fAllL = _fullItems.map(it => it.transform[4]);
                                 const _fAllR = _fullItems.map(it => it.transform[4] + it.width);
@@ -1213,17 +1320,42 @@ Object.assign(app, {
                                     transform: [firstItem.transform[0], firstItem.transform[1], firstItem.transform[2], firstItem.transform[3], finalMinX, Math.min(...allBot)],
                                     isParagraph: true,
                                     textAlign: 'left',
-                                    visualHeight: Math.max(...allTop) - Math.min(...allBot)
+                                    visualHeight: Math.max(...allTop) - Math.min(...allBot),
+                                    _seedItems: _isColCapture ? _fullItems : selectedItems,
+                                    _seedLineCount: lines.length
                                 };
                             }
                         } else {
                             // ── SELECCIÓN DE PALABRA/LÍNEA SIMPLE ──
-                            // Si drag real (w>0,h>0), usar el centro del área para discriminar duplicados en distintas líneas.
+                            // Si drag real (w>0 || h>0) o domRect, usar el área real para discriminar duplicados y capturar múltiples spans en la misma línea.
                             let pdfClickX = x;
                             let pdfClickY = pdfY;
-                            if (areaSelection && areaSelection.w > 0 && areaSelection.h > 0) {
-                                pdfClickX = (areaSelection.x + areaSelection.w / 2) / this.currentScale;
-                                pdfClickY = viewport.height - ((areaSelection.y + areaSelection.h / 2) / this.currentScale);
+                            let selBox = null;
+                            const _cvsEl = document.getElementById('the-canvas');
+                            const _cvsRect = _cvsEl ? _cvsEl.getBoundingClientRect() : null;
+                            if (areaSelection && areaSelection.domRect && areaSelection.domRect.width > 0 && _cvsRect) {
+                                const domPdfX0 = (areaSelection.domRect.left - _cvsRect.left) / this.currentScale;
+                                const domPdfX1 = (areaSelection.domRect.right - _cvsRect.left) / this.currentScale;
+                                const domPdfYMax = viewport.height - ((areaSelection.domRect.top - _cvsRect.top) / this.currentScale);
+                                const domPdfYMin = viewport.height - ((areaSelection.domRect.bottom - _cvsRect.top) / this.currentScale);
+                                pdfClickX = (domPdfX0 + domPdfX1) / 2;
+                                pdfClickY = (domPdfYMin + domPdfYMax) / 2;
+                                selBox = { x0: domPdfX0, x1: domPdfX1, yMin: domPdfYMin, yMax: domPdfYMax };
+                            } else if (areaSelection && (areaSelection.w > 0 || areaSelection.h > 0)) {
+                                pdfClickX = (areaSelection.x + (areaSelection.w || 0) / 2) / this.currentScale;
+                                pdfClickY = viewport.height - ((areaSelection.y + (areaSelection.h || 0) / 2) / this.currentScale);
+                                if (areaSelection.w > 6) {
+                                    const bx0 = areaSelection.x / this.currentScale;
+                                    const bx1 = (areaSelection.x + areaSelection.w) / this.currentScale;
+                                    const byMax = viewport.height - (areaSelection.y / this.currentScale);
+                                    const byMin = viewport.height - ((areaSelection.y + (areaSelection.h || 0)) / this.currentScale);
+                                    selBox = {
+                                        x0: bx0,
+                                        x1: bx1,
+                                        yMin: areaSelection.h > 0 ? byMin : (pdfClickY - 6),
+                                        yMax: areaSelection.h > 0 ? byMax : (pdfClickY + 6)
+                                    };
+                                }
                             }
 
                             let exactMatch = null, bestExactD = Infinity;
@@ -1247,6 +1379,33 @@ Object.assign(app, {
                             }
                             console.log(`🔍 [Bug3] selText="${selText.substring(0,30)}" exactMatch="${exactMatch?.str?.substring(0,40)}" dist=${bestExactD.toFixed(1)}`);
 
+                            const multiSpanRes = (!exactMatch && selBox)
+                                ? this._collectSingleLineMultiSpanItems(validTextItems, selBox)
+                                : null;
+
+                            if (multiSpanRes && multiSpanRes.items.length > 1) {
+                                const multiItems = multiSpanRes.items;
+                                const mMinX = Math.min(...multiItems.map(it => it.transform[4]));
+                                const mMaxX = Math.max(...multiItems.map(it => it.transform[4] + Math.max(0, it.width || 0)));
+                                const mBotY = Math.min(...multiItems.map(it => it.transform[5]));
+                                const mTopY = Math.max(...multiItems.map(it => it.transform[5] + Math.abs(it.transform[3] || 10)));
+                                const firstM = multiItems[0];
+                                closestItem = {
+                                    ...firstM,
+                                    str: multiSpanRes.text || selText,
+                                    width: mMaxX - mMinX,
+                                    transform: [firstM.transform[0], firstM.transform[1], firstM.transform[2], firstM.transform[3], mMinX, mBotY],
+                                    isParagraph: false,
+                                    textAlign: 'left',
+                                    visualHeight: mTopY - mBotY,
+                                    _domTopPdf: null,
+                                    _refItemX: mMinX,
+                                    _refItemW: mMaxX - mMinX,
+                                    _isSubSpan: false,
+                                    _seedItems: multiItems,
+                                    _seedLineCount: 1
+                                };
+                            } else {
                             let fontRefItem = null, bestFD = Infinity;
                             validTextItems.forEach(it => {
                                 const itCX = it.transform[4] + it.width / 2;
@@ -1332,6 +1491,7 @@ Object.assign(app, {
                                     _isSubSpan: !!(exactMatch && exactMatch.str !== selText)
                                 };
                             }
+                            }
                         }
                     } else if (areaSelection) {
                         // ── DRAG SIN TEXTO: búsqueda geométrica original ──
@@ -1393,7 +1553,7 @@ Object.assign(app, {
                             const hasUserTextSelection = areaSelection && areaSelection.text && areaSelection.text.trim();
                             if (!hasUserTextSelection && uniqueBaselines.length === 1) {
                                 // Todos en la misma baseline → buscar ítems contiguos en el rango del drag
-                                const expandedItems = validTextItems.filter(item => {
+                                const rawExpandedItems = validTextItems.filter(item => {
                                     const iSize = Math.abs(item.transform[3]);
                                     const iY    = item.transform[5];
                                     const iFont = item.fontName || '';
@@ -1401,6 +1561,10 @@ Object.assign(app, {
                                         && (iFont === refFont || refFont === '' || iFont === '');
                                     const inDragY = (iY + iSize) > pdfY_min && iY < pdfY_max;
                                     return sameStyle && inDragY;
+                                });
+                                const expandedItems = this._filterSameColumnCluster(rawExpandedItems, selectedItems, {
+                                    avgSize: refSize,
+                                    isSingleLine: true
                                 });
                                 if (expandedItems.length > selectedItems.length) {
                                     selectedItems = expandedItems;
@@ -1490,9 +1654,13 @@ Object.assign(app, {
                             const _avgItemH = allTop[0] !== undefined ? (allTop[0] - allBot[allBot.length - 1]) / (allTop.length || 1) : 10;
                             const _ltFull = Math.max(3, Math.abs(selectedItems[0]?.transform[3] || 10) * 0.5);
                             const _selYKeys = [...new Set(selectedItems.map(it => Math.round(it.transform[5] / _ltFull)))];
-                            const _fullItems = validTextItems.filter(it => {
+                            const _rawFullItems = validTextItems.filter(it => {
                                 const yk = Math.round(it.transform[5] / _ltFull);
                                 return _selYKeys.some(k => Math.abs(yk - k) <= 1);
+                            });
+                            const _fullItems = this._filterSameColumnCluster(_rawFullItems, selectedItems, {
+                                avgSize: avgH,
+                                isSingleLine: lines.length <= 1
                             });
                             const _fAllL = _fullItems.map(it => it.transform[4]);
                             const _fAllR = _fullItems.map(it => it.transform[4] + it.width);
@@ -1555,7 +1723,9 @@ Object.assign(app, {
                                 ],
                                 isParagraph: selectedItems.length > 1,
                                 textAlign: 'left',
-                                visualHeight: useVisualH
+                                visualHeight: useVisualH,
+                                _seedItems: _isColCapture ? _fullItems : selectedItems,
+                                _seedLineCount: lines.length
                             };
                             console.log(`✅ Área seleccionada: ${selectedItems.length} elementos. Alineación: ${align}`);
                         }
@@ -2048,6 +2218,17 @@ Object.assign(app, {
                                 });
                             }
 
+                            if (blockItems.length > 0) {
+                                const _blockSeed = Array.isArray(closestItem._seedItems) && closestItem._seedItems.length
+                                    ? closestItem._seedItems
+                                    : [closestItem];
+                                const _blkYSet = new Set(blockItems.map(it => Math.round(it.transform[5] / Math.max(3, baseH * 0.5))));
+                                blockItems = this._filterSameColumnCluster(blockItems, _blockSeed, {
+                                    avgSize: baseH,
+                                    isSingleLine: _blkYSet.size <= 1
+                                });
+                            }
+
                             if (blockItems.length > 1) {
                                 // Sort: top-to-bottom (mayor Y PDF = arriba), luego left-to-right
                                 // Sort: mayor Y PDF = más arriba visual → primero (descendente en Y)
@@ -2068,7 +2249,19 @@ Object.assign(app, {
                                     curLine.push(it);
                                 }
                                 if (curLine.length) blines.push(curLine);
-                                const blockText = blines.map(l => l.map(it => it.str).join(' ')).join('\n');
+                                const blockText = blines.map(l => {
+                                    let s = '';
+                                    for (let i = 0; i < l.length; i++) {
+                                        const it = l[i];
+                                        if (i === 0) { s = it.str; continue; }
+                                        const prev = l[i - 1];
+                                        const gap = it.transform[4] - (prev.transform[4] + (prev.width || 0));
+                                        const thr = Math.abs(it.transform[0] || baseH) * 0.25;
+                                        const needsSp = gap > thr && !s.endsWith(' ') && !it.str.startsWith(' ');
+                                        s += (needsSp ? ' ' : '') + it.str;
+                                    }
+                                    return s.trim();
+                                }).join('\n');
 
                                 const allL   = blockItems.map(it => it.transform[4]);
                                 const allR   = blockItems.map(it => it.transform[4] + it.width);
@@ -2076,11 +2269,18 @@ Object.assign(app, {
                                 const allBot = blockItems.map(it => it.transform[5]);
 
                                 const bMinX  = Math.min(...allL);
-                                // Ancho real: hasta el margen derecho espejado (viewport - margen izq)
+                                // Ancho real: hasta el margen derecho espejado salvo si hay otra columna a la derecha
                                 const bMaxX_items = Math.max(...allR);
-                                const bMaxX  = Math.max(bMaxX_items, viewport.width - bMinX);
                                 const bTopY  = Math.max(...allTop);
                                 const bBotY  = Math.min(...allBot);
+                                const hasRightColNeighbor = validTextItems.some(it =>
+                                    it.transform[5] >= bBotY - baseH * 0.5 &&
+                                    it.transform[5] <= bTopY + baseH * 0.5 &&
+                                    it.transform[4] > bMaxX_items + 8
+                                );
+                                const bMaxX = hasRightColNeighbor
+                                    ? bMaxX_items
+                                    : Math.max(bMaxX_items, viewport.width - bMinX);
 
                                 closestItem = {
                                     ...blockItems[0],
@@ -2333,6 +2533,10 @@ Object.assign(app, {
                                     });
 
                                     // Update data with exact values from PDF
+                                    const _jsSelX = this.smartPatchData.x;
+                                    const _jsSelY = this.smartPatchData.y;
+                                    const _jsSelW = this.smartPatchData.width;
+                                    const _jsSelH = this.smartPatchData.height;
                                     this.smartPatchData.fontName = bestPy.font || this.smartPatchData.fontName;
                                     this.smartPatchData.fontSize = Math.round(bestPy.size * 10) / 10;
                                     // 🔵 Color de texto: Python es fuente primaria (stream PDF exacto, sin antialiasing).
@@ -2353,7 +2557,7 @@ Object.assign(app, {
                                     this.smartPatchData.isOcrHidden = Boolean(bestPy.is_ocr_hidden || bestPy.alpha === 0);
 
                                     // ── Kerning real desde Python (rawdict) ──
-                                    if (typeof bestPy.letter_spacing === 'number' && bestPy.letter_spacing !== 0) {
+                                    if (!this.smartPatchData.isOcrHidden && typeof bestPy.letter_spacing === 'number' && bestPy.letter_spacing !== 0) {
                                         // Python devuelve puntos; el editor y applyReflowEdit usan porcentaje.
                                         const _spacingPercent = (bestPy.letter_spacing / Math.max(bestPy.size || 0, 0.1)) * 100;
                                         if (Number.isFinite(_spacingPercent)) {
@@ -2470,8 +2674,115 @@ Object.assign(app, {
                                             }));
                                         }
                                     }
+                                    if (this.smartPatchData.isOcrHidden && Array.isArray(pyBlocks) && pyBlocks.length > 0) {
+                                        const _selX0 = _jsSelX - 2;
+                                        const _selY0 = _jsSelY - 4;
+                                        const _selX1 = _jsSelX + _jsSelW + 2;
+                                        const _selY1 = _jsSelY + _jsSelH + 4;
+                                        let _ocrSpans = pyBlocks.filter(b => {
+                                            if (b._fallback || !b.bbox || !(b.is_ocr_hidden || b.alpha === 0)) return false;
+                                            const bx0 = b.bbox[0], by0 = b.bbox[1], bx1 = b.bbox[2], by1 = b.bbox[3];
+                                            const cx = (bx0 + bx1) * 0.5, cy = (by0 + by1) * 0.5;
+                                            if (cx >= _selX0 && cx <= _selX1 && cy >= _selY0 && cy <= _selY1) return true;
+                                            const ix0 = Math.max(bx0, _selX0), iy0 = Math.max(by0, _selY0);
+                                            const ix1 = Math.min(bx1, _selX1), iy1 = Math.min(by1, _selY1);
+                                            if (ix1 <= ix0 || iy1 <= iy0) return false;
+                                            const area = Math.max(1e-6, (bx1 - bx0) * (by1 - by0));
+                                            return ((ix1 - ix0) * (iy1 - iy0)) / area >= 0.35;
+                                        });
+                                        if (_ocrSpans.length === 0) _ocrSpans = [bestPy];
+
+                                        let _totW = 0, _boldW = 0, _italW = 0;
+                                        const _sizeEntries = [];
+                                        for (const _sp of _ocrSpans) {
+                                            const _w = Math.max(1, ((_sp.text || '').trim()).length);
+                                            const _fl = Number(_sp.flags || 0);
+                                            _totW += _w;
+                                            if (_fl & 16) _boldW += _w;
+                                            if (_fl & 2) _italW += _w;
+                                            if (Number.isFinite(Number(_sp.size)) && Number(_sp.size) > 0) {
+                                                _sizeEntries.push({ size: Number(_sp.size), weight: _w });
+                                            }
+                                        }
+                                        this.smartPatchData.isBold = _boldW >= _totW * 0.5;
+                                        this.smartPatchData.isItalic = _italW >= _totW * 0.5;
+                                        if (_sizeEntries.length > 0) {
+                                            _sizeEntries.sort((a, b) => a.size - b.size);
+                                            const _half = _totW * 0.5;
+                                            let _acc = 0, _medFs = _sizeEntries[_sizeEntries.length - 1].size;
+                                            for (const _se of _sizeEntries) {
+                                                _acc += _se.weight;
+                                                if (_acc >= _half) { _medFs = _se.size; break; }
+                                            }
+                                            this.smartPatchData.fontSize = Math.round(_medFs * 10) / 10;
+                                        }
+                                        this.smartPatchData.letterSpacing = 0;
+                                        if (/liberation\s*sans|aliothocr/i.test(`${bestPy.basefont || ''} ${bestPy.font || ''}`)) {
+                                            this.smartPatchData.baseFontFamily = 'Liberation Sans';
+                                        }
+
+                                        if (!this.smartPatchData._isSubSpan && _ocrSpans.every(s => Array.isArray(s.bbox) && s.bbox.length === 4)) {
+                                            const _uX0 = Math.min(..._ocrSpans.map(s => s.bbox[0]));
+                                            const _uY0 = Math.min(..._ocrSpans.map(s => s.bbox[1]));
+                                            const _uX1 = Math.max(..._ocrSpans.map(s => s.bbox[2]));
+                                            const _uY1 = Math.max(..._ocrSpans.map(s => s.bbox[3]));
+                                            this.smartPatchData.x = _uX0;
+                                            this.smartPatchData.y = _uY0;
+                                            this.smartPatchData.width = Math.max(_uX1 - _uX0, _jsSelW);
+                                            this.smartPatchData.height = Math.max(_uY1 - _uY0, this.smartPatchData.fontSize);
+                                            this.smartPatchData.pdfFullSpanX = _uX0;
+                                            this.smartPatchData.pdfFullSpanW = _uX1 - _uX0;
+
+                                            const _lTol = Math.max(3, (this.smartPatchData.fontSize || 10) * 0.5);
+                                            const _sortedOcr = [..._ocrSpans].sort((a, b) => {
+                                                const ay = Array.isArray(a.origin) ? a.origin[1] : a.bbox[3];
+                                                const by = Array.isArray(b.origin) ? b.origin[1] : b.bbox[3];
+                                                if (Math.abs(ay - by) > _lTol) return ay - by;
+                                                return a.bbox[0] - b.bbox[0];
+                                            });
+                                            const _ocrLines = [];
+                                            let _curOcrLn = [], _curOcrY = null;
+                                            for (const _sp of _sortedOcr) {
+                                                const _oy = Array.isArray(_sp.origin) ? _sp.origin[1] : _sp.bbox[3];
+                                                if (_curOcrY === null || Math.abs(_oy - _curOcrY) > _lTol) {
+                                                    if (_curOcrLn.length) _ocrLines.push(_curOcrLn);
+                                                    _curOcrLn = [_sp];
+                                                    _curOcrY = _oy;
+                                                } else {
+                                                    _curOcrLn.push(_sp);
+                                                }
+                                            }
+                                            if (_curOcrLn.length) _ocrLines.push(_curOcrLn);
+
+                                            const _lineOrigins = _ocrLines.map(ln => {
+                                                ln.sort((a, b) => a.bbox[0] - b.bbox[0]);
+                                                const _minX = ln[0].bbox[0];
+                                                const _oys = ln.map(s => Array.isArray(s.origin) ? s.origin[1] : s.bbox[3]).sort((a, b) => a - b);
+                                                return [_minX, _oys[Math.floor(_oys.length / 2)]];
+                                            });
+                                            if (_lineOrigins.length > 0) {
+                                                this.smartPatchData.origin = _lineOrigins[0];
+                                                this.smartPatchData.lineOrigins = _lineOrigins;
+                                            }
+
+                                            const _joinedOcr = _ocrLines
+                                                .map(ln => ln.map(s => (s.text || '').trim()).filter(Boolean).join(' '))
+                                                .filter(Boolean)
+                                                .join('\n')
+                                                .trim();
+                                            if (_joinedOcr) this.smartPatchData.text = _joinedOcr;
+
+                                            this.smartPatchData.targetSpans = _ocrSpans.map(b => ({
+                                                bbox: b.bbox,
+                                                origin: b.origin,
+                                                font: b.font,
+                                                size: b.size,
+                                                text: b.text
+                                            }));
+                                        }
+                                    }
                                     // Fallback garantizado para párrafos: si no se obtuvieron todos los spans de Python
-                                    if (closestItem.isParagraph && (!this.smartPatchData.targetSpans || this.smartPatchData.targetSpans.length < (closestItem.blockItems?.length || 2))) {
+                                    if (closestItem.isParagraph && !(this.smartPatchData.isOcrHidden && this.smartPatchData.targetSpans?.length > 0) && (!this.smartPatchData.targetSpans || this.smartPatchData.targetSpans.length < (closestItem.blockItems?.length || 2))) {
                                         if (closestItem.blockItems && closestItem.blockItems.length > 0) {
                                             console.log(`📦 [FALLBACK-SPANS] Usando ${closestItem.blockItems.length} spans de blockItems para text_splice`);
                                             this.smartPatchData.targetSpans = closestItem.blockItems.map(it => {
@@ -2614,7 +2925,9 @@ Object.assign(app, {
                 };
 
                 // ✅ CRITICAL: Use the Python-enhanced fontName (bestPy.font) instead of PDF.js fallback
-                let fontResolution = await resolveSmartPatchFont(data.fontName, data.baseFontFamily);
+                let fontResolution = (data.isOcrHidden && /liberation\s*sans|aliothocr/i.test(`${data.fontName || ''} ${data.baseFontFamily || ''}`))
+                    ? { font: 'Arial', isFallback: false }
+                    : await resolveSmartPatchFont(data.fontName, data.baseFontFamily);
                 let webFont = fontResolution.font;
                 let isFallbackFont = fontResolution.isFallback;
 
@@ -2708,7 +3021,9 @@ Object.assign(app, {
                 // Non-surgical (fondo blanco): recortar al cap-height para no tapar líneas adyacentes
                 let objHeight = data.height;
                 console.log(`📐 [HEIGHT-FIX] isParagraph=${data.isParagraph} isSurgical=${isSurgical} origH=${data.height?.toFixed(2)} fontSize=${data.fontSize}`);
-                if (data.ascentPx && data.fontSize && !data.isParagraph) {
+                if (data.isOcrHidden) {
+                    objHeight = Math.max(data.height || 0, (data.fontSize || 10) * 1.15);
+                } else if (data.ascentPx && data.fontSize && !data.isParagraph) {
                     if (isSurgical) {
                         // Transparente: height = fontSize exacto (span y el tienen el mismo tamaño → sin padding)
                         objHeight = data.fontSize;
@@ -2933,7 +3248,7 @@ Object.assign(app, {
 
                 // 4. 🔥 Mejora con Python (PyScript) Asíncrona
                 // La textura ya fue lanzada en paralelo con getSpecificBlock — aquí solo consumimos el resultado
-                const _texturePromise = this._pendingTexturePromise || null;
+                const _texturePromise = data.isOcrHidden ? null : (this._pendingTexturePromise || null);
                 if (_texturePromise) {
                     console.log("🐍 PyScript: Esperando textura (ya en vuelo)...");
                     // Guardar el bgColor detectado ANTES de que Python pueda sobreescribirlo

@@ -581,6 +581,164 @@ class ComplexPdfOcrAndEditTests(unittest.TestCase):
             )
             self.assertEqual(vis.get("alpha", 255), 255)
 
+    def test_ci_ocr_service_bold_injection_and_column_split(self):
+        import _ocr_service
+
+        doc = fitz.open()
+        doc.new_page(width=612, height=792)
+        blank_pdf = doc.tobytes()
+        doc.close()
+
+        out_bytes, stats = _ocr_service.inject_ocr_layer_with_stats(
+            blank_pdf,
+            [{
+                "page": 0,
+                "lines": [[
+                    {"text": "NOMBRE", "bbox": [36.0, 134.5, 85.0, 143.8], "color": "#000000", "is_bold": True},
+                    {"text": "COMPLETO", "bbox": [89.0, 134.5, 160.0, 143.8], "color": "#000000", "is_bold": True},
+                    {"text": "meses", "bbox": [164.0, 137.0, 198.0, 143.8], "color": "#000000", "is_bold": True},
+                    {"text": "Metepec", "bbox": [512.0, 134.5, 555.0, 144.2], "color": "#000000", "is_bold": False},
+                ]],
+            }],
+            font_dir=str(ROOT / "fonts" / "fallback"),
+        )
+        self.assertEqual(stats["words_inserted"], 4)
+
+        with fitz.open(stream=out_bytes, filetype="pdf") as d_out:
+            spans = [
+                sp
+                for b in d_out[0].get_text("rawdict")["blocks"]
+                if b["type"] == 0
+                for ln in b["lines"]
+                for sp in ln["spans"]
+            ]
+            by_txt = {}
+            for sp in spans:
+                txt = (sp.get("text") or "".join(c.get("c", "") for c in sp.get("chars", [])))
+                by_txt[txt.strip()] = (txt, sp)
+
+            self.assertTrue(bool(by_txt["NOMBRE"][1]["flags"] & 16))
+            self.assertTrue(bool(by_txt["COMPLETO"][1]["flags"] & 16))
+            self.assertTrue(bool(by_txt["meses"][1]["flags"] & 16))
+            self.assertFalse(bool(by_txt["Metepec"][1]["flags"] & 16))
+            # Columna izquierda NO debe llevar espacio puenteando hacia la columna derecha
+            self.assertEqual(by_txt["meses"][0], "meses")
+            # Todas las palabras de la corrida comparten misma baseline (origin[1]) y tamaño real >= 8.5pt
+            self.assertLessEqual(abs(by_txt["NOMBRE"][1]["origin"][1] - by_txt["meses"][1]["origin"][1]), 0.5)
+            self.assertGreaterEqual(by_txt["meses"][1]["size"], 8.5)
+
+    def test_ci_ocr_watermark_preserving_inpainting_bold_and_baseline(self):
+        import io
+        from PIL import ImageDraw, ImageFont
+        import _ocr_service
+        import ocr_edit
+
+        bold_ttf = ROOT / "fonts" / "fallback" / "LiberationSans-Bold.ttf"
+        dpi = 250
+        w_pt, h_pt = 420.0, 160.0
+        w_px, h_px = int(w_pt * dpi / 72.0), int(h_pt * dpi / 72.0)
+
+        img = Image.new("RGB", (w_px, h_px), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+        # Círculo marca de agua color durazno detrás de la mitad derecha del texto
+        cx, cy, rad = int(w_px * 0.62), int(h_px * 0.50), int(h_px * 0.38)
+        draw.ellipse((cx - rad, cy - rad, cx + rad, cy + rad), fill=(253, 231, 210))
+
+        font_px = int(round(12.0 * dpi / 72.0))
+        pil_font = ImageFont.truetype(str(bold_ttf), font_px)
+        text_x_px, text_y_px = int(w_px * 0.12), int(h_px * 0.36)
+        old_text = "FIN: 05/05/1989 Edad: 36 años 7 meses"
+        draw.text((text_x_px, text_y_px), old_text, fill=(15, 15, 15), font=pil_font)
+
+        # Medir bbox real de tinta oscura en el scan sintético
+        gray = img.convert("L")
+        pxs = gray.load()
+        dark_xs = [x for y in range(h_px) for x in range(w_px) if pxs[x, y] < 100]
+        dark_ys = [y for y in range(h_px) for x in range(w_px) if pxs[x, y] < 100]
+        bx0 = min(dark_xs) * 72.0 / dpi
+        by0 = min(dark_ys) * 72.0 / dpi
+        bx1 = (max(dark_xs) + 1) * 72.0 / dpi
+        by1 = (max(dark_ys) + 1) * 72.0 / dpi
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        scan_doc = fitz.open()
+        scan_pg = scan_doc.new_page(width=w_pt, height=h_pt)
+        scan_pg.insert_image(scan_pg.rect, stream=buf.getvalue())
+        scan_pdf = scan_doc.tobytes()
+        scan_doc.close()
+
+        sandwich, _ = _ocr_service.inject_ocr_layer_with_stats(
+            scan_pdf,
+            [{
+                "page": 0,
+                "lines": [[{
+                    "text": old_text,
+                    "bbox": [bx0, by0, bx1, by1],
+                    "color": "#000000",
+                    "is_bold": True,
+                    "fontsize": 12.0,
+                }]],
+            }],
+            font_dir=str(ROOT / "fonts" / "fallback"),
+        )
+
+        with fitz.open(stream=sandwich, filetype="pdf") as d_pre:
+            ocr_span = next(
+                s for b in d_pre[0].get_text("dict")["blocks"] if b["type"] == 0
+                for l in b["lines"] for s in l["spans"]
+                if "Edad:" in s["text"]
+            )
+            orig_oy = float(ocr_span["origin"][1])
+
+        edited_bytes, meta = ocr_edit.apply_ocr_text_edit_bytes(
+            sandwich,
+            0,
+            {
+                "x": bx0, "y": by0, "w": bx1 - bx0, "h": by1 - by0,
+                "eraseFullX": bx0, "eraseFullY": by0, "eraseFullW": bx1 - bx0, "eraseFullH": by1 - by0,
+                "text": "F/N: 05/05/1989 Edad: 36",
+                "size": 12.0,
+                "color": "#000000",
+                "eraseBgColor": "#ffffff",
+                "isBold": True,
+                "origin": [bx0, orig_oy],
+                "targetSpans": [ocr_span],
+            },
+            font_dir=str(ROOT / "fonts" / "fallback"),
+        )
+        self.assertFalse(meta.get("overflow"))
+
+        with fitz.open(stream=edited_bytes, filetype="pdf") as d_after:
+            pg = d_after[0]
+            vis = next(
+                s for b in pg.get_text("dict")["blocks"] if b["type"] == 0
+                for l in b["lines"] for s in l["spans"]
+                if "F/N:" in s["text"]
+            )
+            self.assertEqual(vis.get("alpha", 255), 255)
+            self.assertTrue(bool(vis["flags"] & 16), "Texto editado debe conservar peso Bold")
+            self.assertLessEqual(abs(float(vis["origin"][1]) - orig_oy), 1.5)
+
+            # Verificar que no quedan píxeles oscuros del texto anterior a la derecha del nuevo texto ni debajo
+            tail_probe = fitz.Rect(bx1 - 65.0, by0 - 1.0, bx1 + 2.0, by1 + 2.0)
+            pix_tail = pg.get_pixmap(clip=tail_probe, dpi=200, colorspace=fitz.csRGB, alpha=False)
+            ts = pix_tail.samples
+            peach_count = 0
+            pure_white_count = 0
+            dark_stray = 0
+            for i in range(0, len(ts), 3):
+                r, g, b = ts[i], ts[i + 1], ts[i + 2]
+                lum = 0.299 * r + 0.587 * g + 0.114 * b
+                if lum < 140:
+                    dark_stray += 1
+                elif r >= 245 and 220 <= g <= 245 and 200 <= b <= 230 and (r - b) >= 18:
+                    peach_count += 1
+                elif r >= 253 and g >= 253 and b >= 253:
+                    pure_white_count += 1
+            self.assertEqual(dark_stray, 0, "No deben quedar píxeles oscuros del texto antiguo")
+            self.assertGreater(peach_count, pure_white_count * 2, "Debe preservar el círculo durazno sin cuadro blanco")
+
 
 if __name__ == "__main__":
     unittest.main()

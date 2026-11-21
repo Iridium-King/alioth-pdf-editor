@@ -289,3 +289,149 @@ test('app.tools.js ofrece banner no bloqueante con 1 clic para Aplicar OCR en p�
     optsBtn.listeners.click();
     assert.deepEqual(JSON.parse(JSON.stringify(openedModal)), { defaultScope: 'current', returnToEdit: true });
 });
+
+test('_filterSameColumnCluster separa columnas adyacentes sin romper bloques de la misma columna', () => {
+    const tools = read('js/app.tools.js');
+    const ctx = {
+        window: { app: {} },
+        document: { getElementById: () => null, addEventListener: () => {} },
+        setTimeout: () => 0,
+        console,
+        Object,
+        Set,
+        Math
+    };
+    vm.runInNewContext(tools, ctx);
+    const fn = ctx.window.app._filterSameColumnCluster.bind(ctx.window.app);
+    const item = (str, x, w, y = 648.5, fs = 9.9) => ({ str, width: w, transform: [fs, 0, 0, fs, x, y] });
+
+    const leftRow = [
+        item('MUÑOZ', 36.7, 36.3),
+        item('COYOTE', 76.1, 41.7),
+        item('CLARA', 121.4, 34.8),
+        item('CITLALI', 159.4, 37.4)
+    ];
+    const midRow = [
+        item('FIN:', 209.3, 18.0),
+        item('05/05/1989', 230.9, 49.4),
+        item('Edad:', 284.2, 26.4),
+        item('36', 314.6, 10.6),
+        item('años', 328.6, 22.8),
+        item('7', 354.7, 5.1),
+        item('meses', 363.4, 30.4)
+    ];
+    const rightCol = [
+        item('Metepec', 512.6, 39.6),
+        item('11125', 565.0, 27.1)
+    ];
+    const allRow = [...leftRow, ...midRow, ...rightCol];
+
+    const keptLeft = fn(allRow, [leftRow[0], leftRow[1]], { avgSize: 9.9, isSingleLine: true });
+    assert.deepEqual(JSON.parse(JSON.stringify(keptLeft.map(i => i.str))), ['MUÑOZ', 'COYOTE', 'CLARA', 'CITLALI']);
+
+    const keptMid = fn(allRow, [midRow[0], midRow[1]], { avgSize: 9.9, isSingleLine: true });
+    assert.deepEqual(JSON.parse(JSON.stringify(keptMid.map(i => i.str))), ['FIN:', '05/05/1989', 'Edad:', '36', 'años', '7', 'meses']);
+
+    // Multi-línea: conserva las filas de la columna izquierda (dr + A QUIEN gap=10.3pt < 18pt) pero excluye Metepec (118.8pt)
+    const row2 = [
+        item('Dr.', 36.7, 12.3, 634.3, 10.0),
+        item('A', 59.3, 6.7, 634.3, 10.0),
+        item('QUIEN', 69.1, 30.7, 634.3, 10.0),
+        item('Metepec2', 512.6, 40.0, 634.3, 10.0)
+    ];
+    const keptMulti = fn([...allRow, ...row2], [leftRow[0], leftRow[3]], { avgSize: 10.0, isSingleLine: false });
+    const keptTexts = keptMulti.map(i => i.str);
+    assert.ok(keptTexts.includes('MUÑOZ') && keptTexts.includes('CITLALI'));
+    assert.ok(keptTexts.includes('Dr.') && keptTexts.includes('QUIEN'));
+    assert.ok(!keptTexts.includes('Metepec') && !keptTexts.includes('Metepec2'));
+});
+
+test('commitRealTextEdit OCR omite bgImage de generateSmartTexture y preserva eraseFullY', async () => {
+    const original = new Uint8Array([1, 2, 3]).buffer;
+    const ocrOut = new Uint8Array([7, 8, 9]).buffer;
+    const src = { buffer: original, doc: null, _pdfLoadingTask: null };
+    const overlay = { id: 'e_ocr', isRealEdit: true, bgAlpha: 1, x: 40, y: 134.5, width: 120, height: 12, bold: true };
+    const page = { sourceId: 's1', pageIndex: 0, objects: [overlay] };
+    const doc = { sources: { s1: src }, currentIndex: 0, historyIndex: 0, pages: [page] };
+    let smartTexCalls = 0;
+    let receivedEdit = null;
+    const checkedDoc = {
+        async getPage() {
+            return { async getOperatorList() {}, async getTextContent() { return { items: [] }; } };
+        }
+    };
+    const loadingTask = { promise: Promise.resolve(checkedDoc), async destroy() {} };
+    const app = {
+        getDoc: () => doc,
+        currentScale: 1,
+        _pendingTextureSample: 'data:image/png;base64,AAAA',
+        splitView: { activePanel: 0 },
+        getPanelElements: () => null,
+        releasePdfSource(s) { s.doc = null; delete s._pdfLoadingTask; },
+        saveState() { doc.historyIndex += 1; },
+        trimDocumentHistory() {},
+        async loadPage() {},
+        refreshThumbnail() {},
+        _restoreContinuousIfNeeded() {},
+        updateUndoRedoUI() {},
+        toggleLoader() {},
+        renderOverlays() {},
+        showToast() {}
+    };
+    const ctx = {
+        window: { app },
+        document: { getElementById: () => null, body: { classList: { contains: () => false } } },
+        PythonManager: {
+            async generateSmartTexture() { smartTexCalls += 1; return 'data:image/png;base64,BAD'; },
+            async applyOcrTextEdit(_buf, _pno, ed) { receivedEdit = ed; return { buffer: ocrOut, overflow: false, expandedH: 12, originalH: 12 }; }
+        },
+        pdfjsLib: { getDocument: () => loadingTask },
+        console, Uint8Array, ArrayBuffer, Math, JSON
+    };
+    vm.runInNewContext(read('js/app.pdf_ops.js'), ctx);
+
+    const data = { x: 40, y: 134.5, width: 120, height: 11.1, fontSize: 9.9, isOcrHidden: true, isBold: true, origin: [40, 143.5], targetSpans: [{ text: 'OLD' }] };
+    await app._applyRealTextInlineCommitNow(overlay, data, 'NUEVO', []);
+    assert.equal(smartTexCalls, 0);
+    assert.ok(receivedEdit);
+    assert.equal(receivedEdit.bgImage, null);
+    assert.equal(receivedEdit.eraseFullY, 134.5);
+    assert.equal(receivedEdit.isBold, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(receivedEdit.origin)), [40, 143.5]);
+});
+
+test('_collectSingleLineMultiSpanItems captura los 7 spans OCR de una línea sin fusionar columnas vecinas', () => {
+    const tools = read('js/app.tools.js');
+    const ctx = {
+        window: { app: {} },
+        document: { getElementById: () => null, addEventListener: () => {} },
+        setTimeout: () => 0,
+        console,
+        Object,
+        Set,
+        Math
+    };
+    vm.runInNewContext(tools, ctx);
+    const collect = ctx.window.app._collectSingleLineMultiSpanItems.bind(ctx.window.app);
+    const item = (str, x, w, y = 648.5, fs = 9.9) => ({ str, width: w, transform: [fs, 0, 0, fs, x, y] });
+
+    const validItems = [
+        item('MUÑOZ', 36.7, 36.3),
+        item('CITLALI', 159.4, 37.4),
+        item('FIN:', 209.3, 18.0),
+        item('05/05/1989', 230.9, 49.4),
+        item('Edad:', 284.2, 26.4),
+        item('36', 314.6, 10.6),
+        item('años', 328.6, 22.8),
+        item('7', 354.7, 5.1),
+        item('meses', 363.4, 30.4),
+        item('Metepec', 512.6, 39.6)
+    ];
+
+    const res = collect(validItems, { x0: 208.0, x1: 394.5, yMin: 647.0, yMax: 658.0 });
+    assert.ok(res, 'Debe detectar selección multi-span en línea simple');
+    assert.equal(res.items.length, 7);
+    assert.equal(res.text, 'FIN: 05/05/1989 Edad: 36 años 7 meses');
+    const strs = JSON.parse(JSON.stringify(res.items.map(i => i.str)));
+    assert.ok(!strs.includes('CITLALI') && !strs.includes('Metepec'));
+});

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import os
+import statistics
 import fitz
 
 import text_splice
@@ -131,8 +132,8 @@ def _subtract_protected_boxes(rect, native_rects):
     return out if (out.is_valid and not out.is_empty and out.get_area() > 0) else fitz.Rect()
 
 
-def remove_ocr_spans_in_rect(doc, page, erase_rect, target_spans=None):
-    """Remove only hidden OCR spans inside erase_rect, never touching visible native text."""
+def _remove_ocr_spans_detailed(doc, page, erase_rect, target_spans=None):
+    """Remove only hidden OCR spans inside erase_rect and return removed info & neighbor rects."""
     text_splice.isolate_resources(doc, page)
     erect = fitz.Rect(erase_rect)
     all_spans = _extract_all_spans(page)
@@ -167,12 +168,25 @@ def remove_ocr_spans_in_rect(doc, page, erase_rect, target_spans=None):
             selected.append(sp)
             seen_ids.add(idx)
 
+    other_ocr_rects = [
+        fitz.Rect(sp["bbox"])
+        for idx, sp in enumerate(ocr_spans)
+        if idx not in seen_ids and sp.get("bbox")
+    ]
     if not selected:
-        return 0
+        return [], native_rects, other_ocr_rects
+
+    removed_info = [
+        {
+            "bbox": list(sp["bbox"]) if sp.get("bbox") else None,
+            "origin": list(sp["origin"]) if sp.get("origin") else None,
+        }
+        for sp in selected
+    ]
 
     ok, _ = text_splice.remove_spans(doc, page, selected)
     if ok:
-        return len(selected)
+        return removed_info, native_rects, other_ocr_rects
 
     # Fallback: redact strictly the OCR span bboxes clipped away from native visible spans
     added = 0
@@ -186,7 +200,294 @@ def remove_ocr_spans_in_rect(doc, page, erase_rect, target_spans=None):
             images=fitz.PDF_REDACT_IMAGE_NONE,
             graphics=fitz.PDF_REDACT_LINE_ART_NONE,
         )
-    return len(selected)
+    return removed_info, native_rects, other_ocr_rects
+
+
+def remove_ocr_spans_in_rect(doc, page, erase_rect, target_spans=None):
+    """Remove only hidden OCR spans inside erase_rect, never touching visible native text."""
+    removed, _, _ = _remove_ocr_spans_detailed(doc, page, erase_rect, target_spans=target_spans)
+    return len(removed)
+
+
+def _clip_probe_from_protected(probe, union_rect, protected_rects, margin=0.8):
+    """Clip probe edges away from neighboring visible/unselected spans."""
+    out = fitz.Rect(probe)
+    for pr in (protected_rects or []):
+        if pr.is_empty:
+            continue
+        inter_u = pr & union_rect
+        min_area = max(1e-6, min(pr.get_area(), union_rect.get_area()))
+        if not inter_u.is_empty and (inter_u.get_area() / min_area) > 0.35:
+            continue
+        inter_p = pr & out
+        if inter_p.is_empty:
+            continue
+        if pr.y1 <= union_rect.y0 + 1.5 and pr.y1 + margin < out.y1:
+            out.y0 = max(out.y0, pr.y1 + margin)
+        elif pr.y0 >= union_rect.y1 - 1.5 and pr.y0 - margin > out.y0:
+            out.y1 = min(out.y1, pr.y0 - margin)
+        elif pr.x0 >= union_rect.x1 - 1.5 and pr.x0 - margin > out.x0:
+            out.x1 = min(out.x1, pr.x0 - margin)
+        elif pr.x1 <= union_rect.x0 + 1.5 and pr.x1 + margin < out.x1:
+            out.x0 = max(out.x0, pr.x1 + margin)
+    return out if (out.is_valid and not out.is_empty and out.get_area() > 0) else fitz.Rect(probe)
+
+
+def _refine_erase_rect_to_ink(page, base_rect, removed_rects=None, protected_rects=None, dpi=300):
+    """Snap erase_rect vertically/horizontally to actual dark ink strokes while protecting neighbors."""
+    union_rect = fitz.Rect(base_rect)
+    v_band = fitz.Rect(union_rect.x0 - 8.0, union_rect.y0 - 6.0, union_rect.x1 + 8.0, union_rect.y1 + 6.0)
+    for rr in (removed_rects or []):
+        if not rr.is_empty and not (rr & v_band).is_empty:
+            union_rect |= rr
+
+    probe = fitz.Rect(union_rect.x0 - 2.0, union_rect.y0 - 3.5, union_rect.x1 + 2.0, union_rect.y1 + 3.5) & page.rect
+    if probe.is_empty or probe.width < 1.0 or probe.height < 1.0:
+        return union_rect & page.rect
+    probe = _clip_probe_from_protected(probe, union_rect, protected_rects, margin=0.8)
+    if probe.is_empty or probe.width < 1.0 or probe.height < 1.0:
+        return union_rect & page.rect
+
+    max_side = max(1.0, probe.width, probe.height)
+    eff_dpi = min(dpi, max(120, int(2400.0 * 72.0 / max_side)))
+    try:
+        pix = page.get_pixmap(clip=probe, dpi=eff_dpi, colorspace=fitz.csRGB, alpha=False)
+    except Exception:
+        return union_rect & probe
+
+    cw, ch = pix.width, pix.height
+    if cw < 3 or ch < 3:
+        return union_rect & probe
+
+    samples = pix.samples
+    sx_pt = probe.width / cw
+    sy_pt = probe.height / ch
+    scale_x = cw / max(1e-6, probe.width)
+    scale_y = ch / max(1e-6, probe.height)
+
+    top_rows = list(range(0, min(3, ch)))
+    bot_rows = list(range(max(0, ch - 3), ch))
+
+    def _band_med_rgb(c, rows):
+        rs = sorted(samples[(r * cw + c) * 3] for r in rows)
+        gs = sorted(samples[(r * cw + c) * 3 + 1] for r in rows)
+        bs = sorted(samples[(r * cw + c) * 3 + 2] for r in rows)
+        mid = len(rows) // 2
+        return rs[mid], gs[mid], bs[mid]
+
+    bg_cols = []
+    for c in range(cw):
+        tr, tg, tb = _band_med_rgb(c, top_rows)
+        br_c, bg_c, bb_c = _band_med_rgb(c, bot_rows)
+        t_lum = 0.299 * tr + 0.587 * tg + 0.114 * tb
+        b_lum = 0.299 * br_c + 0.587 * bg_c + 0.114 * bb_c
+        bg_cols.append((tr, tg, tb, t_lum) if t_lum >= b_lum else (br_c, bg_c, bb_c, b_lum))
+
+    col_l = max(0, int((union_rect.x0 - probe.x0) * scale_x) - int(1.5 * scale_x))
+    col_r = min(cw - 1, int((union_rect.x1 - probe.x0) * scale_x) + int(1.5 * scale_x))
+    if col_r < col_l:
+        col_l, col_r = 0, cw - 1
+
+    row_ink_cols = [[] for _ in range(ch)]
+    for r in range(ch):
+        row_off = r * cw * 3
+        cols_hit = []
+        for c in range(col_l, col_r + 1):
+            idx = row_off + c * 3
+            pr = samples[idx]
+            pg = samples[idx + 1]
+            pb = samples[idx + 2]
+            br, bg, bb, blum = bg_cols[c]
+            max_diff = max(abs(pr - br), abs(pg - bg), abs(pb - bb))
+            if max_diff < 48:
+                continue
+            plum = 0.299 * pr + 0.587 * pg + 0.114 * pb
+            if plum < (blum - 35.0) or plum > (blum + 55.0):
+                cols_hit.append(c)
+        row_ink_cols[r] = cols_hit
+
+    seed_top = max(0, min(ch - 1, int((union_rect.y0 - probe.y0) * scale_y)))
+    seed_bot = max(seed_top, min(ch - 1, int((union_rect.y1 - probe.y0) * scale_y)))
+    seed_rows = [r for r in range(seed_top, seed_bot + 1) if row_ink_cols[r]]
+    if not seed_rows:
+        return (union_rect + (-0.5, -0.5, 0.5, 0.5)) & probe
+
+    top_ink_r = seed_rows[0]
+    bot_ink_r = seed_rows[-1]
+
+    streak = 0
+    for r in range(top_ink_r - 1, -1, -1):
+        if row_ink_cols[r]:
+            top_ink_r = r
+            streak = 0
+        else:
+            streak += 1
+            if streak >= 3:
+                break
+
+    streak = 0
+    for r in range(bot_ink_r + 1, ch):
+        if row_ink_cols[r]:
+            bot_ink_r = r
+            streak = 0
+        else:
+            streak += 1
+            if streak >= 3:
+                break
+
+    min_c = col_r
+    max_c = col_l
+    any_ink = False
+    for r in range(top_ink_r, bot_ink_r + 1):
+        if row_ink_cols[r]:
+            any_ink = True
+            min_c = min(min_c, row_ink_cols[r][0])
+            max_c = max(max_c, row_ink_cols[r][-1])
+    if not any_ink:
+        return (union_rect + (-0.5, -0.5, 0.5, 0.5)) & probe
+
+    ink_x0 = probe.x0 + min_c * sx_pt
+    ink_y0 = probe.y0 + top_ink_r * sy_pt
+    ink_x1 = probe.x0 + (max_c + 1) * sx_pt
+    ink_y1 = probe.y0 + (bot_ink_r + 1) * sy_pt
+
+    pad = 1.2
+    refined = fitz.Rect(
+        min(union_rect.x0, ink_x0 - pad),
+        min(union_rect.y0, ink_y0 - pad),
+        max(union_rect.x1, ink_x1 + pad),
+        max(union_rect.y1, ink_y1 + pad),
+    ) & probe
+    return refined if (not refined.is_empty and refined.get_area() > 0) else (union_rect & probe)
+
+
+def _inpaint_scan_background_patch(page, erase_rect, fallback_rgb=(1.0, 1.0, 1.0), dpi=300):
+    """Reconstruct paper/watermark/gradient background over erase_rect without white cutouts."""
+    if erase_rect.is_empty or erase_rect.width < 1.0 or erase_rect.height < 1.0:
+        return None, fallback_rgb
+
+    ctx_rect = fitz.Rect(
+        erase_rect.x0 - 3.0,
+        erase_rect.y0 - 6.0,
+        erase_rect.x1 + 3.0,
+        erase_rect.y1 + 6.0,
+    ) & page.rect
+    if ctx_rect.is_empty:
+        return None, fallback_rgb
+
+    max_side = max(1.0, ctx_rect.width, ctx_rect.height)
+    eff_dpi = min(dpi, max(120, int(2400.0 * 72.0 / max_side)))
+    try:
+        pix = page.get_pixmap(clip=ctx_rect, dpi=eff_dpi, colorspace=fitz.csRGB, alpha=False)
+    except Exception:
+        return None, fallback_rgb
+
+    cw, ch = pix.width, pix.height
+    if cw < 4 or ch < 4:
+        return None, fallback_rgb
+
+    scale_x = cw / max(1e-6, ctx_rect.width)
+    scale_y = ch / max(1e-6, ctx_rect.height)
+    ix0 = max(0, min(cw - 1, int(round((erase_rect.x0 - ctx_rect.x0) * scale_x))))
+    iy0 = max(0, min(ch - 1, int(round((erase_rect.y0 - ctx_rect.y0) * scale_y))))
+    ix1 = max(ix0 + 1, min(cw, int(round((erase_rect.x1 - ctx_rect.x0) * scale_x))))
+    iy1 = max(iy0 + 1, min(ch, int(round((erase_rect.y1 - ctx_rect.y0) * scale_y))))
+    pw = ix1 - ix0
+    ph = iy1 - iy0
+    if pw < 1 or ph < 1:
+        return None, fallback_rgb
+
+    samples = pix.samples
+    top_rows = list(range(max(0, iy0 - 10), iy0))
+    bot_rows = list(range(iy1, min(ch, iy1 + 10)))
+    if not top_rows:
+        top_rows = bot_rows[:]
+    if not bot_rows:
+        bot_rows = top_rows[:]
+    if not top_rows and not bot_rows:
+        return None, fallback_rgb
+
+    def _clean_band_rgb(c_abs, rows):
+        pts = []
+        c_lo = max(0, c_abs - 1)
+        c_hi = min(cw - 1, c_abs + 1)
+        for rr in rows:
+            off_row = rr * cw * 3
+            for cc in range(c_lo, c_hi + 1):
+                i = off_row + cc * 3
+                r_v = samples[i]
+                g_v = samples[i + 1]
+                b_v = samples[i + 2]
+                lum = 0.299 * r_v + 0.587 * g_v + 0.114 * b_v
+                pts.append((lum, r_v, g_v, b_v))
+        pts.sort(key=lambda t: t[0])
+        l75 = pts[int(len(pts) * 0.75)][0]
+        clean = [p for p in pts if p[0] >= l75 - 28.0]
+        if not clean:
+            clean = [pts[-1]]
+        clean_sorted_r = sorted(p[1] for p in clean)
+        clean_sorted_g = sorted(p[2] for p in clean)
+        clean_sorted_b = sorted(p[3] for p in clean)
+        m = len(clean) // 2
+        rm, gm, bm = clean_sorted_r[m], clean_sorted_g[m], clean_sorted_b[m]
+        return rm, gm, bm, (0.299 * rm + 0.587 * gm + 0.114 * bm)
+
+    top_row = [_clean_band_rgb(ix0 + c, top_rows) for c in range(pw)]
+    bot_row = [_clean_band_rgb(ix0 + c, bot_rows) for c in range(pw)]
+
+    all_lums = sorted([t[3] for t in top_row] + [b[3] for b in bot_row])
+    page_bg_lum = all_lums[int(len(all_lums) * 0.85)]
+
+    # Protect against horizontal rules/text lines just above or below erase_rect
+    for c in range(pw):
+        if top_row[c][3] < (page_bg_lum - 50.0) and bot_row[c][3] >= (page_bg_lum - 35.0):
+            top_row[c] = bot_row[c]
+        elif bot_row[c][3] < (page_bg_lum - 50.0) and top_row[c][3] >= (page_bg_lum - 35.0):
+            bot_row[c] = top_row[c]
+
+    all_rgb = [(t[0], t[1], t[2]) for t in top_row] + [(b[0], b[1], b[2]) for b in bot_row]
+    r_vals = [p[0] for p in all_rgb]
+    g_vals = [p[1] for p in all_rgb]
+    b_vals = [p[2] for p in all_rgb]
+    spread = max(max(r_vals) - min(r_vals), max(g_vals) - min(g_vals), max(b_vals) - min(b_vals))
+    if spread <= 4:
+        avg_r = round(sum(r_vals) / len(r_vals)) / 255.0
+        avg_g = round(sum(g_vals) / len(g_vals)) / 255.0
+        avg_b = round(sum(b_vals) / len(b_vals)) / 255.0
+        return None, (avg_r, avg_g, avg_b)
+
+    def _smooth_row(row):
+        if len(row) < 3:
+            return [(t[0], t[1], t[2]) for t in row]
+        out = []
+        for idx in range(len(row)):
+            lo = max(0, idx - 1)
+            hi = min(len(row) - 1, idx + 1)
+            win = row[lo:hi + 1]
+            sr = sorted(p[0] for p in win)[len(win) // 2]
+            sg = sorted(p[1] for p in win)[len(win) // 2]
+            sb = sorted(p[2] for p in win)[len(win) // 2]
+            out.append((sr, sg, sb))
+        return out
+
+    top_sm = _smooth_row(top_row)
+    bot_sm = _smooth_row(bot_row)
+
+    out_rgb = bytearray(pw * ph * 3)
+    for r_i in range(ph):
+        t = (r_i + 0.5) / ph
+        omt = 1.0 - t
+        row_off = r_i * pw * 3
+        for c_i in range(pw):
+            tr, tg, tb = top_sm[c_i]
+            br_c, bg_c, bb_c = bot_sm[c_i]
+            o = row_off + c_i * 3
+            out_rgb[o] = max(0, min(255, int(round(omt * tr + t * br_c))))
+            out_rgb[o + 1] = max(0, min(255, int(round(omt * tg + t * bg_c))))
+            out_rgb[o + 2] = max(0, min(255, int(round(omt * tb + t * bb_c))))
+
+    pm = fitz.Pixmap(fitz.csRGB, pw, ph, bytes(out_rgb), False)
+    return pm.tobytes("png"), None
 
 
 def _pick_visible_font(font_name="helv", font_buffer=None, font_dir=None, is_bold=False, is_italic=False):
@@ -195,7 +496,9 @@ def _pick_visible_font(font_name="helv", font_buffer=None, font_dir=None, is_bol
         try:
             raw = _decode_data_url_bytes(font_buffer) if isinstance(font_buffer, str) else bytes(font_buffer)
             if raw and len(raw) > 1024:
-                return fitz.Font(fontbuffer=raw)
+                fb = fitz.Font(fontbuffer=raw)
+                if bool(fb.is_bold) == bool(is_bold) and bool(fb.is_italic) == bool(is_italic):
+                    return fb
         except Exception:
             pass
 
@@ -224,10 +527,48 @@ def _pick_visible_font(font_name="helv", font_buffer=None, font_dir=None, is_bol
             fn = "cobi" if (is_bold and is_italic) else ("cobo" if is_bold else ("coit" if is_italic else "cour"))
         else:
             fn = "hebi" if (is_bold and is_italic) else ("hebo" if is_bold else ("heit" if is_italic else "helv"))
+    else:
+        base = "ti" if lower.startswith("ti") else ("co" if lower.startswith("co") else "he")
+        if is_bold and is_italic:
+            fn = base + "bi"
+        elif is_bold:
+            fn = base + "bo"
+        elif is_italic:
+            fn = base + "it"
     try:
         return fitz.Font(fontname=fn)
     except Exception:
         return fitz.Font(fontname="helv")
+
+
+def _compute_baseline_y(irec, fs, fobj, origin=None, removed_spans=None, dragged_y=False):
+    """Compute exact baseline Y coordinate for replacement text."""
+    if not dragged_y and isinstance(origin, (list, tuple)) and len(origin) >= 2:
+        try:
+            oy = float(origin[1])
+            if abs(oy - irec.y1) <= max(fs * 1.4, 18.0):
+                return oy
+        except Exception:
+            pass
+
+    if not dragged_y and removed_spans:
+        origins_y = []
+        for sp in removed_spans:
+            orig = sp.get("origin")
+            if isinstance(orig, (list, tuple)) and len(orig) >= 2:
+                try:
+                    origins_y.append(float(orig[1]))
+                except Exception:
+                    pass
+        if origins_y:
+            top_oy = min(origins_y)
+            first_line_oys = [y for y in origins_y if abs(y - top_oy) <= max(2.0, fs * 0.6)]
+            if first_line_oys:
+                return float(statistics.median(first_line_oys))
+
+    asc = float(getattr(fobj, "ascender", 0.90) or 0.90)
+    desc = abs(float(getattr(fobj, "descender", -0.21) or 0.21))
+    return float(irec.y0 + fs * (asc / max(0.5, asc + desc)))
 
 
 def replace_ocr_region(
@@ -249,18 +590,36 @@ def replace_ocr_region(
     is_bold=False,
     is_italic=False,
     expand_if_needed=True,
+    origin=None,
+    line_origins=None,
+    dragged_y=False,
+    segments=None,
 ):
-    """Remove old hidden OCR span(s), patch background pixels, and insert visible text."""
+    """Remove old hidden OCR span(s), patch background seamlessly, and insert visible text at exact baseline."""
     erect = fitz.Rect(erase_rect)
     irec = fitz.Rect(insert_rect)
-    remove_ocr_spans_in_rect(doc, page, erect, target_spans=target_spans)
+    removed_spans, native_rects, other_ocr_rects = _remove_ocr_spans_detailed(
+        doc, page, erect, target_spans=target_spans
+    )
+
+    removed_rects = [fitz.Rect(s["bbox"]) for s in removed_spans if s.get("bbox")]
+    final_erase_rect = erect
+    if not erect.is_empty:
+        final_erase_rect = _refine_erase_rect_to_ink(
+            page, erect, removed_rects=removed_rects, protected_rects=native_rects + other_ocr_rects
+        )
 
     # 1. Visual background patch over scanned image area
     img_bytes = _decode_data_url_bytes(bg_image_bytes)
-    if img_bytes and not erect.is_empty:
-        page.insert_image(erect, stream=img_bytes, keep_proportion=False, overlay=True)
-    elif not erect.is_empty:
-        page.draw_rect(erect, color=rgb_bg, fill=rgb_bg, width=0, overlay=True)
+    if img_bytes and not final_erase_rect.is_empty:
+        page.insert_image(final_erase_rect, stream=img_bytes, keep_proportion=False, overlay=True)
+    elif not final_erase_rect.is_empty:
+        png_bytes, uni_rgb = _inpaint_scan_background_patch(page, final_erase_rect, fallback_rgb=rgb_bg)
+        if png_bytes:
+            page.insert_image(final_erase_rect, stream=png_bytes, keep_proportion=False, overlay=True)
+        else:
+            fill_rgb = uni_rgb if uni_rgb is not None else rgb_bg
+            page.draw_rect(final_erase_rect, color=fill_rgb, fill=fill_rgb, width=0, overlay=True)
 
     text_val = str(new_text or "")
     orig_h = float(irec.height)
@@ -276,9 +635,94 @@ def replace_ocr_region(
             is_bold=is_bold,
             is_italic=is_italic,
         )
-        # Ensure minimum single-line height & width slack for slightly wider replacement words
+        baseline_y = _compute_baseline_y(
+            irec, fs, fobj, origin=origin, removed_spans=removed_spans, dragged_y=dragged_y
+        )
+        asc = float(getattr(fobj, "ascender", 0.90) or 0.90)
+        lh_mult = max(1.05, float(line_height or 1.2))
+        has_newlines = "\n" in text_val.rstrip("\n")
+
+        if not has_newlines:
+            single_text = text_val.replace("\n", "")
+            seg_list = segments if (isinstance(segments, list) and len(segments) > 1) else None
+            if seg_list:
+                seg_fonts = [
+                    _pick_visible_font(
+                        font_name=s.get("font") or font_name,
+                        font_buffer=font_buffer if (bool(s.get("isBold", is_bold)) == bool(is_bold) and bool(s.get("isItalic", is_italic)) == bool(is_italic)) else None,
+                        font_dir=font_dir,
+                        is_bold=bool(s.get("isBold", is_bold)),
+                        is_italic=bool(s.get("isItalic", is_italic)),
+                    )
+                    for s in seg_list
+                ]
+                text_w = sum(sf.text_length(str(s.get("text") or ""), fontsize=fs) for s, sf in zip(seg_list, seg_fonts))
+            else:
+                text_w = fobj.text_length(single_text, fontsize=fs)
+
+            align_i = int(alignment or 0)
+            if align_i == 2:
+                x_start = max(irec.x0, irec.x1 - text_w)
+            elif align_i == 1:
+                x_start = irec.x0 + max(0.0, (irec.width - text_w) * 0.5)
+            else:
+                x_start = irec.x0
+
+            if x_start + text_w <= page.rect.x1 - 4.0 or not expand_if_needed:
+                if seg_list:
+                    cur_x = x_start
+                    for s, sf in zip(seg_list, seg_fonts):
+                        stxt = str(s.get("text") or "")
+                        if not stxt:
+                            continue
+                        srgb = _hex_to_rgb(s.get("color"), fallback=rgb_text) if s.get("color") else rgb_text
+                        tw_s = fitz.TextWriter(page.rect)
+                        tw_s.append(fitz.Point(cur_x, baseline_y), stxt, font=sf, fontsize=fs)
+                        tw_s.write_text(page, color=srgb, overlay=True)
+                        cur_x += sf.text_length(stxt, fontsize=fs)
+                else:
+                    tw = fitz.TextWriter(page.rect)
+                    tw.append(fitz.Point(x_start, baseline_y), single_text, font=fobj, fontsize=fs)
+                    tw.write_text(page, color=rgb_text, overlay=True)
+                expanded_h = float(max(orig_h, fs * 1.15))
+                return {"overflow": False, "expanded_h": expanded_h, "original_h": orig_h}
+
+        # Multi-line or long wrapped line anchored via baseline_y
+        y0_top = max(0.0, baseline_y - fs * asc)
+        lines = text_val.splitlines() or [text_val]
+        if len(lines) > 1 and not any(len(ln) > 120 for ln in lines):
+            max_line_w = max(fobj.text_length(ln, fontsize=fs) for ln in lines)
+            avail_w = max(irec.width, page.rect.x1 - irec.x0 - 4.0) if expand_if_needed else irec.width
+            if max_line_w <= avail_w + 2.0:
+                tw = fitz.TextWriter(page.rect)
+                last_by = baseline_y
+                for idx, ln in enumerate(lines):
+                    if (
+                        not dragged_y
+                        and isinstance(line_origins, (list, tuple))
+                        and idx < len(line_origins)
+                        and isinstance(line_origins[idx], (list, tuple))
+                        and len(line_origins[idx]) >= 2
+                    ):
+                        by = float(line_origins[idx][1])
+                        bx = float(line_origins[idx][0]) if alignment == 0 else irec.x0
+                    else:
+                        by = baseline_y + idx * (fs * lh_mult)
+                        bx = irec.x0
+                    if ln:
+                        lw = fobj.text_length(ln, fontsize=fs)
+                        if int(alignment or 0) == 2:
+                            bx = max(irec.x0, irec.x1 - lw)
+                        elif int(alignment or 0) == 1:
+                            bx = irec.x0 + max(0.0, (irec.width - lw) * 0.5)
+                        tw.append(fitz.Point(bx, by), ln, font=fobj, fontsize=fs)
+                    last_by = by
+                tw.write_text(page, color=rgb_text, overlay=True)
+                expanded_h = float(max(orig_h, (last_by - baseline_y) + fs * lh_mult))
+                return {"overflow": False, "expanded_h": expanded_h, "original_h": orig_h}
+
         min_line_h = fs * max(1.25, float(line_height or 1.2))
-        trial_rect = fitz.Rect(irec.x0, irec.y0, irec.x1, max(irec.y1, irec.y0 + min_line_h))
+        trial_rect = fitz.Rect(irec.x0, y0_top, irec.x1, max(irec.y1, y0_top + min_line_h))
         if "\n" not in text_val.strip():
             needed_w = fobj.text_length(text_val, fontsize=fs) + 4.0
             if needed_w > trial_rect.width and expand_if_needed:
@@ -362,6 +806,10 @@ def apply_ocr_text_edit_bytes(pdf_bytes, page_num, edit_dict, font_dir=None):
             is_bold=bool(edit.get('isBold', False)),
             is_italic=bool(edit.get('isItalic', False)),
             expand_if_needed=bool(edit.get('expandIfNeeded', True)),
+            origin=edit.get('origin'),
+            line_origins=edit.get('lineOrigins'),
+            dragged_y=bool(edit.get('draggedY', False)),
+            segments=edit.get('segments'),
         )
         out_bytes = doc.tobytes(garbage=1, deflate=True)
     return out_bytes, meta

@@ -7,6 +7,7 @@ por línea base y escalada horizontalmente (morph) sin alterar imágenes ni text
 import json
 import os
 from pathlib import Path
+import statistics
 import subprocess
 import tempfile
 import threading
@@ -182,35 +183,109 @@ def _hex_to_rgb(color_hex):
         return (0.0, 0.0, 0.0)
 
 
-def _sample_word_ink_hex(pil_img, px0, py0, pw, ph):
-    """Muestrea el color más contrastante respecto al borde dentro de la caja de palabra."""
+def _analyze_word_ink(pil_img, px0, py0, pw, ph, sx_pt=None, sy_pt=None):
+    """Analiza tinta real, bbox apretado y grosor de trazo de una palabra a resolución nativa."""
+    fallback = {"color": "#000000"}
+    if pil_img is None:
+        return fallback
     try:
         iw, ih = pil_img.size
-        x0 = max(0, min(iw - 1, int(px0)))
-        y0 = max(0, min(ih - 1, int(py0)))
-        x1 = max(x0 + 1, min(iw, int(px0 + max(1.0, pw))))
-        y1 = max(y0 + 1, min(ih, int(py0 + max(1.0, ph))))
+        x0 = max(0, min(iw - 1, int(px0) - 1))
+        y0 = max(0, min(ih - 1, int(py0) - 1))
+        x1 = max(x0 + 1, min(iw, int(px0 + max(1.0, pw)) + 2))
+        y1 = max(y0 + 1, min(ih, int(py0 + max(1.0, ph)) + 2))
         crop = pil_img.crop((x0, y0, x1, y1))
-        if crop.width > 48 or crop.height > 24:
-            crop = crop.resize((min(48, crop.width), min(24, crop.height)))
-        pixels = list(crop.get_flattened_data() if hasattr(crop, "get_flattened_data") else crop.getdata())
-        if not pixels:
-            return "#000000"
-        # Estimar luminancia del fondo con las esquinas del crop
         cw, ch = crop.size
-        corners = [
-            crop.getpixel((0, 0)),
-            crop.getpixel((cw - 1, 0)),
-            crop.getpixel((0, ch - 1)),
-            crop.getpixel((cw - 1, ch - 1)),
-        ]
-        bg_lums = [0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2] for p in corners]
-        bg_lum = sorted(bg_lums)[len(bg_lums) // 2]
-        # Elegir píxel con mayor contraste frente al fondo (tinta real)
-        best_p = min(pixels, key=lambda p: (0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) if bg_lum >= 128 else -(0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]))
-        return f"#{best_p[0]:02x}{best_p[1]:02x}{best_p[2]:02x}"
+        if cw < 1 or ch < 1:
+            return fallback
+
+        rgb_pixels = list(crop.get_flattened_data() if hasattr(crop, "get_flattened_data") else crop.getdata())
+        gray_crop = crop.convert("L")
+        pxs = list(gray_crop.get_flattened_data() if hasattr(gray_crop, "get_flattened_data") else gray_crop.getdata())
+        if not pxs:
+            return fallback
+
+        bdr = []
+        for c in range(cw):
+            bdr.append(pxs[c])
+            bdr.append(pxs[(ch - 1) * cw + c])
+        for r in range(ch):
+            bdr.append(pxs[r * cw])
+            bdr.append(pxs[r * cw + (cw - 1)])
+        bdr_sorted = sorted(bdr)
+        bg_lum = bdr_sorted[int(len(bdr_sorted) * 0.7)]
+        mn = min(pxs)
+        mx = max(pxs)
+        is_light_bg = bg_lum >= 128
+
+        if is_light_bg:
+            thr = bg_lum - max(35.0, (bg_lum - mn) * 0.45)
+        else:
+            thr = bg_lum + max(35.0, (mx - bg_lum) * 0.45)
+
+        xs = []
+        ys = []
+        ink_rgbs = []
+        runs = []
+        for r in range(ch):
+            row_off = r * cw
+            run = 0
+            for c in range(cw):
+                lum = pxs[row_off + c]
+                is_ink = (lum < thr) if is_light_bg else (lum > thr)
+                if is_ink:
+                    xs.append(c)
+                    ys.append(r)
+                    rgb = rgb_pixels[row_off + c]
+                    ink_rgbs.append((lum, rgb[0], rgb[1], rgb[2]))
+                    run += 1
+                else:
+                    if run > 0:
+                        runs.append(run)
+                        run = 0
+            if run > 0:
+                runs.append(run)
+
+        if not xs:
+            return fallback
+
+        ink_rgbs.sort(key=lambda t: t[0], reverse=(not is_light_bg))
+        sample_n = max(1, int(len(ink_rgbs) * 0.4))
+        top_ink = ink_rgbs[:sample_n]
+        mr_c = int(statistics.median([t[1] for t in top_ink]))
+        mg_c = int(statistics.median([t[2] for t in top_ink]))
+        mb_c = int(statistics.median([t[3] for t in top_ink]))
+        color_hex = f"#{mr_c:02x}{mg_c:02x}{mb_c:02x}"
+
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        iw_px = max_x - min_x + 1
+        ih_px = max_y - min_y + 1
+        dens = len(xs) / max(1, iw_px * ih_px)
+        runs_f = [r_len for r_len in runs if r_len <= iw_px * 0.7] or runs
+        mean_run = (sum(runs_f) / len(runs_f)) if runs_f else 0.0
+
+        res = {
+            "color": color_hex,
+            "ink_dens": round(dens, 4),
+            "ink_mean_run": round(mean_run, 3),
+            "ink_h_px": ih_px,
+        }
+        if sx_pt is not None and sy_pt is not None:
+            res["ink_bbox"] = [
+                round((x0 + min_x) * sx_pt, 3),
+                round((y0 + min_y) * sy_pt, 3),
+                round((x0 + max_x + 1) * sx_pt, 3),
+                round((y0 + max_y + 1) * sy_pt, 3),
+            ]
+        return res
     except Exception:
-        return "#000000"
+        return fallback
+
+
+def _sample_word_ink_hex(pil_img, px0, py0, pw, ph):
+    """Muestrea el color más contrastante respecto al borde dentro de la caja de palabra."""
+    return _analyze_word_ink(pil_img, px0, py0, pw, ph).get("color", "#000000")
 
 
 def ocr_pages_windows(pdf_bytes, page_indices=None, lang="es", dpi=300, skip_digital=True):
@@ -383,8 +458,8 @@ $json = @{ lang = $engine.RecognizerLanguage.LanguageTag; pages = $results } | C
                             if not txt:
                                 continue
                             px, py, pw, ph = float(w["x"]), float(w["y"]), float(w["w"]), float(w["h"])
-                            color_hex = _sample_word_ink_hex(pil_img, px, py, pw, ph) if pil_img is not None else "#000000"
-                            w_list.append({
+                            ink = _analyze_word_ink(pil_img, px, py, pw, ph, sx_pt=sx_pt, sy_pt=sy_pt) if pil_img is not None else {"color": "#000000"}
+                            word_entry = {
                                 "text": txt,
                                 "bbox": [
                                     round(px * sx_pt, 3),
@@ -392,8 +467,15 @@ $json = @{ lang = $engine.RecognizerLanguage.LanguageTag; pages = $results } | C
                                     round((px + pw) * sx_pt, 3),
                                     round((py + ph) * sy_pt, 3),
                                 ],
-                                "color": color_hex,
-                            })
+                                "color": ink.get("color", "#000000"),
+                            }
+                            if "ink_bbox" in ink:
+                                word_entry["ink_bbox"] = ink["ink_bbox"]
+                            if "ink_dens" in ink:
+                                word_entry["ink_dens"] = ink["ink_dens"]
+                                word_entry["ink_mean_run"] = ink["ink_mean_run"]
+                                word_entry["ink_h_px"] = ink["ink_h_px"]
+                            w_list.append(word_entry)
                         if w_list:
                             lines_converted.append(w_list)
                 finally:
@@ -425,12 +507,16 @@ def _group_flat_words_into_lines(words):
         x0, y0, x1, y1 = [float(v) for v in bbox]
         if x1 <= x0 or y1 <= y0:
             continue
-        valid.append({
+        item = {
             "text": txt,
             "bbox": [x0, y0, x1, y1],
             "color": w.get("color", "#000000"),
             "fontsize": w.get("fontsize"),
-        })
+        }
+        for extra_k in ("ink_bbox", "ink_dens", "ink_mean_run", "ink_h_px", "is_bold"):
+            if extra_k in w:
+                item[extra_k] = w[extra_k]
+        valid.append(item)
     valid.sort(key=lambda it: ((it["bbox"][1] + it["bbox"][3]) * 0.5, it["bbox"][0]))
 
     lines = []
@@ -479,12 +565,155 @@ def _normalize_pages_words(pages_words):
     return normalized
 
 
-def _resolve_ocr_font_path(font_dir=None):
+_DESCENDER_CHARS = set("gjpqyQ,;()[]{}")
+_UPPER_ACCENT_CHARS = set("ÁÉÍÓÚÀÈÌÒÙÂÊÎÔÛÄËÏÖÜÑÇ")
+_ASCENDER_EXTRA = set("bdfhklt¡!¿?()[]{}/\\áéíóúñü")
+
+
+def _word_box(word):
+    b = word.get("ink_bbox") or word["bbox"]
+    return [float(b[0]), float(b[1]), float(b[2]), float(b[3])]
+
+
+def _split_line_into_column_runs(line_words):
+    """Divide una línea OCR en corridas horizontales separadas cuando hay saltos entre columnas."""
+    ordered = sorted(
+        [w for w in line_words if str(w.get("text") or "").strip() and len(w.get("bbox") or []) == 4],
+        key=lambda w: _word_box(w)[0],
+    )
+    if len(ordered) <= 1:
+        return [ordered] if ordered else []
+
+    heights = [max(1.0, _word_box(w)[3] - _word_box(w)[1]) for w in ordered]
+    med_h = statistics.median(heights)
+    max_gap = max(18.0, med_h * 2.5)
+
+    runs = [[ordered[0]]]
+    for w in ordered[1:]:
+        prev_x1 = _word_box(runs[-1][-1])[2]
+        curr_x0 = _word_box(w)[0]
+        if (curr_x0 - prev_x1) > max_gap:
+            runs.append([w])
+        else:
+            runs[-1].append(w)
+    return runs
+
+
+def _classify_run_bold(run_words):
+    """Determina is_bold por palabra a partir del grosor de trazo medido en la imagen fuente."""
+    if not run_words:
+        return []
+    if all(w.get("is_bold") is not None for w in run_words):
+        return [bool(w.get("is_bold")) for w in run_words]
+
+    cap_px_vals = [
+        float(w["ink_h_px"])
+        for w in run_words
+        if w.get("ink_h_px") and any(c.isupper() or c.isdigit() or c in _ASCENDER_EXTRA for c in str(w.get("text") or ""))
+    ]
+    all_px_vals = [float(w["ink_h_px"]) for w in run_words if w.get("ink_h_px")]
+    line_cap_px = statistics.median(cap_px_vals) if cap_px_vals else (max(all_px_vals) if all_px_vals else 1.0)
+    cap_pts = [
+        max(1.0, _word_box(w)[3] - _word_box(w)[1])
+        for w in run_words
+        if any(c.isupper() or c.isdigit() or c in _ASCENDER_EXTRA for c in str(w.get("text") or ""))
+    ]
+    cap_pt = statistics.median(cap_pts) if cap_pts else 8.0
+
+    raw_flags = []
+    confident = []
+    for w in run_words:
+        if w.get("is_bold") is not None:
+            raw_flags.append(bool(w["is_bold"]))
+            confident.append(True)
+            continue
+        dens = w.get("ink_dens")
+        mean_run = w.get("ink_mean_run")
+        if dens is None or mean_run is None:
+            raw_flags.append(False)
+            confident.append(True)
+            continue
+        dens_f = float(dens)
+        ih_px = float(w.get("ink_h_px") or line_cap_px or 1.0)
+        denom = max(line_cap_px * 0.90, min(ih_px, line_cap_px * 1.08), 1.0)
+        sr = float(mean_run) / denom
+        is_b = (dens_f >= 0.365 and sr >= 0.205) or (dens_f >= 0.415 and sr >= 0.175) or (sr >= 0.25 and dens_f >= 0.28)
+        raw_flags.append(bool(is_b))
+        alnum_cnt = sum(1 for ch in str(w.get("text") or "") if ch.isalnum())
+        confident.append(alnum_cnt >= 3)
+
+    gap_thr = max(8.0, cap_pt * 1.1)
+    smoothed = list(raw_flags)
+    for i in range(len(run_words)):
+        if confident[i]:
+            continue
+        b_cur = _word_box(run_words[i])
+        neighbors = []
+        if i > 0:
+            b_prev = _word_box(run_words[i - 1])
+            if (b_cur[0] - b_prev[2]) < gap_thr:
+                neighbors.append((raw_flags[i - 1], confident[i - 1]))
+        if i + 1 < len(run_words):
+            b_next = _word_box(run_words[i + 1])
+            if (b_next[0] - b_cur[2]) < gap_thr:
+                neighbors.append((raw_flags[i + 1], confident[i + 1]))
+        if len(neighbors) == 2 and neighbors[0][0] == neighbors[1][0]:
+            smoothed[i] = neighbors[0][0]
+        elif len(neighbors) == 1 and neighbors[0][1]:
+            smoothed[i] = neighbors[0][0]
+    return smoothed
+
+
+def _compute_run_typography(run_words):
+    """Calcula la línea base común y el tamaño tipográfico real (em pt) de una corrida OCR."""
+    no_desc_bases = []
+    all_bases = []
+    for w in run_words:
+        txt = str(w.get("text") or "").strip()
+        _, y0, _, y1 = _word_box(w)
+        h = max(1.0, y1 - y0)
+        if any(c in _DESCENDER_CHARS for c in txt):
+            all_bases.append(y1 - 0.21 * h)
+        else:
+            no_desc_bases.append(y1)
+            all_bases.append(y1)
+
+    line_y_base = statistics.median(no_desc_bases) if no_desc_bases else statistics.median(all_bases)
+
+    high_conf_fs = []
+    all_fs = []
+    for w in run_words:
+        if w.get("fontsize"):
+            val = float(w["fontsize"])
+            if val > 0:
+                high_conf_fs.append(val)
+                all_fs.append(val)
+            continue
+        txt = str(w.get("text") or "").strip()
+        _, y0, _, y1 = _word_box(w)
+        asc_h = max(1.0, line_y_base - y0)
+        if any(c in _UPPER_ACCENT_CHARS for c in txt):
+            est = asc_h / 0.90
+            high_conf_fs.append(est)
+        elif any(c.isupper() or c.isdigit() or c in _ASCENDER_EXTRA for c in txt):
+            est = asc_h / 0.72
+            high_conf_fs.append(est)
+        else:
+            est = asc_h / 0.53
+        all_fs.append(est)
+
+    raw_fs = statistics.median(high_conf_fs) if high_conf_fs else statistics.median(all_fs)
+    line_fs = max(5.0, min(72.0, raw_fs))
+    return line_y_base, line_fs
+
+
+def _resolve_ocr_font_path(font_dir=None, bold=False):
+    fname = "LiberationSans-Bold.ttf" if bold else "LiberationSans-Regular.ttf"
     candidates = []
     if font_dir:
-        candidates.append(os.path.join(font_dir, "LiberationSans-Regular.ttf"))
+        candidates.append(os.path.join(font_dir, fname))
     here = os.path.dirname(os.path.abspath(__file__))
-    candidates.append(os.path.join(here, "fonts", "fallback", "LiberationSans-Regular.ttf"))
+    candidates.append(os.path.join(here, "fonts", "fallback", fname))
     for p in candidates:
         if p and os.path.isfile(p):
             return p
@@ -499,9 +728,14 @@ def inject_ocr_layer_with_stats(pdf_bytes, pages_words, font_dir=None):
     pages_modified = []
     try:
         had_existing_fonts = any(bool(doc[i].get_fonts()) for i in range(len(doc)))
-        ttf_path = _resolve_ocr_font_path(font_dir)
-        fobj = fitz.Font(fontfile=ttf_path) if ttf_path else fitz.Font("helv")
-        font_name = "AliothOCRFont" if ttf_path else "helv"
+        ttf_reg = _resolve_ocr_font_path(font_dir, bold=False)
+        ttf_bold = _resolve_ocr_font_path(font_dir, bold=True)
+        fobj_reg = fitz.Font(fontfile=ttf_reg) if ttf_reg else fitz.Font("helv")
+        fobj_bold = fitz.Font(fontfile=ttf_bold) if ttf_bold else fitz.Font("hebo")
+        reg_name_default = "AliothOCRFont" if ttf_reg else "helv"
+        bold_name_default = "AliothOCRFontBold" if ttf_bold else "hebo"
+        any_bold_pages = False
+        any_reg_pages = False
 
         for pno, lines in sorted(by_page.items()):
             if pno < 0 or pno >= len(doc) or not lines:
@@ -510,45 +744,74 @@ def inject_ocr_layer_with_stats(pdf_bytes, pages_words, font_dir=None):
             _isolate_resources(doc, page)
             before_xrefs = set(page.get_contents() or [])
 
-            used_font_name = font_name
-            used_fobj = fobj
-            if ttf_path:
+            prepared_runs = []
+            has_reg_words = False
+            has_bold_words = False
+            for line_words in lines:
+                for run_words in _split_line_into_column_runs(line_words):
+                    line_y_base, line_fs = _compute_run_typography(run_words)
+                    bold_flags = _classify_run_bold(run_words)
+                    for bflag in bold_flags:
+                        if bflag:
+                            has_bold_words = True
+                        else:
+                            has_reg_words = True
+                    prepared_runs.append((run_words, line_y_base, line_fs, bold_flags))
+
+            if has_bold_words:
+                any_bold_pages = True
+            if has_reg_words or not has_bold_words:
+                any_reg_pages = True
+
+            used_reg_name = reg_name_default
+            used_reg_fobj = fobj_reg
+            if ttf_reg and (has_reg_words or not has_bold_words):
                 try:
-                    page.insert_font(fontname=font_name, fontfile=ttf_path)
+                    page.insert_font(fontname=reg_name_default, fontfile=ttf_reg)
                 except Exception:
-                    used_font_name = "helv"
-                    used_fobj = fitz.Font("helv")
+                    used_reg_name = "helv"
+                    used_reg_fobj = fitz.Font("helv")
+
+            used_bold_name = bold_name_default
+            used_bold_fobj = fobj_bold
+            if has_bold_words and ttf_bold:
+                try:
+                    page.insert_font(fontname=bold_name_default, fontfile=ttf_bold)
+                except Exception:
+                    used_bold_name = "hebo"
+                    used_bold_fobj = fitz.Font("hebo")
 
             sh = page.new_shape()
             page_word_count = 0
-            for line_words in lines:
-                for idx, word in enumerate(line_words):
+            for run_words, line_y_base, line_fs, bold_flags in prepared_runs:
+                for idx, (word, is_bold) in enumerate(zip(run_words, bold_flags)):
                     raw_text = str(word.get("text") or "").strip()
                     if not raw_text:
                         continue
-                    x0, y0, x1, y1 = [float(v) for v in word["bbox"]]
-                    box_h = max(2.0, y1 - y0)
+                    x0, y0, x1, y1 = _word_box(word)
                     box_w = max(1.0, x1 - x0)
-                    y_base = y1 - box_h * 0.18
-                    fs = float(word.get("fontsize") or max(4.0, box_h * 0.85))
+                    y_base = max(y0 + 1.0, min(y1 + 2.0, line_y_base))
+                    fs = float(word.get("fontsize") or line_fs)
                     if fs <= 0:
-                        fs = max(4.0, box_h * 0.85)
+                        fs = line_fs
 
+                    w_font_name = used_bold_name if is_bold else used_reg_name
+                    w_fobj = used_bold_fobj if is_bold else used_reg_fobj
                     try:
-                        nat_w = used_fobj.text_length(raw_text, fontsize=fs)
+                        nat_w = w_fobj.text_length(raw_text, fontsize=fs)
                     except Exception:
                         nat_w = len(raw_text) * fs * 0.5
                     if not nat_w or nat_w <= 0:
                         nat_w = max(0.5, len(raw_text) * fs * 0.5)
-                    sx = max(0.25, min(4.0, box_w / max(nat_w, 0.5)))
+                    sx = max(0.35, min(3.0, box_w / max(nat_w, 0.5)))
 
-                    insert_str = raw_text + (" " if idx < len(line_words) - 1 else "")
+                    insert_str = raw_text + (" " if idx < len(run_words) - 1 else "")
                     pt = fitz.Point(x0, y_base)
                     rgb_ink = _hex_to_rgb(word.get("color"))
                     sh.insert_text(
                         pt,
                         insert_str,
-                        fontname=used_font_name,
+                        fontname=w_font_name,
                         fontsize=fs,
                         color=rgb_ink,
                         render_mode=3,
@@ -574,7 +837,7 @@ def inject_ocr_layer_with_stats(pdf_bytes, pages_words, font_dir=None):
             words_inserted += page_word_count
             pages_modified.append(pno)
 
-        if ttf_path and not had_existing_fonts and pages_modified:
+        if ((any_reg_pages and ttf_reg) or (any_bold_pages and ttf_bold)) and not had_existing_fonts and pages_modified:
             try:
                 doc.subset_fonts()
             except Exception:

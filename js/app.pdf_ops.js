@@ -2100,9 +2100,9 @@ invert_colors(js_data)
                         this._pendingEraseRect = null;
                     }
 
-                    // Textura de fondo (solo para modo no-quirúrgico)
+                    // Textura de fondo (solo para modo no-quirúrgico y no-OCR)
                     let texture = null;
-                    if (!_isSurgical && this._pendingTextureSample) {
+                    if (!_isSurgical && !_isOcrEdit && this._pendingTextureSample) {
                         texture = await PythonManager.generateSmartTexture(this._pendingTextureSample);
                     }
 
@@ -2215,7 +2215,7 @@ invert_colors(js_data)
                         color: textObj.color !== undefined ? textObj.color : data.textColor,
                         bgColor: _isSurgical ? 'transparent' : (textObj.bgColor || data.bgColor || '#ffffff'),
                         eraseBgColor: data.bgColor || '#ffffff',
-                        bgImage: (!_isSurgical && texture && !texture.startsWith('solid:')) ? texture : null,
+                        bgImage: (!_isSurgical && !_isOcrEdit && texture && !texture.startsWith('solid:')) ? texture : null,
                         font: textObj.font || data.fontName,
                         origin: data.origin,
                         lineOrigins: data.lineOrigins,
@@ -2238,8 +2238,8 @@ invert_colors(js_data)
                         // Rect completo del span original para add_redact_annot (borra todo el texto del span, no solo el sub-span)
                         eraseFullX: data.pdfFullSpanX !== undefined ? data.pdfFullSpanX : _cX,
                         eraseFullW: data.pdfFullSpanW !== undefined ? data.pdfFullSpanW : data.width,
-                        // Cuando hay drag, preservar Y original del span para que Python borre en la posición correcta
-                        eraseFullY: (_draggedY || _draggedX) ? data.y : undefined,
+                        // Cuando hay drag o edición OCR, preservar Y original del span para que Python borre en la posición correcta
+                        eraseFullY: (_draggedY || _draggedX || _isOcrEdit) ? data.y : undefined,
                         eraseFullH: data.height
                     };
                     window.__aliothDiag?.trace('FONT-DIAG', 'commit-payload', {
