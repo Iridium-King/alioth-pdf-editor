@@ -3365,7 +3365,9 @@ def make_searchable(data, ocr_json):
             new_xrefs = [xr for xr in (page.get_contents() or []) if xr not in before_xrefs]
             for nx in new_xrefs:
                 try:
-                    doc.update_stream(nx, b"/AliothOCR << /Type /OCR >> BDC" + nl_b + doc.xref_stream(nx) + nl_b + b"EMC" + nl_b)
+                    _raw_st = doc.xref_stream(nx)
+                    if b"BT" in _raw_st and b"/AliothOCR" not in _raw_st:
+                        doc.update_stream(nx, b"/AliothOCR << /Type /OCR >> BDC" + nl_b + _raw_st + nl_b + b"EMC" + nl_b)
                 except Exception:
                     pass
 

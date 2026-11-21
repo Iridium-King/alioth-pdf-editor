@@ -565,8 +565,9 @@ def inject_ocr_layer_with_stats(pdf_bytes, pages_words, font_dir=None):
             for nx in new_xrefs:
                 try:
                     raw_stream = doc.xref_stream(nx)
-                    wrapped = b"/AliothOCR << /Type /OCR >> BDC\n" + raw_stream + b"\nEMC\n"
-                    doc.update_stream(nx, wrapped)
+                    if b"BT" in raw_stream and b"/AliothOCR" not in raw_stream:
+                        wrapped = b"/AliothOCR << /Type /OCR >> BDC\n" + raw_stream + b"\nEMC\n"
+                        doc.update_stream(nx, wrapped)
                 except Exception:
                     pass
 

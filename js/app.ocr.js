@@ -280,7 +280,7 @@ Object.assign(window.app, {
             }
 
             // 3. Validar con PDF.js antes de publicar y reutilizar el pdfDoc cargado
-            report(94, 'Verificando PDF resultante...');
+            report(93, 'Verificando PDF resultante (abriendo)...');
             let validatedDoc = null;
             let loadingTask = null;
             if (typeof pdfjsLib !== 'undefined' && typeof pdfjsLib.getDocument === 'function') {
@@ -292,11 +292,14 @@ Object.assign(window.app, {
                 });
                 try {
                     validatedDoc = await loadingTask.promise;
+                    report(95, 'Verificando PDF resultante (página)...');
                     const checkIdx = (stats.processed_pages && stats.processed_pages[0] !== undefined)
                         ? stats.processed_pages[0]
                         : curPage.pageIndex;
                     const checkedPage = await validatedDoc.getPage(checkIdx + 1);
+                    report(96, 'Verificando PDF resultante (operadores)...');
                     await checkedPage.getOperatorList();
+                    report(97, 'Verificando PDF resultante (texto)...');
                     await checkedPage.getTextContent();
                 } catch (verifyErr) {
                     try { await loadingTask.destroy(); } catch (_) {}
@@ -314,6 +317,29 @@ Object.assign(window.app, {
             src.doc = validatedDoc || null;
             if (loadingTask) src._pdfLoadingTask = loadingTask;
 
+            (doc.pages || []).filter(p => p.sourceId === curPage.sourceId).forEach(p => {
+                this.releasePageThumbnail?.(p);
+                delete p._bgBitmap;
+            });
+            if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+                document.querySelectorAll('.bg-page-canvas').forEach(canvas => {
+                    const wrapper = canvas.closest?.('.page-wrapper');
+                    const ownerPanel = wrapper?.id?.startsWith('page-wrapper-secondary-') ? 'secondary' : 'primary';
+                    const ownerDocId = this.splitView?.[ownerPanel]?.docId || this.activeDocId;
+                    const ownerDoc = this.docs?.find?.(d => d.id === ownerDocId) || doc;
+                    const targetPage = ownerDoc?.pages?.[Number(wrapper?.dataset?.index)];
+                    if (ownerDoc !== doc || (targetPage && targetPage.sourceId !== curPage.sourceId)) return;
+                    canvas._renderedSessionToken = null;
+                    canvas._pendingSessionToken = null;
+                    canvas._renderRequestToken = null;
+                    try { canvas._activeRenderTask?.cancel(); } catch (_) {}
+                    canvas._activeRenderTask = null;
+                    canvas._renderPromise = null;
+                    canvas._pdfPage = null;
+                    canvas._pdfViewport = null;
+                });
+            }
+
             this.saveState?.();
             if (!doc._historyBuffers) doc._historyBuffers = {};
             doc._historyBuffers[doc.historyIndex] = {
@@ -324,7 +350,9 @@ Object.assign(window.app, {
             };
             this.trimDocumentHistory?.(doc);
 
+            report(98, 'Actualizando vista del documento...');
             await this.loadPage?.(doc.currentIndex);
+            report(99, 'Actualizando miniaturas...');
             this.renderSidebar?.();
             this.updateUndoRedoUI?.();
 
