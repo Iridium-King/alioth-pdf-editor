@@ -58,7 +58,7 @@
                             print(f"Python {sys.version} initialized with PIL {PIL.__version__} and PyMuPDF {pymupdf.version}")
                         `);
 
-                        // Cargar motor quirúrgico text_splice en el sistema de archivos virtual de Pyodide
+                        // Cargar motor quirúrgico text_splice y puente aislado ocr_edit en Pyodide FS
                         try {
                             const _spliceResp = await fetch('./js/engine/text_splice.py?v=3.2.50');
                             if (_spliceResp.ok) {
@@ -68,6 +68,16 @@
                             }
                         } catch (_err) {
                             console.warn("⚠️ PythonManager: Could not load text_splice.py, using legacy fallback", _err);
+                        }
+                        try {
+                            const _ocrEditResp = await fetch('./js/engine/ocr_edit.py?v=3.2.50');
+                            if (_ocrEditResp.ok) {
+                                const _ocrEditSource = await _ocrEditResp.text();
+                                this.pyodide.FS.writeFile('/home/pyodide/ocr_edit.py', _ocrEditSource);
+                                console.log("🚀 PythonManager: ocr_edit bridge loaded successfully.");
+                            }
+                        } catch (_ocrErr) {
+                            console.warn("⚠️ PythonManager: Could not load ocr_edit.py", _ocrErr);
                         }
 
                         this.isLoaded = true;
@@ -796,6 +806,28 @@ def get_block_at(data_bytes, pno, target_rect_list):
     tr = target_rect_list
     fitz_rect = fitz.Rect(float(tr[0]), float(tr[1]), float(tr[2]), float(tr[3]))
 
+    _hidden_rects = []
+    try:
+        _hidden_rects = [fitz.Rect(t['bbox']) for t in page.get_texttrace() if t.get('type') == 3 and t.get('bbox')]
+    except Exception:
+        _hidden_rects = []
+
+    def _is_hidden_ocr_span(sp):
+        if sp.get("alpha", 255) == 0:
+            return True
+        sb = sp.get("bbox")
+        if not sb or not _hidden_rects:
+            return False
+        srect = fitz.Rect(sb)
+        sarea = srect.get_area()
+        if sarea <= 0:
+            return False
+        for hr in _hidden_rects:
+            inter = hr & srect
+            if not inter.is_empty and (inter.get_area() / sarea) >= 0.45:
+                return True
+        return False
+
     def extract_spans(rect):
         # rawdict incluye chars individuales para calcular kerning real
         text_dict = page.get_text("rawdict", clip=rect)
@@ -828,6 +860,7 @@ def get_block_at(data_bytes, pno, target_rect_list):
                         span_text = span.get("text") or "".join(ch.get("c", "") for ch in span.get("chars", []))
                         span_font = span.get("font", "")
                         finfo = font_embed_map.get(span_font, {})
+                        _span_alpha = span.get("alpha", 255)
                         blocks.append({
                             "text": span_text,
                             "font": span_font,
@@ -836,6 +869,8 @@ def get_block_at(data_bytes, pno, target_rect_list):
                             "subset": finfo.get("subset", False),
                             "size": span.get("size", 12),
                             "color": hex_color,
+                            "alpha": _span_alpha,
+                            "is_ocr_hidden": bool(_is_hidden_ocr_span(span)),
                             "bbox": list(span["bbox"]),
                             "flags": span.get("flags", 0),
                             "ascender": span.get("ascender", 0.8),
@@ -1724,6 +1759,27 @@ erase_region(js_pdf_data, js_pno, js_rect)
              * @returns {Promise<ArrayBuffer>}
              */
             removeTextSpans: async function (pdfBuffer, pageNum, spans) {
+                if (this._canUseNativePdfProxy && this._canUseNativePdfProxy()) {
+                    try {
+                        const packed = this._packBinaryRequest({ pno: pageNum, spans: spans || [] }, pdfBuffer);
+                        const resp = await fetch('/api/pdf/remove-spans', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/octet-stream' },
+                            body: packed
+                        });
+                        if (resp.ok) {
+                            return await resp.arrayBuffer();
+                        }
+                        if (resp.status === 400 || resp.status === 422) {
+                            const errPayload = await resp.json().catch(() => ({}));
+                            throw new Error(errPayload.error || `text_splice HTTP ${resp.status}`);
+                        }
+                    } catch (proxyErr) {
+                        if (String(proxyErr?.message || '').includes('text_splice failed')) {
+                            throw proxyErr;
+                        }
+                    }
+                }
                 if (!this.isLoaded) await this.init();
                 console.log("🚀 PythonManager: Splicing text spans surgically from /Contents...");
                 try {
@@ -1743,7 +1799,7 @@ def do_splice(data_bytes, pno, spans_json):
     if not ok:
         raise Exception(f"text_splice failed: {info}")
     out = io.BytesIO()
-    doc.save(out, garbage=1, deflate=True)
+    doc.save(out, garbage=0, deflate=False)
     doc.close()
     return bytes(out.getvalue())
 
@@ -3226,24 +3282,95 @@ def make_searchable(data, ocr_json):
     doc = fitz.open(stream=data, filetype="pdf")
     ocr_results = json.loads(ocr_json)
     
-    # Asume que ocr_results es una lista de {text, bbox, page}
-    # bbox format: [x0, y0, x1, y1]
+    try:
+        from text_splice import isolate_resources as _iso_res
+    except Exception:
+        _iso_res = None
+
+    def _group_ocr_lines(items):
+        valid = []
+        for it in items:
+            txt = str(it.get("text") or "").strip()
+            bbox = it.get("bbox") or []
+            if not txt or len(bbox) != 4:
+                continue
+            x0, y0, x1, y1 = [float(v) for v in bbox]
+            if x1 <= x0 or y1 <= y0:
+                continue
+            valid.append({"text": txt, "bbox": [x0, y0, x1, y1], "fontsize": it.get("fontsize")})
+        valid.sort(key=lambda w: ((w["bbox"][1] + w["bbox"][3]) * 0.5, w["bbox"][0]))
+        lines = []
+        for w in valid:
+            cy = (w["bbox"][1] + w["bbox"][3]) * 0.5
+            wh = max(1.0, w["bbox"][3] - w["bbox"][1])
+            placed = False
+            for line in reversed(lines[-5:]):
+                lcy = sum((x["bbox"][1] + x["bbox"][3]) * 0.5 for x in line) / len(line)
+                lh = sum(max(1.0, x["bbox"][3] - x["bbox"][1]) for x in line) / len(line)
+                if abs(cy - lcy) <= 0.45 * min(wh, lh):
+                    line.append(w)
+                    placed = True
+                    break
+            if not placed:
+                lines.append([w])
+        for line in lines:
+            line.sort(key=lambda w: w["bbox"][0])
+        return lines
+
+    fobj = fitz.Font("helv")
+    nl_b = chr(10).encode("ascii")
+    by_page = {}
     for item in ocr_results:
-        pno = item.get("page", 0)
-        if pno < len(doc):
-            page = doc[pno]
-            # Insertar texto invisible (rendermode 3)
-            # Esto hace que el PDF se pueda buscar y copiar pero mantiene la imagen visual
-            # Nota: Esto requiere PyMuPDF >= 1.22.0 insert_text
-            page.insert_text(
-                fitz.Point(item["bbox"][0], item["bbox"][1]),
-                item["text"],
-                fontsize=item.get("fontsize", 10),
-                render_mode=3
-            )
-            
+        pno = int(item.get("page", 0))
+        if 0 <= pno < len(doc):
+            by_page.setdefault(pno, []).append(item)
+
+    for pno, items in sorted(by_page.items()):
+        page = doc[pno]
+        if _iso_res:
+            try:
+                _iso_res(doc, page)
+            except Exception:
+                pass
+        before_xrefs = set(page.get_contents() or [])
+        lines = _group_ocr_lines(items)
+        if not lines:
+            continue
+        sh = page.new_shape()
+        count = 0
+        for line_words in lines:
+            for idx, w in enumerate(line_words):
+                raw = w["text"]
+                x0, y0, x1, y1 = w["bbox"]
+                box_h = max(2.0, y1 - y0)
+                box_w = max(1.0, x1 - x0)
+                y_base = y1 - box_h * 0.18
+                fs = float(w.get("fontsize") or max(4.0, box_h * 0.85))
+                if fs <= 0:
+                    fs = max(4.0, box_h * 0.85)
+                try:
+                    nat_w = fobj.text_length(raw, fontsize=fs)
+                except Exception:
+                    nat_w = len(raw) * fs * 0.5
+                sx = max(0.25, min(4.0, box_w / max(nat_w, 0.5)))
+                txt_out = raw + (" " if idx < len(line_words) - 1 else "")
+                pt = fitz.Point(x0, y_base)
+                try:
+                    sh.insert_text(pt, txt_out, fontname="helv", fontsize=fs, render_mode=3, morph=(pt, fitz.Matrix(sx, 1.0)))
+                    count += 1
+                except Exception:
+                    pass
+        if count > 0:
+            sh.commit(overlay=True)
+            new_xrefs = [xr for xr in (page.get_contents() or []) if xr not in before_xrefs]
+            for nx in new_xrefs:
+                try:
+                    doc.update_stream(nx, b"/AliothOCR << /Type /OCR >> BDC" + nl_b + doc.xref_stream(nx) + nl_b + b"EMC" + nl_b)
+                except Exception:
+                    pass
+
     out = io.BytesIO()
-    doc.save(out, garbage=3, deflate=True)
+    doc.save(out, garbage=1, deflate=True)
     return bytes(out.getvalue())
 make_searchable(js_data, js_ocr)
                     `, { js_data: uint8, js_ocr: ocrJson });
@@ -3414,16 +3541,235 @@ apply_real_edit(js_data, js_pno, js_edit)
              * @param {Object} editData { x, y, w, h, text, size, color, bgColor, font, origin, expandIfNeeded }
              * @returns {{ buffer: ArrayBuffer, overflow: bool, expandedH: number, originalH: number }}
              */
+            _canUseNativePdfProxy: function () {
+                return !this._forcePyodide &&
+                    typeof fetch === 'function' &&
+                    typeof window !== 'undefined' &&
+                    !!(window.location && /^https?:$/i.test(window.location.protocol));
+            },
+
+            _ensureFontCacheKey: function (fontKey, fontBytes) {
+                if (!fontBytes || !(fontBytes.byteLength || fontBytes.length)) return null;
+                const u8 = fontBytes instanceof Uint8Array ? fontBytes : new Uint8Array(fontBytes);
+                let h = 2166136261;
+                const headLen = Math.min(u8.length, 256);
+                for (let i = 0; i < headLen; i++) {
+                    h = Math.imul(h ^ u8[i], 16777619);
+                }
+                const tailStart = Math.max(0, u8.length - 64);
+                for (let i = tailStart; i < u8.length; i++) {
+                    h = Math.imul(h ^ u8[i], 16777619);
+                }
+                const safeName = String(fontKey || 'font').replace(/[^a-zA-Z0-9_.-]+/g, '_').slice(0, 48);
+                return `${safeName}_${u8.length}_${(h >>> 0).toString(16)}`;
+            },
+
+            _rememberProxyFontBytes: function (cacheKey, fontBytes) {
+                if (!cacheKey || !fontBytes) return;
+                if (!this._proxyFontBytesCache) this._proxyFontBytesCache = new Map();
+                if (!this._proxyFontCacheKeys) this._proxyFontCacheKeys = new Set();
+                if (this._proxyFontBytesCache.has(cacheKey)) {
+                    this._proxyFontBytesCache.delete(cacheKey);
+                }
+                const u8 = fontBytes instanceof Uint8Array ? fontBytes : new Uint8Array(fontBytes);
+                this._proxyFontBytesCache.set(cacheKey, u8);
+                while (this._proxyFontBytesCache.size > 32) {
+                    const oldest = this._proxyFontBytesCache.keys().next().value;
+                    this._proxyFontBytesCache.delete(oldest);
+                    this._proxyFontCacheKeys.delete(oldest);
+                }
+            },
+
+            ensureCachedFont: async function (fontKey, fontBytes) {
+                const cacheKey = this._ensureFontCacheKey(fontKey, fontBytes);
+                if (!cacheKey) return null;
+                if (!this._pyodideFontCache) this._pyodideFontCache = new Map();
+                if (this._pyodideFontCache.has(cacheKey)) {
+                    return this._pyodideFontCache.get(cacheKey);
+                }
+                const safePath = `/home/pyodide/font_cache/${cacheKey}.ttf`;
+                try {
+                    if (this.pyodide?.FS) {
+                        try { this.pyodide.FS.mkdirTree('/home/pyodide/font_cache'); } catch (_) {}
+                        const u8 = fontBytes instanceof Uint8Array ? fontBytes : new Uint8Array(fontBytes);
+                        this.pyodide.FS.writeFile(safePath, u8);
+                        this._pyodideFontCache.set(cacheKey, safePath);
+                        while (this._pyodideFontCache.size > 32) {
+                            const oldestKey = this._pyodideFontCache.keys().next().value;
+                            const oldestPath = this._pyodideFontCache.get(oldestKey);
+                            this._pyodideFontCache.delete(oldestKey);
+                            try { this.pyodide.FS.unlink(oldestPath); } catch (_) {}
+                        }
+                        return safePath;
+                    }
+                } catch (e) {
+                    console.warn('🐍 PythonManager.ensureCachedFont FS error:', e);
+                }
+                return null;
+            },
+
+            _bytesToBase64Chunked: function (fontBytes) {
+                const u8 = fontBytes instanceof Uint8Array ? fontBytes : new Uint8Array(fontBytes);
+                let b64 = '';
+                const chunk = 8190;
+                for (let i = 0; i < u8.length; i += chunk) {
+                    b64 += btoa(String.fromCharCode(...u8.subarray(i, i + chunk)));
+                }
+                return b64;
+            },
+
+            _packBinaryRequest: function (metaObj, primaryBuffer, secondaryBuffer = null) {
+                const metaBytes = new TextEncoder().encode(JSON.stringify(metaObj || {}));
+                const u8A = primaryBuffer instanceof Uint8Array ? primaryBuffer : new Uint8Array(primaryBuffer || 0);
+                const u8B = secondaryBuffer ? (secondaryBuffer instanceof Uint8Array ? secondaryBuffer : new Uint8Array(secondaryBuffer)) : new Uint8Array(0);
+                const out = new Uint8Array(8 + metaBytes.length + u8A.length + u8B.length);
+                const dv = new DataView(out.buffer);
+                dv.setUint32(0, metaBytes.length, false);
+                dv.setUint32(4, u8A.length, false);
+                out.set(metaBytes, 8);
+                out.set(u8A, 8 + metaBytes.length);
+                if (u8B.length > 0) {
+                    out.set(u8B, 8 + metaBytes.length + u8A.length);
+                }
+                return out;
+            },
+
+            _postProxyEdit: async function (endpoint, pdfBuffer, pageNum, editData, originalBuffer = pdfBuffer) {
+                const payloadEdit = (editData && typeof editData === 'object') ? { ...editData } : {};
+                const sameAsWorking = originalBuffer === pdfBuffer;
+                const sendCall = async (curEdit) => {
+                    const packed = this._packBinaryRequest(
+                        { pno: pageNum, edit: curEdit, originalSameAsWorking: sameAsWorking },
+                        pdfBuffer,
+                        sameAsWorking ? null : originalBuffer
+                    );
+                    return await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/octet-stream' },
+                        body: packed
+                    });
+                };
+
+                let resp = await sendCall(payloadEdit);
+                if (resp.status === 409) {
+                    const miss = await resp.json().catch(() => ({}));
+                    const missingKeys = Array.isArray(miss.missingFontKeys) ? miss.missingFontKeys : [];
+                    if (missingKeys.length > 0 && this._proxyFontBytesCache) {
+                        for (const mk of missingKeys) {
+                            this._proxyFontCacheKeys?.delete(mk);
+                        }
+                        if (payloadEdit.fontCacheKey && missingKeys.includes(payloadEdit.fontCacheKey)) {
+                            const bytes = this._proxyFontBytesCache.get(payloadEdit.fontCacheKey);
+                            if (bytes) payloadEdit.fontBuffer = this._bytesToBase64Chunked(bytes);
+                        }
+                        if (payloadEdit.fontBufferFallbackCacheKey && missingKeys.includes(payloadEdit.fontBufferFallbackCacheKey)) {
+                            const bytes = this._proxyFontBytesCache.get(payloadEdit.fontBufferFallbackCacheKey);
+                            if (bytes) payloadEdit.fontBufferFallback = this._bytesToBase64Chunked(bytes);
+                        }
+                        if (payloadEdit.segmentFontCacheKeys && typeof payloadEdit.segmentFontCacheKeys === 'object') {
+                            const rebuiltSegs = { ...(payloadEdit.segmentFontBuffers || {}) };
+                            for (const [fk, ck] of Object.entries(payloadEdit.segmentFontCacheKeys)) {
+                                if (missingKeys.includes(ck)) {
+                                    const bytes = this._proxyFontBytesCache.get(ck);
+                                    if (bytes) rebuiltSegs[fk] = this._bytesToBase64Chunked(bytes);
+                                }
+                            }
+                            if (Object.keys(rebuiltSegs).length > 0) {
+                                payloadEdit.segmentFontBuffers = rebuiltSegs;
+                            }
+                        }
+                        resp = await sendCall(payloadEdit);
+                    }
+                }
+                if (resp.ok) {
+                    const outBuf = await resp.arrayBuffer();
+                    const cachedHeader = resp.headers.get('X-Cached-Font-Keys') || '';
+                    if (cachedHeader) {
+                        if (!this._proxyFontCacheKeys) this._proxyFontCacheKeys = new Set();
+                        for (const ck of cachedHeader.split(',')) {
+                            if (ck) this._proxyFontCacheKeys.add(ck);
+                        }
+                    }
+                    return {
+                        buffer: outBuf,
+                        overflow: resp.headers.get('X-Reflow-Overflow') === '1',
+                        expandedH: Number(resp.headers.get('X-Reflow-Expanded-H') ?? editData?.h ?? 0),
+                        originalH: Number(resp.headers.get('X-Reflow-Original-H') ?? editData?.h ?? 0)
+                    };
+                }
+                if (resp.status === 400 || resp.status === 422) {
+                    const errPayload = await resp.json().catch(() => ({}));
+                    const err = new Error(errPayload.error || `Edit HTTP ${resp.status}`);
+                    err._isValidationFailure = true;
+                    throw err;
+                }
+                return null;
+            },
+
+            _applyReflowEditViaProxy: async function (pdfBuffer, pageNum, editData, originalBuffer) {
+                return await this._postProxyEdit('/api/pdf/reflow-edit', pdfBuffer, pageNum, editData, originalBuffer);
+            },
+
+            _hydrateEditFontsForPyodide: async function (pyEditData, useCacheFiles = true) {
+                if (!pyEditData || typeof pyEditData !== 'object' || !this._proxyFontBytesCache) return;
+                if (pyEditData.fontCacheKey && !pyEditData.fontCachePath && !pyEditData.fontBuffer) {
+                    const bytes = this._proxyFontBytesCache.get(pyEditData.fontCacheKey);
+                    if (bytes) {
+                        const cachedPath = useCacheFiles ? await this.ensureCachedFont(pyEditData.fontBufferName || 'main', bytes) : null;
+                        if (cachedPath) pyEditData.fontCachePath = cachedPath;
+                        else pyEditData.fontBuffer = this._bytesToBase64Chunked(bytes);
+                    }
+                }
+                if (pyEditData.fontBufferFallbackCacheKey && !pyEditData.fontBufferFallbackCachePath && !pyEditData.fontBufferFallback) {
+                    const bytes = this._proxyFontBytesCache.get(pyEditData.fontBufferFallbackCacheKey);
+                    if (bytes) {
+                        const cachedPath = useCacheFiles ? await this.ensureCachedFont(pyEditData.fontBufferFallbackName || 'fallback', bytes) : null;
+                        if (cachedPath) pyEditData.fontBufferFallbackCachePath = cachedPath;
+                        else pyEditData.fontBufferFallback = this._bytesToBase64Chunked(bytes);
+                    }
+                }
+                if (pyEditData.segmentFontCacheKeys && typeof pyEditData.segmentFontCacheKeys === 'object') {
+                    const nextPaths = { ...(pyEditData.segmentFontCachePaths || {}) };
+                    const nextBuffers = { ...(pyEditData.segmentFontBuffers || {}) };
+                    for (const [fk, ck] of Object.entries(pyEditData.segmentFontCacheKeys)) {
+                        if (!nextPaths[fk] && !nextBuffers[fk]) {
+                            const bytes = this._proxyFontBytesCache.get(ck);
+                            if (bytes) {
+                                const cachedPath = useCacheFiles ? await this.ensureCachedFont(fk, bytes) : null;
+                                if (cachedPath) nextPaths[fk] = cachedPath;
+                                else nextBuffers[fk] = this._bytesToBase64Chunked(bytes);
+                            }
+                        }
+                    }
+                    if (Object.keys(nextPaths).length > 0) pyEditData.segmentFontCachePaths = nextPaths;
+                    if (Object.keys(nextBuffers).length > 0) pyEditData.segmentFontBuffers = nextBuffers;
+                }
+            },
+
             applyReflowEdit: async function (pdfBuffer, pageNum, editData, originalBuffer = pdfBuffer) {
+                if (this._canUseNativePdfProxy()) {
+                    try {
+                        const proxyResult = await this._applyReflowEditViaProxy(pdfBuffer, pageNum, editData, originalBuffer);
+                        if (proxyResult) return proxyResult;
+                    } catch (proxyErr) {
+                        if (proxyErr?._isValidationFailure) {
+                            throw proxyErr;
+                        }
+                    }
+                }
                 if (!this.isLoaded) await this.init();
                 console.log('🐍 Python (PyMuPDF): Applying reflow edit...');
                 try {
                     const uint8 = new Uint8Array(pdfBuffer);
-                    const editJson = JSON.stringify(editData);
+                    const pyEditData = (editData && typeof editData === 'object') ? { ...editData, _binaryReturn: true } : editData;
+                    await this._hydrateEditFontsForPyodide(pyEditData, true);
+                    const editJson = JSON.stringify(pyEditData);
                     const result = await this.run(`
 import fitz, io, json, base64, os
 
 from text_splice import isolate_resources, validate_replacement
+
+_orig_print = print
 
 def apply_reflow_edit(data, pno, edit_json, original):
     if hasattr(data, 'to_py'): data = bytes(data.to_py())
@@ -3432,6 +3778,10 @@ def apply_reflow_edit(data, pno, edit_json, original):
     page = doc[pno]
     isolate_resources(doc, page)
     edit = json.loads(edit_json)
+    _debug = bool(edit.get('debug', False))
+    def print(*args, **kwargs):
+        if _debug:
+            _orig_print(*args, **kwargs)
 
     x, y, w, h = edit['x'], edit['y'], edit['w'], edit['h']
     # Si el usuario editó un sub-span (ej. "MÉDICA" de "EXPERIENCIA MÉDICA"),
@@ -3659,10 +4009,35 @@ def apply_reflow_edit(data, pno, edit_json, original):
         _precheck_font_buf = None  # buffer de _precheck_font para re-registro post-redact
         _deferred_fb_buf = None  # buffer TTF puro para segmentos fallback
 
-        # Prioridad 1: bytes de fuente del sistema pasados desde JS
-        if js_font_b64:
-            import base64 as _b64mod, tempfile as _tmp, os as _os, hashlib as _hashlib
-            js_font_buf = _b64mod.b64decode(js_font_b64)
+        _external_font_cache = globals().get('_ALIOTH_FONT_BYTES_CACHE')
+
+        def _resolve_font_bytes(b64_val, cache_path=None, cache_key=None):
+            if cache_path and os.path.exists(cache_path):
+                try:
+                    with open(cache_path, 'rb') as _cf:
+                        _raw = _cf.read()
+                    if _raw:
+                        return _raw, cache_path
+                except Exception:
+                    pass
+            if cache_key and isinstance(_external_font_cache, dict) and cache_key in _external_font_cache:
+                _raw = _external_font_cache[cache_key]
+                if _raw:
+                    return _raw, None
+            if b64_val:
+                _raw = base64.b64decode(b64_val)
+                if cache_key and isinstance(_external_font_cache, dict) and len(_raw) > 1024:
+                    _external_font_cache[cache_key] = _raw
+                return _raw, None
+            return None, None
+
+        js_font_buf, _cached_font_path = _resolve_font_bytes(
+            js_font_b64, edit.get('fontCachePath'), edit.get('fontCacheKey')
+        )
+
+        # Prioridad 1: bytes de fuente del sistema pasados desde JS (o cache)
+        if js_font_buf:
+            import tempfile as _tmp, os as _os, hashlib as _hashlib
             _is_otf = js_font_buf[0:4] == b'OTTO'
             _font_sha = _hashlib.sha256(js_font_buf).hexdigest()[:16]
             print(f"🟣 [FONT-DIAG] requested={js_font_name} buf={len(js_font_buf)}B sha256={_font_sha} magic={'OTF' if _is_otf else 'TTF'} bold={_is_bold} italic={_is_italic}")
@@ -3670,20 +4045,29 @@ def apply_reflow_edit(data, pno, edit_json, original):
             # Pre-check Type0: intentar insertar temporalmente para detectar antes de reservar
             _is_type0 = False
             if len(js_font_buf) > 1024:
-                _ext = '.otf' if _is_otf else '.ttf'
-                _tf = _tmp.NamedTemporaryFile(suffix=_ext, delete=False)
-                _tf.write(js_font_buf)
-                _tf.flush()
-                _tf.close()
+                _temp_font_file = None
                 try:
-                    _js_font_obj = fitz.Font(fontfile=_tf.name)
-                    print(f"✅ [FONT-DIAG] fitz.Font(file) name={getattr(_js_font_obj, 'name', None)} flags={getattr(_js_font_obj, 'flags', None)} asc={_js_font_obj.ascender:.3f} desc={_js_font_obj.descender:.3f}")
+                    if _cached_font_path:
+                        _js_font_obj = fitz.Font(fontfile=_cached_font_path)
+                    else:
+                        _js_font_obj = fitz.Font(fontbuffer=js_font_buf)
+                    print(f"✅ [FONT-DIAG] fitz.Font name={getattr(_js_font_obj, 'name', None)} flags={getattr(_js_font_obj, 'flags', None)} asc={_js_font_obj.ascender:.3f} desc={_js_font_obj.descender:.3f}")
                 except Exception as _jfe_fitz:
-                    print(f"⚠️ [FONT-PY] fitz.Font(file) failed: {_jfe_fitz}")
+                    print(f"⚠️ [FONT-PY] fitz.Font(fontbuffer) failed: {_jfe_fitz}")
                     _js_font_obj = None
+                    try:
+                        _ext = '.otf' if _is_otf else '.ttf'
+                        _tf = _tmp.NamedTemporaryFile(suffix=_ext, delete=False)
+                        _tf.write(js_font_buf)
+                        _tf.flush()
+                        _tf.close()
+                        _temp_font_file = _tf.name
+                        _js_font_obj = fitz.Font(fontfile=_temp_font_file)
+                    except Exception:
+                        _js_font_obj = None
                 # Insertar temporalmente para verificar tipo
                 try:
-                    _pchk_fn = f'_pc_{abs(hash(js_font_b64[:64])) % 100000}'
+                    _pchk_fn = f'_pc_{int(_font_sha[:8], 16) % 100000}'
                     page.insert_font(fontname=_pchk_fn, fontbuffer=js_font_buf)
                     _precheck_font_buf = js_font_buf  # guardar para re-registro post-redact
                     _pchk = [f for f in page.get_fonts(full=True) if f[4] == _pchk_fn]
@@ -3701,13 +4085,12 @@ def apply_reflow_edit(data, pno, edit_json, original):
 
                 if not _is_type0:
                     _deferred_js_font_buf = js_font_buf
-                    _deferred_js_font_file = _tf.name
+                    _deferred_js_font_file = _temp_font_file
                     embedded_font_name = 'js_sys_font'
                     print(f"✅ [FONT-PY] deferred insert_font pending (after apply_redactions)")
                 else:
                     # Type0: intentar rescue con fuente embebida del PDF (Prioridad 1B)
-                    # Conservar _tf.name para retry con fontfile= si los caracteres no están en emb_reuse
-                    _deferred_js_font_file = _tf.name
+                    _deferred_js_font_file = _temp_font_file
                     _raw_fn = edit.get('font') or ''
                     _xref1b, _buf1b, _pname1b = _find_pdf_embedded_font(_raw_fn)
                     if _buf1b:
@@ -3736,16 +4119,15 @@ def apply_reflow_edit(data, pno, edit_json, original):
                     embedded_font_name = f'emb_{_xref2}'
                     print(f"✅ [FONT-PY] Prioridad 2: fuente embebida del PDF para '{raw_font_name}'")
 
-        # Capa 3: registrar fuente TTF pura enviada como fallback desde JS
-        if _fb_fallback_b64:
+        # Capa 3: registrar fuente TTF pura enviada como fallback desde JS (o cache)
+        _fb_buf, _ = _resolve_font_bytes(
+            _fb_fallback_b64,
+            edit.get('fontBufferFallbackCachePath'),
+            edit.get('fontBufferFallbackCacheKey')
+        )
+        if _fb_buf:
             try:
-                import base64 as _b64fb, tempfile as _tmpfb, os as _osfb
-                _fb_buf = _b64fb.b64decode(_fb_fallback_b64)
                 if len(_fb_buf) > 1024:
-                    _tffb = _tmpfb.NamedTemporaryFile(suffix='.ttf', delete=False)
-                    _tffb.write(_fb_buf)
-                    _tffb.flush()
-                    _tffb.close()
                     page.insert_font(fontname='_fb_full', fontbuffer=_fb_buf)
                     _pchk_fb = [f for f in page.get_fonts(full=True) if f[4] == '_fb_full']
                     _fb_type = _pchk_fb[0][2] if _pchk_fb else 'unknown'
@@ -3756,8 +4138,6 @@ def apply_reflow_edit(data, pno, edit_json, original):
                         print(f"✅ [FONT-PY] Capa3 fontBufferFallback OK: type={_fb_type} → _fallback_full_fn='{_fallback_full_fn}'")
                     else:
                         print(f"⚠️ [FONT-PY] Capa3 fontBufferFallback también es Type0 — descartado")
-                    try: _osfb.unlink(_tffb.name)
-                    except: pass
             except Exception as _fbe:
                 print(f"⚠️ [FONT-PY] Capa3 fontBufferFallback error: {_fbe}")
 
@@ -3808,14 +4188,14 @@ def apply_reflow_edit(data, pno, edit_json, original):
     _bl_debug = y + font_size * _asc_debug
     print(f"🐍 [REFLOW DEBUG] x={x:.2f} y={y:.2f} w={w:.2f} h={h:.2f} fs={font_size:.2f} font={use_font} ascender={_asc_debug:.3f} → baseline_y={_bl_debug:.2f} (rect.y1={y+h:.2f})")
     print(f"🐍 [REFLOW BG] bgColor={edit.get('bgColor')} rgb_bg={rgb_bg} bgImage={'YES' if edit.get('bgImage') else 'NO'}")
-    # Buscar texto existente: clip amplio (línea completa) para capturar spans CIDFont adyacentes
-    try:
-        _blocks = page.get_text("rawdict", clip=fitz.Rect(_erase_x0-5, _erase_y0-5, _erase_x1+5, _erase_y0+h+5))
-        _spans = [sp for bl in _blocks.get('blocks',[]) for ln in bl.get('lines',[]) for sp in ln.get('spans',[])]
-        for _sp in _spans[:3]:
-            print(f"🐍 [REFLOW EXISTING TEXT] text='{_sp.get('text','')}' bbox={[round(v,2) for v in _sp.get('bbox',[])]} size={_sp.get('size',0):.2f} origin={[round(v,2) for v in _sp.get('origin',[])]}")
-    except Exception as _e:
-        print(f"🐍 [REFLOW EXISTING TEXT] error: {_e}")
+    if _debug:
+        try:
+            _blocks = page.get_text("rawdict", clip=fitz.Rect(_erase_x0-5, _erase_y0-5, _erase_x1+5, _erase_y0+h+5))
+            _spans = [sp for bl in _blocks.get('blocks',[]) for ln in bl.get('lines',[]) for sp in ln.get('spans',[])]
+            for _sp in _spans[:3]:
+                print(f"🐍 [REFLOW EXISTING TEXT] text='{_sp.get('text','')}' bbox={[round(v,2) for v in _sp.get('bbox',[])]} size={_sp.get('size',0):.2f} origin={[round(v,2) for v in _sp.get('origin',[])]}")
+        except Exception as _e:
+            print(f"🐍 [REFLOW EXISTING TEXT] error: {_e}")
     if not _skip_erase and any(page.annots(types=[fitz.PDF_ANNOT_REDACT]) or ()):
         raise ValueError("La página contiene censuras pendientes de aplicar")
     if is_surgical and not _skip_erase:
@@ -3958,11 +4338,12 @@ def apply_reflow_edit(data, pno, edit_json, original):
         except Exception as _rde:
             _rem = []
             print(f"🔴 [REDACT-DONE] error getting spans: {_rde}")
-        try:
-            _paths_at_orig = [p for p in page.get_drawings() if p['rect'].intersects(orig_rect + (-2,-2,2,2))]
-            print(f"🔴 [REDACT-DONE] rects_at_orig={len(_paths_at_orig)}: {[{'r':[round(v,2) for v in [p['rect'].x0,p['rect'].y0,p['rect'].x1,p['rect'].y1]],'fill':p.get('fill')} for p in _paths_at_orig[:3]]}")
-        except Exception:
-            pass
+        if _debug:
+            try:
+                _paths_at_orig = [p for p in page.get_drawings() if p['rect'].intersects(orig_rect + (-2,-2,2,2))]
+                print(f"🔴 [REDACT-DONE] rects_at_orig={len(_paths_at_orig)}: {[{'r':[round(v,2) for v in [p['rect'].x0,p['rect'].y0,p['rect'].x1,p['rect'].y1]],'fill':p.get('fill')} for p in _paths_at_orig[:3]]}")
+            except Exception:
+                pass
         # CIDFONT-COVER: cubrir residuos vacíos que quedaron estrictamente dentro de orig_rect tras apply_redactions.
         # CRÍTICO: NUNCA cubrir spans que pertenecen a la línea superior (descenders como 'p', 'g', 'y', 'q')
         # ni expandir el rect de cobertura fuera de los límites de orig_rect.
@@ -4235,18 +4616,22 @@ def apply_reflow_edit(data, pno, edit_json, original):
                     # Bug1/OpciónB: bytes de fuente exacta por segmento enviados desde JS
                     # (fontRegistry/fontResolutionPipeline) — evita el mapeo Base-14 cuando hay bytes reales.
                     _seg_font_buffers_b64 = edit.get('segmentFontBuffers') or {}
+                    _seg_font_cache_paths = edit.get('segmentFontCachePaths') or {}
+                    _seg_font_cache_keys = edit.get('segmentFontCacheKeys') or {}
                     _seg_font_cache = {}
 
                     def _get_seg_font_obj(font_key):
                         if font_key in _seg_font_cache:
                             return _seg_font_cache[font_key]
                         _obj = None
-                        _buf_b64 = _seg_font_buffers_b64.get(font_key)
-                        if _buf_b64:
+                        _raw, _seg_cpath = _resolve_font_bytes(
+                            _seg_font_buffers_b64.get(font_key),
+                            _seg_font_cache_paths.get(font_key),
+                            _seg_font_cache_keys.get(font_key)
+                        )
+                        if _raw and len(_raw) > 1024:
                             try:
-                                _raw = base64.b64decode(_buf_b64)
-                                if len(_raw) > 1024:
-                                    _obj = fitz.Font(fontbuffer=_raw)
+                                _obj = fitz.Font(fontfile=_seg_cpath) if _seg_cpath else fitz.Font(fontbuffer=_raw)
                             except Exception as _sfe:
                                 print(f"⚠️ [SEG-FONT] fallo cargando fuente exacta de segmento '{font_key}': {_sfe}")
                         _seg_font_cache[font_key] = _obj
@@ -4732,26 +5117,24 @@ def apply_reflow_edit(data, pno, edit_json, original):
     _alignment = 2 if _alignment_name == 'right' else (1 if _alignment_name == 'center' else 0)
     rc = safe_insert(page, insert_rect, new_text, font_size, insert_font, rgb_text, align=_alignment, segments=edit.get('segments'))
     print(f"🟠 [INSERT] rc={rc} font={insert_font} single={is_single_line}")
-    # Verificar texto insertado — ampliar clip para cubrir insert_rect
-    check_clip = fitz.Rect(x-3, y-5, x+w+3, y+h+font_size*2)
-    check = page.get_text("rawdict", clip=check_clip)
-    spans_check = [sp for bl in check.get('blocks',[]) for ln in bl.get('lines',[]) for sp in ln.get('spans',[])]
-    print(f"🟠 [INSERT] spans_after={len(spans_check)} → {[{'t':s.get('text','')[:25],'bbox':[round(v,2) for v in s.get('bbox',[])]} for s in spans_check[:5]]}")
-    try:
-        _dict_check = page.get_text("dict", clip=check_clip)
-        _dict_spans = [sp for bl in _dict_check.get('blocks',[]) for ln in bl.get('lines',[]) for sp in ln.get('spans',[])]
-        print(f"🟣 [FONT-DIAG] spans_after={[(s.get('text','')[:25], s.get('font'), s.get('flags'), round(s.get('size',0),2), [round(v,2) for v in s.get('bbox',[])]) for s in _dict_spans[:8]]}")
-    except Exception as _sde:
-        print(f"🟣 [FONT-DIAG] spans_after error={_sde}")
-    # Paths que tapan el área
-    paths2 = page.get_drawings()
-    paths_over = [p for p in paths2 if p['rect'].intersects(orig_rect)]
-    print(f"🟠 [INSERT] paths_over={len(paths_over)} → {[{'rect':[round(v,2) for v in [p['rect'].x0,p['rect'].y0,p['rect'].x1,p['rect'].y1]],'fill':p.get('fill')} for p in paths_over[:3]]}")
-    # DEBUG: fonts en página tras insert
-    try:
-        _flist = page.get_fonts(full=True)
-        print(f"🟣 [FONTS-AFTER] {[(f[3],f[4],f[2]) for f in _flist]}")
-    except Exception as _fe: print(f"🟣 [FONTS-AFTER] error: {_fe}")
+    if _debug:
+        check_clip = fitz.Rect(x-3, y-5, x+w+3, y+h+font_size*2)
+        check = page.get_text("rawdict", clip=check_clip)
+        spans_check = [sp for bl in check.get('blocks',[]) for ln in bl.get('lines',[]) for sp in ln.get('spans',[])]
+        print(f"🟠 [INSERT] spans_after={len(spans_check)} → {[{'t':s.get('text','')[:25],'bbox':[round(v,2) for v in s.get('bbox',[])]} for s in spans_check[:5]]}")
+        try:
+            _dict_check = page.get_text("dict", clip=check_clip)
+            _dict_spans = [sp for bl in _dict_check.get('blocks',[]) for ln in bl.get('lines',[]) for sp in ln.get('spans',[])]
+            print(f"🟣 [FONT-DIAG] spans_after={[(s.get('text','')[:25], s.get('font'), s.get('flags'), round(s.get('size',0),2), [round(v,2) for v in s.get('bbox',[])]) for s in _dict_spans[:8]]}")
+        except Exception as _sde:
+            print(f"🟣 [FONT-DIAG] spans_after error={_sde}")
+        paths2 = page.get_drawings()
+        paths_over = [p for p in paths2 if p['rect'].intersects(orig_rect)]
+        print(f"🟠 [INSERT] paths_over={len(paths_over)} → {[{'rect':[round(v,2) for v in [p['rect'].x0,p['rect'].y0,p['rect'].x1,p['rect'].y1]],'fill':p.get('fill')} for p in paths_over[:3]]}")
+        try:
+            _flist = page.get_fonts(full=True)
+            print(f"🟣 [FONTS-AFTER] {[(f[3],f[4],f[2]) for f in _flist]}")
+        except Exception as _fe: print(f"🟣 [FONTS-AFTER] error: {_fe}")
 
     # Para quirúrgico: insert_text siempre escribe en el punto dado — no hay overflow real
     overflow = False if is_surgical else (rc < 0)
@@ -4780,6 +5163,13 @@ def apply_reflow_edit(data, pno, edit_json, original):
     insert_area = fitz.Rect(insert_rect)
     insert_area.y1 = max(insert_area.y1, y + expanded_h)
     validate_replacement(original_bytes, candidate, pno, areas or [orig_rect], insert_area, new_text)
+    if edit.get('_binaryReturn'):
+        return {
+            'pdf_bytes': candidate,
+            'overflow': overflow,
+            'expanded_h': expanded_h,
+            'original_h': h
+        }
     return json.dumps({
         'pdf': base64.b64encode(candidate).decode(),
         'overflow': overflow,
@@ -4790,16 +5180,93 @@ def apply_reflow_edit(data, pno, edit_json, original):
 apply_reflow_edit(js_data, js_pno, js_edit, js_original)
                     `, { js_data: uint8, js_pno: pageNum, js_edit: editJson, js_original: new Uint8Array(originalBuffer) });
 
-                    const parsed = JSON.parse(result);
-                    const pdfBytes = Uint8Array.from(atob(parsed.pdf), c => c.charCodeAt(0));
+                    if (typeof result === 'string') {
+                        const parsed = JSON.parse(result);
+                        const pdfBytes = parsed.pdf ? Uint8Array.from(atob(parsed.pdf), c => c.charCodeAt(0)) : new Uint8Array(0);
+                        return {
+                            buffer: pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
+                            overflow: parsed.overflow,
+                            expandedH: parsed.expanded_h,
+                            originalH: parsed.original_h
+                        };
+                    }
+                    const pyDict = (result && typeof result.toJs === 'function')
+                        ? result.toJs({ dict_converter: Object.fromEntries })
+                        : result;
+                    if (result && typeof result.destroy === 'function') result.destroy();
+                    const rawU8 = pyDict.pdf_bytes instanceof Uint8Array
+                        ? pyDict.pdf_bytes
+                        : new Uint8Array(pyDict.pdf_bytes || 0);
                     return {
-                        buffer: pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
-                        overflow: parsed.overflow,
-                        expandedH: parsed.expanded_h,
-                        originalH: parsed.original_h
+                        buffer: rawU8.buffer.slice(rawU8.byteOffset, rawU8.byteOffset + rawU8.byteLength),
+                        overflow: pyDict.overflow,
+                        expandedH: pyDict.expanded_h,
+                        originalH: pyDict.original_h
                     };
                 } catch (e) {
                     console.error('🐍 Python: Reflow edit failed', e);
+                    throw e;
+                }
+            },
+
+            applyOcrTextEdit: async function (pdfBuffer, pageNum, editData) {
+                if (this._canUseNativePdfProxy()) {
+                    try {
+                        const proxyResult = await this._postProxyEdit('/api/pdf/ocr-edit', pdfBuffer, pageNum, editData, pdfBuffer);
+                        if (proxyResult) return proxyResult;
+                    } catch (proxyErr) {
+                        if (proxyErr?._isValidationFailure) {
+                            throw proxyErr;
+                        }
+                    }
+                }
+                if (!this.isLoaded) await this.init();
+                try {
+                    const uint8 = new Uint8Array(pdfBuffer);
+                    const pyEditData = (editData && typeof editData === 'object') ? { ...editData } : {};
+                    await this._hydrateEditFontsForPyodide(pyEditData, false);
+                    const editJson = JSON.stringify(pyEditData);
+                    const result = await this.run(`
+import json
+import ocr_edit
+
+def _run_ocr_edit(data, pno, edit_json):
+    out_bytes, meta = ocr_edit.apply_ocr_text_edit_bytes(data, pno, json.loads(edit_json))
+    return {
+        'pdf_bytes': out_bytes,
+        'overflow': bool(meta.get('overflow', False)),
+        'expanded_h': float(meta.get('expanded_h', 0.0)),
+        'original_h': float(meta.get('original_h', 0.0))
+    }
+
+_run_ocr_edit(js_data, js_pno, js_edit)
+                    `, { js_data: uint8, js_pno: pageNum, js_edit: editJson });
+
+                    if (typeof result === 'string') {
+                        const parsed = JSON.parse(result);
+                        const pdfBytes = parsed.pdf ? Uint8Array.from(atob(parsed.pdf), c => c.charCodeAt(0)) : new Uint8Array(0);
+                        return {
+                            buffer: pdfBytes.buffer.slice(pdfBytes.byteOffset, pdfBytes.byteOffset + pdfBytes.byteLength),
+                            overflow: !!parsed.overflow,
+                            expandedH: parsed.expanded_h,
+                            originalH: parsed.original_h
+                        };
+                    }
+                    const pyDict = (result && typeof result.toJs === 'function')
+                        ? result.toJs({ dict_converter: Object.fromEntries })
+                        : result;
+                    if (result && typeof result.destroy === 'function') result.destroy();
+                    const rawU8 = pyDict.pdf_bytes instanceof Uint8Array
+                        ? pyDict.pdf_bytes
+                        : new Uint8Array(pyDict.pdf_bytes || 0);
+                    return {
+                        buffer: rawU8.buffer.slice(rawU8.byteOffset, rawU8.byteOffset + rawU8.byteLength),
+                        overflow: !!pyDict.overflow,
+                        expandedH: pyDict.expanded_h,
+                        originalH: pyDict.original_h
+                    };
+                } catch (e) {
+                    console.error('🐍 Python: OCR text edit failed', e);
                     throw e;
                 }
             },

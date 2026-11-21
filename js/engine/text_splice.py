@@ -574,7 +574,7 @@ def validate_replacement(original, candidate, page_number, original_areas, inser
     with fitz.open(stream=original, filetype="pdf") as before:
         source = before[page_number]
         geometry = (source.rect, source.rotation, before.page_count)
-        scale = min(1.5, 1600 / max(source.rect.width, source.rect.height))
+        scale = min(1.0, 960 / max(source.rect.width, source.rect.height))
         baseline = preview(source, scale)
         source.get_text("text")
         old_messages = diagnostics()

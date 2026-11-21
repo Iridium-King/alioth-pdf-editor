@@ -2002,15 +2002,15 @@ Arrastra para seleccionar el área · Esc para cancelar">
                                 <path d="M12 6v8a3 3 0 0 0 6 0v-2" fill="none"/>
                             </svg><span>↩ Restaurar<br>Original</span>
                         </button>
-                        <button class="tool-btn" onclick="app.makeSearchablePDF()"
-                            title="Convierte un PDF con imágenes en un documento con texto buscable" data-i18n-title="tit_732735">
+                        <button id="btn-apply-ocr" class="tool-btn" onclick="app.openApplyOcrModal()"
+                            title="Aplica OCR para agregar texto seleccionable y buscable sin alterar el diseño" data-i18n-title="tit_732735">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none"/>
                                 <polyline points="14 2 14 8 20 8" fill="none"/>
                                 <line x1="8" y1="13" x2="11" y2="13"/>
                                 <circle cx="11" cy="16" r="2" fill="none"/>
                                 <line x1="13" y1="18" x2="15" y2="20"/>
-                            </svg><span data-i18n="dyn_t_1008">PDF<br>Buscable</span>
+                            </svg><span data-i18n="dyn_t_1008">Aplicar<br>OCR</span>
                         </button>
                     </div>
                     <div class="group-title" data-i18n="dyn_t_1064" data-i18n="dyn_t_1064">TRANSFORMAR</div>
@@ -4020,6 +4020,55 @@ Arrastra para seleccionar el área · Esc para cancelar">
             <textarea id="ocr-text-area" class="ocr-textarea"></textarea>
             <div style="display:flex; justify-content:center; gap:10px;">
                 <button class="capsule-btn primary" onclick="app.copyOCRText()">Copiar Texto</button>
+                <button class="capsule-btn secondary" onclick="app.closeAllModals()">Cancelar</button>
+            </div>
+        </div>
+
+        <div id="apply-ocr-modal" class="glass-box" style="display:none; width: 460px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                <h3 style="margin:0;">Aplicar OCR</h3>
+                <button aria-label="Cerrar" type="button" class="app-close-button" onclick="app.closeAllModals()"></button>
+            </div>
+            <p style="font-size:12px; color:var(--text-muted); margin-top:0; margin-bottom:12px;">
+                Agrega una capa de texto seleccionable y buscable sin alterar las imágenes, firmas ni el diseño original del PDF.
+            </p>
+            <div style="display:flex; flex-direction:column; gap:10px; font-size:12px;">
+                <div>
+                    <div style="font-weight:600; margin-bottom:4px;">Alcance:</div>
+                    <label style="display:inline-flex; align-items:center; gap:6px; margin-right:16px; cursor:pointer;">
+                        <input type="radio" name="apply-ocr-scope" id="apply-ocr-scope-all" value="all" checked>
+                        <span>Todo el documento</span>
+                    </label>
+                    <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+                        <input type="radio" name="apply-ocr-scope" id="apply-ocr-scope-current" value="current">
+                        <span>Página actual</span>
+                    </label>
+                </div>
+                <div>
+                    <label for="apply-ocr-lang" style="display:block; font-weight:600; margin-bottom:4px;">Idioma de reconocimiento:</label>
+                    <select id="apply-ocr-lang" style="width:100%; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--input-bg, rgba(255,255,255,0.08)); color:var(--text-main);">
+                        <option value="es" selected>Español</option>
+                        <option value="en">Inglés</option>
+                        <option value="spa+eng">Español + Inglés</option>
+                    </select>
+                </div>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                    <input type="checkbox" id="apply-ocr-skip-digital" checked>
+                    <span>Omitir páginas que ya tienen texto seleccionable</span>
+                </label>
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; border-radius:6px; background:var(--bg-secondary, rgba(0,0,0,0.08)); font-size:11px;">
+                    <span style="color:var(--text-muted);">Motor local:</span>
+                    <span id="apply-ocr-engine-badge" style="font-weight:600;">Detectando motor...</span>
+                </div>
+                <div id="apply-ocr-progress-wrap" style="display:none; flex-direction:column; gap:4px;">
+                    <div style="width:100%; height:6px; border-radius:4px; background:var(--bg-secondary, rgba(0,0,0,0.15)); overflow:hidden;">
+                        <div id="apply-ocr-progress-bar" style="width:0%; height:100%; background:var(--accent, #2563eb); transition:width .2s;"></div>
+                    </div>
+                    <div id="apply-ocr-status-text" style="font-size:11px; color:var(--text-muted);">Preparando OCR...</div>
+                </div>
+            </div>
+            <div style="display:flex; justify-content:center; gap:10px; margin-top:16px;">
+                <button id="apply-ocr-run-btn" class="capsule-btn primary" onclick="app._runApplyOcrFromModal()">Aplicar OCR</button>
                 <button class="capsule-btn secondary" onclick="app.closeAllModals()">Cancelar</button>
             </div>
         </div>

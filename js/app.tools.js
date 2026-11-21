@@ -1070,6 +1070,7 @@ Object.assign(app, {
                         console.log('❌ No hay elementos de texto válidos en esta página');
                         this.showToast('⚠️ No se encontró texto en esta página');
                         this.cancelSmartPatch();
+                        this._showNoTextOcrBanner?.(doc, page);
                         return;
                     }
 
@@ -2349,6 +2350,7 @@ Object.assign(app, {
                                         }
                                     }
                                     this.smartPatchData.pythonEnhanced = true;
+                                    this.smartPatchData.isOcrHidden = Boolean(bestPy.is_ocr_hidden || bestPy.alpha === 0);
 
                                     // ── Kerning real desde Python (rawdict) ──
                                     if (typeof bestPy.letter_spacing === 'number' && bestPy.letter_spacing !== 0) {
@@ -2672,7 +2674,7 @@ Object.assign(app, {
                 let finalBgAlpha = 1;
                 let isSurgical = false;
 
-                if (window.PythonManager) {
+                if (window.PythonManager && !data.isOcrHidden) {
                     const src = doc.sources[page.sourceId];
                     // Guardar buffer pre-erase para cancel y para commit
                     this._preEraseBuffer = { sourceId: page.sourceId, pageIndex: page.pageIndex, buffer: src.buffer.slice(0) };
@@ -7836,6 +7838,64 @@ Object.assign(app, {
             // ============================================================
             // SECTION 6C: EMOJI/ICON INSERTION
             // ============================================================
+
+            /**
+             * Non-blocking offer to run OCR when Editar Texto finds no selectable text on a scanned page.
+             */
+            _showNoTextOcrBanner: function () {
+                if (typeof document === 'undefined' || !document.body) return;
+                const existing = document.getElementById('alioth-no-text-ocr-banner');
+                if (existing) existing.remove();
+
+                const banner = document.createElement('div');
+                banner.id = 'alioth-no-text-ocr-banner';
+                banner.setAttribute('role', 'status');
+                banner.style.cssText = [
+                    'position:fixed', 'bottom:24px', 'right:24px', 'z-index:10050',
+                    'display:flex', 'align-items:center', 'gap:10px', 'flex-wrap:wrap',
+                    'max-width:460px', 'padding:12px 14px', 'border-radius:12px',
+                    'background:rgba(15,23,42,0.96)', 'color:#f8fafc',
+                    'border:1px solid rgba(148,163,184,0.35)',
+                    'box-shadow:0 12px 30px rgba(0,0,0,0.35)', 'font-size:13px'
+                ].join(';');
+
+                const msg = document.createElement('span');
+                msg.textContent = 'Página escaneada sin texto editable. ';
+                banner.appendChild(msg);
+
+                const applyBtn = document.createElement('button');
+                applyBtn.type = 'button';
+                applyBtn.textContent = 'Aplicar OCR a esta página';
+                applyBtn.style.cssText = 'padding:6px 10px;border:none;border-radius:8px;cursor:pointer;background:#7c3aed;color:#fff;font-weight:600;font-size:12px;';
+                applyBtn.addEventListener('click', () => {
+                    banner.remove();
+                    this.applyOcrToDocument?.({ scope: 'current', returnToEdit: true });
+                });
+                banner.appendChild(applyBtn);
+
+                const optsBtn = document.createElement('button');
+                optsBtn.type = 'button';
+                optsBtn.textContent = 'Opciones OCR';
+                optsBtn.style.cssText = 'padding:6px 10px;border:1px solid rgba(148,163,184,0.45);border-radius:8px;cursor:pointer;background:transparent;color:#e2e8f0;font-size:12px;';
+                optsBtn.addEventListener('click', () => {
+                    banner.remove();
+                    this.openApplyOcrModal?.({ defaultScope: 'current', returnToEdit: true });
+                });
+                banner.appendChild(optsBtn);
+
+                const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
+                closeBtn.textContent = '×';
+                closeBtn.setAttribute('aria-label', 'Cerrar');
+                closeBtn.style.cssText = 'padding:2px 6px;border:none;background:transparent;color:#94a3b8;cursor:pointer;font-size:16px;line-height:1;';
+                closeBtn.addEventListener('click', () => banner.remove());
+                banner.appendChild(closeBtn);
+
+                document.body.appendChild(banner);
+                if (typeof setTimeout === 'function') {
+                    setTimeout(() => { if (banner.parentNode) banner.remove(); }, 15000);
+                }
+            },
 
             /**
              * Shows the emoji/icon insertion modal

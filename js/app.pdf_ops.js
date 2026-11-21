@@ -1393,43 +1393,102 @@ invert_colors(js_data)
                 return tempCanvas;
             },
 
-            makeSearchablePDF: async function () {
+            openApplyOcrModal: async function (opts = {}) {
                 const doc = this.getDoc();
                 const page = doc && doc.pages[doc.currentIndex];
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
 
-                this.toggleLoader(true, 'Iniciando OCR multicapa...');
+                const modal = document.getElementById('apply-ocr-modal');
+                const overlay = document.getElementById('modal-overlay');
+                if (!modal || !overlay) {
+                    return this.applyOcrToDocument?.(opts);
+                }
+
+                this._applyOcrReturnToEdit = !!opts.returnToEdit;
+                const scopeAll = document.getElementById('apply-ocr-scope-all');
+                const scopeCur = document.getElementById('apply-ocr-scope-current');
+                if (opts.defaultScope === 'current') {
+                    if (scopeCur) scopeCur.checked = true;
+                } else {
+                    if (scopeAll) scopeAll.checked = true;
+                }
+                const progWrap = document.getElementById('apply-ocr-progress-wrap');
+                const progBar = document.getElementById('apply-ocr-progress-bar');
+                const statusTxt = document.getElementById('apply-ocr-status-text');
+                const runBtn = document.getElementById('apply-ocr-run-btn');
+                if (progWrap) progWrap.style.display = 'none';
+                if (progBar) progBar.style.width = '0%';
+                if (statusTxt) statusTxt.textContent = 'Preparando OCR...';
+                if (runBtn) runBtn.disabled = false;
+
+                document.querySelectorAll('#modal-overlay > .glass-box').forEach(el => {
+                    el.style.display = 'none';
+                });
+                overlay.style.display = 'flex';
+                overlay.classList.remove('anim-in'); void overlay.offsetWidth; overlay.classList.add('anim-in');
+                modal.style.display = 'block';
+                modal.classList.remove('anim-in'); void modal.offsetWidth; modal.classList.add('anim-in');
+
+                const badge = document.getElementById('apply-ocr-engine-badge');
+                if (badge) badge.textContent = 'Detectando motor...';
                 try {
-                    const cvs = await this.renderPageToCanvas(page, 2.0);
-                    const imageData = cvs.toDataURL('image/png');
+                    const st = await this._probeNativeOcrStatus?.();
+                    if (badge) {
+                        badge.textContent = st && st.windowsOcr
+                            ? `Windows OCR (${(st.languages || []).map(l => l.tag).slice(0, 2).join(', ') || 'nativo'})`
+                            : 'Tesseract offline (local)';
+                    }
+                } catch (_) {
+                    if (badge) badge.textContent = 'Tesseract offline (local)';
+                }
+            },
 
-                    document.getElementById('loader-msg').innerText = "OCR: Analizando texto de la imagen...";
-                    const worker = await this._getOCRWorker();
-                    const ret = await worker.recognize(imageData);
+            _runApplyOcrFromModal: async function () {
+                const scopeCur = document.getElementById('apply-ocr-scope-current');
+                const langEl = document.getElementById('apply-ocr-lang');
+                const skipEl = document.getElementById('apply-ocr-skip-digital');
+                const progWrap = document.getElementById('apply-ocr-progress-wrap');
+                const progBar = document.getElementById('apply-ocr-progress-bar');
+                const statusTxt = document.getElementById('apply-ocr-status-text');
+                const runBtn = document.getElementById('apply-ocr-run-btn');
 
-                    const ocrResults = (ret.data.words || []).map(w => ({
-                        text: w.text,
-                        bbox: [w.bbox.x0 / 2.0, w.bbox.y0 / 2.0, w.bbox.x1 / 2.0, w.bbox.y1 / 2.0],
-                        page: page.pageIndex,
-                        fontsize: ((w.bbox.y1 - w.bbox.y0) / 2.0) * 0.75
-                    }));
+                const scope = (scopeCur && scopeCur.checked) ? 'current' : 'all';
+                const lang = (langEl && langEl.value) || 'es';
+                const skipDigital = skipEl ? !!skipEl.checked : true;
+                const returnToEdit = !!this._applyOcrReturnToEdit;
 
-                    if (ocrResults.length === 0) {
-                        this.showToast('⚠️ No se detectó texto para insertar');
-                    } else {
-                        document.getElementById('loader-msg').innerText = "Python: Insertando capa de texto invisible...";
-                        const searchableBuffer = await PythonManager.createSearchablePDF(src.buffer, ocrResults);
-                        const blob = new Blob([searchableBuffer], { type: 'application/pdf' });
-                        const file = new File([blob], "detectable_" + (doc.name || "doc.pdf"), { type: 'application/pdf' });
-                        await this.openFile(file);
-                        this.showToast('✅ PDF ahora tiene texto seleccionable (Searchable)');
+                if (runBtn) runBtn.disabled = true;
+                if (progWrap) progWrap.style.display = 'flex';
+                try {
+                    const res = await this.applyOcrToDocument({
+                        scope,
+                        lang,
+                        skipDigital,
+                        dpi: 300,
+                        returnToEdit,
+                        onProgress: (pct, msg) => {
+                            if (progBar) progBar.style.width = `${Math.max(0, Math.min(100, pct || 0))}%`;
+                            if (statusTxt && msg) statusTxt.textContent = msg;
+                        }
+                    });
+                    this.closeAllModals();
+                    if (!res || !res.modified) {
+                        this._applyOcrReturnToEdit = false;
                     }
                 } catch (e) {
                     console.error(e);
-                    this.showToast('❌ Error en proceso Searchable: ' + e.message);
+                    if (runBtn) runBtn.disabled = false;
+                    if (statusTxt) statusTxt.textContent = '❌ ' + (e.message || e);
+                    this.showToast('❌ Error al aplicar OCR: ' + (e.message || e));
                 }
-                this.toggleLoader(false);
+            },
+
+            makeSearchablePDF: async function (opts = {}) {
+                if (opts && opts.headless) {
+                    return this.applyOcrToDocument?.(opts);
+                }
+                return this.openApplyOcrModal(opts);
             },
 
             activateRealTextEditor: function () {
@@ -1979,12 +2038,13 @@ invert_colors(js_data)
                 this.toggleLoader(true, 'Python: Aplicando reflow...');
                 try {
                     // ── FASE A: Borrado previo garantizado (Splicing quirúrgico con fallback de borrado) ──
-                    const _isSurgical = !!(textObj.isRealEdit && textObj.bgAlpha === 0);
+                    const _isOcrEdit = Boolean(data && data.isOcrHidden === true);
+                    const _isSurgical = !_isOcrEdit && !!(textObj.isRealEdit && textObj.bgAlpha === 0);
                     const _useSplice = (window.ALIOTH_TEXT_ENGINE !== 'legacy');
                     let _didSplice = false;
 
                     // 1. Intentar splice a nivel de /Contents si _useSplice está activo y hay spans objetivo
-                    if (_isSurgical && _useSplice && this._preEraseBuffer && this._preEraseBuffer.sourceId === page.sourceId) {
+                    if (!_isOcrEdit && _isSurgical && _useSplice && this._preEraseBuffer && this._preEraseBuffer.sourceId === page.sourceId) {
                         const _spansToSplice = data.targetSpans || (data.targetSpan ? [data.targetSpan] : null);
                         if (_spansToSplice && _spansToSplice.length > 0) {
                             try {
@@ -2016,7 +2076,7 @@ invert_colors(js_data)
 
                     // 2. Red de seguridad garantizada: si no se pudo hacer splice (falló, no aplicaba o legacy),
                     // ejecutar INMEDIATAMENTE eraseTextRegion para que el texto viejo quede 100% borrado.
-                    if (_isSurgical && !_didSplice && this._pendingEraseRect && this._preEraseBuffer &&
+                    if (!_isOcrEdit && _isSurgical && !_didSplice && this._pendingEraseRect && this._preEraseBuffer &&
                         this._preEraseBuffer.sourceId === page.sourceId) {
                         try {
                             window.__aliothDiag?.trace('TEXT-TXN', 'lazy-erase-start', {
@@ -2179,7 +2239,8 @@ invert_colors(js_data)
                         eraseFullX: data.pdfFullSpanX !== undefined ? data.pdfFullSpanX : _cX,
                         eraseFullW: data.pdfFullSpanW !== undefined ? data.pdfFullSpanW : data.width,
                         // Cuando hay drag, preservar Y original del span para que Python borre en la posición correcta
-                        eraseFullY: (_draggedY || _draggedX) ? data.y : undefined
+                        eraseFullY: (_draggedY || _draggedX) ? data.y : undefined,
+                        eraseFullH: data.height
                     };
                     window.__aliothDiag?.trace('FONT-DIAG', 'commit-payload', {
                         transactionId: _diagTxnId,
@@ -2231,20 +2292,42 @@ invert_colors(js_data)
                             }
                         }
                         const _fontBytes = _regBytes || _sysBytes || null;
+                        const _bytesToB64 = (buf) => {
+                            if (typeof PythonManager !== 'undefined' && PythonManager._bytesToBase64Chunked) {
+                                return PythonManager._bytesToBase64Chunked(buf);
+                            }
+                            const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+                            let b64 = '';
+                            const chunk = 8190; // múltiplo de 3: evita padding = intermedios que rompen b64decode
+                            for (let i = 0; i < u8.length; i += chunk) {
+                                b64 += btoa(String.fromCharCode(...u8.subarray(i, i + chunk)));
+                            }
+                            return b64;
+                        };
+                        const _prepareFontRef = async (fontKey, fontBytes) => {
+                            if (!fontBytes) return { b64: null, cachePath: null, cacheKey: null };
+                            const pm = typeof PythonManager !== 'undefined' ? PythonManager : window.PythonManager;
+                            const u8 = fontBytes instanceof Uint8Array ? fontBytes : new Uint8Array(fontBytes);
+                            const cacheKey = pm?._ensureFontCacheKey?.(fontKey, u8) || null;
+                            if (cacheKey) pm?._rememberProxyFontBytes?.(cacheKey, u8);
+                            const useProxy = Boolean(pm?._canUseNativePdfProxy?.());
+                            if (useProxy && cacheKey && pm?._proxyFontCacheKeys?.has(cacheKey)) {
+                                return { b64: null, cachePath: null, cacheKey };
+                            }
+                            if (!useProxy && pm?.ensureCachedFont) {
+                                if (!pm.isLoaded && pm.init) await pm.init();
+                                const cachePath = await pm.ensureCachedFont(fontKey, u8);
+                                if (cachePath) return { b64: null, cachePath, cacheKey };
+                            }
+                            return { b64: _bytesToB64(u8), cachePath: null, cacheKey };
+                        };
                         console.log(`🟣 [FONT-DEBUG] resolvedKey="${_resolvedFontKey}" isFallback=${_isFallbackFont} sysBytes=${_sysBytes ? _sysBytes.byteLength + 'B' : 'null'} regBytes=${_regBytes ? _regBytes.byteLength + 'B' : 'null'}`);
                         if (_fontBytes) {
-                            const _u8 = new Uint8Array(_fontBytes);
-                            // Verificar magic bytes del TTF (0x00010000 o 'OTTO' para OTF)
-                            const _magic = Array.from(_u8.slice(0, 4)).map(b => b.toString(16).padStart(2,'0')).join(' ');
-                            console.log(`🟣 [FONT-DEBUG] bytes[0..3]=${_magic} (TTF=00 01 00 00, OTF=4F 54 54 4F)`);
-                            let _b64 = '';
-                            const _chunk = 8190; // múltiplo de 3: evita padding = intermedios que rompen b64decode
-                            for (let _i = 0; _i < _u8.length; _i += _chunk) {
-                                _b64 += btoa(String.fromCharCode(..._u8.subarray(_i, _i + _chunk)));
-                            }
-                            editData.fontBuffer = _b64;
+                            const _mainRef = await _prepareFontRef(_resolvedFontKey, _fontBytes);
+                            if (_mainRef.b64) editData.fontBuffer = _mainRef.b64;
+                            if (_mainRef.cachePath) editData.fontCachePath = _mainRef.cachePath;
+                            if (_mainRef.cacheKey) editData.fontCacheKey = _mainRef.cacheKey;
                             editData.fontBufferName = _resolvedFontKey;
-                            console.log(`🟣 [FONT-DEBUG] fontBuffer enviado: ${_b64.length} chars b64`);
                             // Capa 3: enviar fuente TTF pura como fallback para glifos fuera del subset CID.
                             // Verdana/Trebuchet son TrueType puras (no CFF-in-TTF) → PyMuPDF no las clasifica como Type0.
                             try {
@@ -2256,14 +2339,11 @@ invert_colors(js_data)
                                 else if (_isItalicFb) _fbKey = 'Verdana-Italic';
                                 const _fbBytes = await this.fontRegistry.loadFontBytes.call(this.fontRegistry, _fbKey);
                                 if (_fbBytes) {
-                                    const _fbU8 = new Uint8Array(_fbBytes);
-                                    let _fbB64 = '';
-                                    for (let _i = 0; _i < _fbU8.length; _i += _chunk) {
-                                        _fbB64 += btoa(String.fromCharCode(..._fbU8.subarray(_i, _i + _chunk)));
-                                    }
-                                    editData.fontBufferFallback = _fbB64;
+                                    const _fbRef = await _prepareFontRef(_fbKey, _fbBytes);
+                                    if (_fbRef.b64) editData.fontBufferFallback = _fbRef.b64;
+                                    if (_fbRef.cachePath) editData.fontBufferFallbackCachePath = _fbRef.cachePath;
+                                    if (_fbRef.cacheKey) editData.fontBufferFallbackCacheKey = _fbRef.cacheKey;
                                     editData.fontBufferFallbackName = _fbKey;
-                                    console.log(`🟣 [FONT-DEBUG] fontBufferFallback enviado: ${_fbKey} ${_fbB64.length} chars b64`);
                                 }
                             } catch(_fbe) { console.warn('🟣 [FONT-DEBUG] fontBufferFallback error:', _fbe); }
                         } else {
@@ -2278,6 +2358,8 @@ invert_colors(js_data)
                         const _uniqueSegFonts = [...new Set(segments.map(s => s.font).filter(f => f && f !== _mainFontKey))];
                         if (_uniqueSegFonts.length > 0) {
                             const _segFontBuffers = {};
+                            const _segFontCachePaths = {};
+                            const _segFontCacheKeys = {};
                             for (const _sfKey of _uniqueSegFonts) {
                                 try {
                                     let _sfBytes = (this._systemFontBytes && this._systemFontBytes[_sfKey]) ||
@@ -2294,14 +2376,10 @@ invert_colors(js_data)
                                         _sfBytes = await this.fontRegistry.loadFontBytes.call(this.fontRegistry, _sfKey);
                                     }
                                     if (_sfBytes) {
-                                        const _sfU8 = new Uint8Array(_sfBytes);
-                                        let _sfB64 = '';
-                                        const _chunkSf = 8190;
-                                        for (let _i = 0; _i < _sfU8.length; _i += _chunkSf) {
-                                            _sfB64 += btoa(String.fromCharCode(..._sfU8.subarray(_i, _i + _chunkSf)));
-                                        }
-                                        _segFontBuffers[_sfKey] = _sfB64;
-                                        console.log(`🔤 [SEG-FONT] bytes resueltos para segmento "${_sfKey}": ${_sfB64.length} chars b64`);
+                                        const _sfRef = await _prepareFontRef(_sfKey, _sfBytes);
+                                        if (_sfRef.b64) _segFontBuffers[_sfKey] = _sfRef.b64;
+                                        if (_sfRef.cachePath) _segFontCachePaths[_sfKey] = _sfRef.cachePath;
+                                        if (_sfRef.cacheKey) _segFontCacheKeys[_sfKey] = _sfRef.cacheKey;
                                     } else {
                                         console.warn(`🔤 [SEG-FONT] sin bytes para "${_sfKey}" — Python usará mapeo Base-14`);
                                     }
@@ -2311,6 +2389,12 @@ invert_colors(js_data)
                             }
                             if (Object.keys(_segFontBuffers).length > 0) {
                                 editData.segmentFontBuffers = _segFontBuffers;
+                            }
+                            if (Object.keys(_segFontCachePaths).length > 0) {
+                                editData.segmentFontCachePaths = _segFontCachePaths;
+                            }
+                            if (Object.keys(_segFontCacheKeys).length > 0) {
+                                editData.segmentFontCacheKeys = _segFontCacheKeys;
                             }
                         }
                     }
@@ -2322,9 +2406,12 @@ invert_colors(js_data)
 
                     window.__aliothDiag?.trace('TEXT-TXN', 'python-start', {
                         transactionId: _diagTxnId,
-                        inputBytes: workingBuffer.byteLength
+                        inputBytes: workingBuffer.byteLength,
+                        ocrBridge: _isOcrEdit
                     });
-                    const result = await PythonManager.applyReflowEdit(workingBuffer, page.pageIndex, editData, _transactionBeforeBuffer);
+                    const result = _isOcrEdit
+                        ? await PythonManager.applyOcrTextEdit(workingBuffer, page.pageIndex, editData)
+                        : await PythonManager.applyReflowEdit(workingBuffer, page.pageIndex, editData, _transactionBeforeBuffer);
                     window.__aliothDiag?.trace('TEXT-TXN', 'python-finish', {
                         transactionId: _diagTxnId,
                         outputBytes: result.buffer?.byteLength || result.buffer?.length || null,
@@ -2332,27 +2419,34 @@ invert_colors(js_data)
                         expandedH: result.expandedH
                     });
 
-                    // Comprobar también el motor que dibuja la página en el visor.
+                    // Comprobar también el motor que dibuja la página en el visor y reutilizarlo al recargar.
                     const loadingTask = pdfjsLib.getDocument({
                         data: result.buffer.slice(0),
                         password: src.password,
                         stopAtErrors: true,
                         isEvalSupported: false
                     });
+                    let checkedDoc = null;
+                    let _keepValidatedDoc = false;
                     try {
-                        const checkedPage = await (await loadingTask.promise).getPage(page.pageIndex + 1);
+                        checkedDoc = await loadingTask.promise;
+                        const checkedPage = await checkedDoc.getPage(page.pageIndex + 1);
                         await checkedPage.getOperatorList();
                         await checkedPage.getTextContent();
+                        if (src.buffer !== sourceAtStart || doc.sources[page.sourceId] !== src || !doc.pages.includes(page)) {
+                            throw new Error('El documento cambió mientras se verificaba la edición');
+                        }
+                        this.releasePdfSource?.(src);
+                        publishedBuffer = result.buffer;
+                        src.buffer = publishedBuffer;
+                        src.doc = checkedDoc;
+                        src._pdfLoadingTask = loadingTask;
+                        _keepValidatedDoc = true;
                     } finally {
-                        await loadingTask.destroy();
+                        if (!_keepValidatedDoc) {
+                            await loadingTask.destroy();
+                        }
                     }
-                    if (src.buffer !== sourceAtStart || doc.sources[page.sourceId] !== src || !doc.pages.includes(page)) {
-                        throw new Error('El documento cambió mientras se verificaba la edición');
-                    }
-                    publishedBuffer = result.buffer;
-                    src.buffer = publishedBuffer;
-                    this.releasePdfSource?.(src);
-                    src.doc = null;
                     this.saveState();
                     if (!doc._historyBuffers) doc._historyBuffers = {};
                     doc._historyBuffers[doc.historyIndex] = {

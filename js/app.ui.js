@@ -69,6 +69,7 @@ Object.assign(app, {
                         '#link-modal',
                         '#emoji-modal',
                         '#ocr-result-modal',
+                        '#apply-ocr-modal',
                         '#tables-modal',
                         '#remove-links-modal',
                         '#remove-images-modal',
@@ -1936,7 +1937,7 @@ equalize_pages(js_data, js_params_json)
                             { id: 'equalize',         label: 'Igualar PÁGs',       icon: S('<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>'), fn: () => this.equalizePageSizes?.() },
                             { id: 'grayscale',        label: 'Escala de Grises',   icon: S('<circle cx="12" cy="12" r="9"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="12" y1="7" x2="16" y2="7" stroke-width="1"/><line x1="12" y1="10" x2="18" y2="10" stroke-width="1"/><line x1="12" y1="13" x2="16" y2="13" stroke-width="1"/><line x1="12" y1="16" x2="18" y2="16" stroke-width="1"/>'), fn: () => this.convertToGrayscalePDF?.() },
                             { id: 'invert',           label: 'Invertir Colores',   icon: S('<circle cx="12" cy="12" r="9"/><path d="M12 3 A9 9 0 0 1 12 21 Z" fill="currentColor" stroke="none"/>'), fn: () => this.invertColorsPDF?.() },
-                            { id: 'searchable',       label: 'PDF Buscable',       icon: S('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="11" y2="13"/><circle cx="11" cy="16" r="2"/><line x1="13" y1="18" x2="15" y2="20"/>'), fn: () => this.makeSearchablePDF?.() },
+                            { id: 'searchable',       label: 'Aplicar OCR',        icon: S('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="11" y2="13"/><circle cx="11" cy="16" r="2"/><line x1="13" y1="18" x2="15" y2="20"/>'), fn: () => this.openApplyOcrModal?.() },
                             { id: 'realText',         label: 'Editar Texto Real',  icon: S('<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>'), fn: () => this.activateRealTextEditor?.() },
                             { id: 'lockEdit',         label: 'Bloquear Edición',   icon: S('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'), fn: () => this.togglePDFLock?.('edit') },
                             { id: 'lockPrint',        label: 'Bloquear Impresión', icon: S('<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>'), fn: () => this.togglePDFLock?.('print') },
@@ -9816,6 +9817,7 @@ ${rulesPrompt}
                     { id: 'tool_sign', category: 'Firma', icon: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 17s1.5-2 3-1 2.5 2 4 1"/></svg>', title: 'Insertar o gestionar firma', action: () => this.showFirmasModal?.() },
                     { id: 'tool_redact', category: 'Seguridad', icon: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="currentColor" fill-opacity="0.3"/><line x1="3" y1="5" x2="21" y2="19"/></svg>', title: 'Censurar / Tachar área sensible', action: () => this.setDrawTool?.('redact') },
                     { id: 'tool_ocr', category: 'Herramientas', icon: '<svg viewBox="0 0 24 24"><path d="M4 7V4h3"/><path d="M20 7V4h-3"/><path d="M4 17v3h3"/><path d="M20 17v3h-3"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="9" x2="12" y2="15"/></svg>', title: 'Reconocimiento de texto OCR', action: () => this.extractText?.() },
+                    { id: 'tool_apply_ocr', category: 'Herramientas', keywords: ['ocr', 'buscable', 'searchable', 'escanear', 'reconocer texto'], icon: '<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="11" y2="13"/><circle cx="11" cy="16" r="2"/><line x1="13" y1="18" x2="15" y2="20"/></svg>', title: 'Aplicar OCR (texto seleccionable y buscable)', action: () => this.openApplyOcrModal?.() },
 
                     // Operaciones de Página & Documento
                     { id: 'page_rot_cw', category: 'Páginas', icon: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><polyline points="21 3 21 8 16 8" stroke="#2563eb" stroke-width="2"/><rect x="9.5" y="8.5" width="5" height="7" rx="1" stroke="currentColor" stroke-width="1.3"/></svg>', title: 'Rotar página 90° a la derecha', action: () => this.rotatePage?.(90) },

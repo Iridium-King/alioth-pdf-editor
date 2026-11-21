@@ -2,8 +2,9 @@
 # ALIOTH PDF EDITOR - Servidor + Proxy AI (v3.1)
 # ============================================================
 
-import sys, http.server, json, mimetypes, os, ssl, urllib.request, urllib.error, urllib.parse, configparser, base64, hashlib
+import sys, http.server, json, mimetypes, os, ssl, urllib.request, urllib.error, urllib.parse, configparser, base64, hashlib, struct
 import tempfile, shutil, subprocess, threading, time, queue, uuid, weakref, re, email.utils
+from collections import OrderedDict
 from contextlib import contextmanager
 _proxy_module_dir = os.path.dirname(os.path.abspath(__file__))
 if _proxy_module_dir not in sys.path:
@@ -57,6 +58,102 @@ _TRANSLATION_FONT_LIMIT = 16 * 1024 * 1024
 _TRANSLATION_LOCK = threading.Lock()
 _TRANSLATION_MODULE = None
 _TRANSLATION_MODULE_MTIME = None
+
+_REFLOW_LOCK = threading.Lock()
+_REFLOW_EXEC_LOCK = threading.Lock()
+_REFLOW_FONT_CACHE = OrderedDict()
+_REFLOW_FONT_CACHE_MAX = 32
+_REFLOW_CALLABLE_CACHE = {'mtime_ns': None, 'fn': None}
+
+
+def _ensure_engine_path():
+    engine_dir = os.path.join(bundle_dir, 'js', 'engine')
+    if engine_dir not in sys.path:
+        sys.path.insert(0, engine_dir)
+    return engine_dir
+
+
+def _load_reflow_callable():
+    pm_path = os.path.join(bundle_dir, 'js', 'python_manager.js')
+    mtime = os.stat(pm_path).st_mtime_ns
+    with _REFLOW_LOCK:
+        cached_fn = _REFLOW_CALLABLE_CACHE.get('fn')
+        if cached_fn is not None and _REFLOW_CALLABLE_CACHE.get('mtime_ns') == mtime:
+            return cached_fn
+        with open(pm_path, 'r', encoding='utf-8') as fh:
+            text = fh.read()
+        start = text.index('def apply_reflow_edit(data, pno, edit_json, original):')
+        bt_open = text.rindex('this.run(`', 0, start) + len('this.run(`')
+        end_pos = text.index('apply_reflow_edit(js_data, js_pno, js_edit, js_original)', start)
+        source = text[bt_open:end_pos]
+        _ensure_engine_path()
+        scope = {'_ALIOTH_FONT_BYTES_CACHE': _REFLOW_FONT_CACHE}
+        exec(compile(source, 'apply_reflow_edit', 'exec'), scope)
+        fn = scope['apply_reflow_edit']
+        _REFLOW_CALLABLE_CACHE['mtime_ns'] = mtime
+        _REFLOW_CALLABLE_CACHE['fn'] = fn
+        return fn
+
+
+def _parse_binary_frame(body):
+    if not body or len(body) < 8:
+        raise ValueError('INVALID_BINARY_FRAME')
+    meta_len, len_a = struct.unpack('>II', body[:8])
+    if meta_len > 16 * 1024 * 1024 or (8 + meta_len + len_a) > len(body):
+        raise ValueError('INVALID_BINARY_FRAME')
+    meta = json.loads(body[8:8 + meta_len].decode('utf-8'))
+    if not isinstance(meta, dict):
+        raise ValueError('INVALID_BINARY_FRAME')
+    buf_a = body[8 + meta_len:8 + meta_len + len_a]
+    buf_b = body[8 + meta_len + len_a:]
+    return meta, buf_a, buf_b
+
+
+def _cache_reflow_font_unlocked(cache_key, raw_bytes):
+    if not cache_key or not isinstance(cache_key, str) or not raw_bytes or len(raw_bytes) <= 1024:
+        return False
+    if cache_key in _REFLOW_FONT_CACHE:
+        _REFLOW_FONT_CACHE.move_to_end(cache_key)
+    _REFLOW_FONT_CACHE[cache_key] = raw_bytes
+    while len(_REFLOW_FONT_CACHE) > _REFLOW_FONT_CACHE_MAX:
+        _REFLOW_FONT_CACHE.popitem(last=False)
+    return True
+
+
+def _ingest_reflow_fonts(edit):
+    cached_keys = []
+    missing_keys = []
+    with _REFLOW_LOCK:
+        for buf_key, ck_key in (('fontBuffer', 'fontCacheKey'), ('fontBufferFallback', 'fontBufferFallbackCacheKey')):
+            ck = edit.get(ck_key)
+            b64_val = edit.get(buf_key)
+            if ck and isinstance(ck, str):
+                if b64_val and isinstance(b64_val, str):
+                    raw = base64.b64decode(b64_val)
+                    if _cache_reflow_font_unlocked(ck, raw):
+                        cached_keys.append(ck)
+                elif ck in _REFLOW_FONT_CACHE:
+                    _REFLOW_FONT_CACHE.move_to_end(ck)
+                    cached_keys.append(ck)
+                else:
+                    missing_keys.append(ck)
+        seg_bufs = edit.get('segmentFontBuffers') or {}
+        seg_cks = edit.get('segmentFontCacheKeys') or {}
+        if isinstance(seg_cks, dict):
+            for fk, ck in seg_cks.items():
+                if not ck or not isinstance(ck, str):
+                    continue
+                b64_val = seg_bufs.get(fk) if isinstance(seg_bufs, dict) else None
+                if b64_val and isinstance(b64_val, str):
+                    raw = base64.b64decode(b64_val)
+                    if _cache_reflow_font_unlocked(ck, raw):
+                        cached_keys.append(ck)
+                elif ck in _REFLOW_FONT_CACHE:
+                    _REFLOW_FONT_CACHE.move_to_end(ck)
+                    cached_keys.append(ck)
+                else:
+                    missing_keys.append(ck)
+    return list(dict.fromkeys(cached_keys)), list(dict.fromkeys(missing_keys))
 
 
 def _load_translation_module():
@@ -2909,6 +3006,8 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                 'configured': bool(AZURE_KEYS and AZURE_ENDPOINTS),
                 'endpoint':   AZURE_ENDPOINTS[0] if AZURE_ENDPOINTS else '',
             })
+        if self.path == '/api/pdf/ocr/status':
+            return self._ocr_status()
         if self.path == '/api/secure-credentials/status':
             cfg = load_config()
             providers = ('gemini', 'groq', 'azure', 'fishaudio', 'mistral', 'huggingface', 'openrouter', 'nvidia')
@@ -3470,6 +3569,14 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                 return self._translate_pdf()
             if self.path == '/api/pdf/text':
                 return self._extract_pdf_text()
+            if self.path == '/api/pdf/ocr':
+                return self._apply_pdf_ocr()
+            if self.path == '/api/pdf/remove-spans':
+                return self._remove_pdf_spans()
+            if self.path == '/api/pdf/reflow-edit':
+                return self._apply_pdf_reflow_edit()
+            if self.path == '/api/pdf/ocr-edit':
+                return self._apply_pdf_ocr_edit()
             if self.path == '/api/pdf-tools':
                 return self._run_pdf_tool()
             if self.path == '/api/files/pick-save':
@@ -3897,6 +4004,167 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             return self._send_json(400, {'ok': False, 'error': 'INVALID_PDF_TEXT_REQUEST'})
         except Exception:
             return self._send_json(503, {'ok': False, 'error': 'PDF_TEXT_UNAVAILABLE'})
+
+    def _ocr_status(self):
+        try:
+            import _ocr_service
+            langs = _ocr_service.list_windows_ocr_languages()
+            return self._send_json(200, {'ok': True, 'windowsOcr': bool(langs), 'languages': langs})
+        except Exception:
+            return self._send_json(200, {'ok': True, 'windowsOcr': False, 'languages': []})
+
+    def _apply_pdf_ocr(self):
+        try:
+            data = json.loads(self._read_body())
+            if not isinstance(data, dict) or set(data) - {'pdfBase64', 'pageIndices', 'lang', 'dpi', 'skipDigital'}:
+                raise ValueError('INVALID_PDF_OCR_REQUEST')
+            encoded = data.get('pdfBase64')
+            if not isinstance(encoded, str) or not encoded:
+                raise ValueError('INVALID_PDF_OCR_SOURCE')
+            if len(encoded) > ((PDF_TEXT_LIMIT + 2) // 3) * 4:
+                return self._send_json(413, {'ok': False, 'error': 'PDF_OCR_LIMIT'})
+            try:
+                pdf = base64.b64decode(encoded, validate=True)
+            except ValueError:
+                raise ValueError('INVALID_PDF_OCR_SOURCE') from None
+            if len(pdf) > PDF_TEXT_LIMIT:
+                return self._send_json(413, {'ok': False, 'error': 'PDF_OCR_LIMIT'})
+            page_indices = data.get('pageIndices')
+            if page_indices is not None:
+                if not isinstance(page_indices, list) or any(type(p) is not int or p < 0 for p in page_indices):
+                    raise ValueError('INVALID_PDF_OCR_REQUEST')
+            lang = str(data.get('lang') or 'es')
+            dpi = data.get('dpi', 300)
+            if type(dpi) is not int or not (72 <= dpi <= 400):
+                dpi = 300
+            skip_digital = bool(data.get('skipDigital', True))
+            import _ocr_service
+            out_bytes, stats = _ocr_service.apply_ocr_to_pdf(
+                pdf,
+                page_indices=page_indices,
+                lang=lang,
+                dpi=dpi,
+                skip_digital=skip_digital,
+                font_dir=os.path.join(bundle_dir, 'fonts', 'fallback'),
+            )
+            out_b64 = base64.b64encode(out_bytes).decode('ascii')
+            body = json.dumps({'ok': True, 'pdfBase64': out_b64, 'stats': stats}, ensure_ascii=False).encode('utf-8')
+            if len(body) > MAX_REQUEST_BODY_BYTES:
+                return self._send_json(413, {'ok': False, 'error': 'PDF_OCR_LIMIT'})
+            return self._send_raw(200, body, 'application/json')
+        except (ValueError, TypeError):
+            return self._send_json(400, {'ok': False, 'error': 'INVALID_PDF_OCR_REQUEST'})
+        except RuntimeError as err:
+            if 'WINDOWS_OCR_UNAVAILABLE' in str(err):
+                return self._send_json(503, {'ok': False, 'error': 'WINDOWS_OCR_UNAVAILABLE'})
+            return self._send_json(503, {'ok': False, 'error': 'WINDOWS_OCR_FAILED'})
+        except Exception:
+            return self._send_json(503, {'ok': False, 'error': 'WINDOWS_OCR_UNAVAILABLE'})
+
+    def _remove_pdf_spans(self):
+        try:
+            meta, pdf_bytes, _ = _parse_binary_frame(self._read_body())
+            pno = meta.get('pno')
+            spans = meta.get('spans')
+            if type(pno) is not int or pno < 0 or not isinstance(spans, list) or not pdf_bytes:
+                raise ValueError('INVALID_REMOVE_SPANS_REQUEST')
+            if len(pdf_bytes) > PDF_TEXT_LIMIT:
+                return self._send_json(413, {'ok': False, 'error': 'PDF_REFLOW_LIMIT'})
+            _ensure_engine_path()
+            import fitz, io
+            import text_splice
+            with fitz.open(stream=pdf_bytes, filetype='pdf') as doc:
+                if pno >= doc.page_count:
+                    raise ValueError('INVALID_REMOVE_SPANS_PAGE')
+                ok, info = text_splice.remove_spans(doc, doc[pno], spans)
+                if not ok:
+                    return self._send_json(422, {'ok': False, 'error': f'text_splice failed: {info}'})
+                out = io.BytesIO()
+                doc.save(out, garbage=0, deflate=False)
+                out_bytes = bytes(out.getvalue())
+            return self._send_raw(200, out_bytes, 'application/pdf')
+        except (ValueError, TypeError):
+            return self._send_json(400, {'ok': False, 'error': 'INVALID_REMOVE_SPANS_REQUEST'})
+        except Exception:
+            return self._send_json(503, {'ok': False, 'error': 'PDF_ENGINE_UNAVAILABLE'})
+
+    def _apply_pdf_reflow_edit(self):
+        try:
+            meta, working_bytes, original_bytes = _parse_binary_frame(self._read_body())
+            pno = meta.get('pno')
+            edit = meta.get('edit')
+            if type(pno) is not int or pno < 0 or not isinstance(edit, dict) or not working_bytes:
+                raise ValueError('INVALID_REFLOW_REQUEST')
+            if meta.get('originalSameAsWorking') or not original_bytes:
+                original_bytes = working_bytes
+            if len(working_bytes) > PDF_TEXT_LIMIT or len(original_bytes) > PDF_TEXT_LIMIT:
+                return self._send_json(413, {'ok': False, 'error': 'PDF_REFLOW_LIMIT'})
+            cached_keys, missing_keys = _ingest_reflow_fonts(edit)
+            if missing_keys:
+                return self._send_json(409, {'ok': False, 'error': 'FONT_CACHE_MISS', 'missingFontKeys': missing_keys})
+            edit_copy = dict(edit)
+            edit_copy['_binaryReturn'] = True
+            reflow_fn = _load_reflow_callable()
+            with _REFLOW_EXEC_LOCK:
+                res = reflow_fn(working_bytes, pno, json.dumps(edit_copy), original_bytes)
+            out_bytes = res['pdf_bytes']
+            headers = {
+                'X-Reflow-Overflow': '1' if res.get('overflow') else '0',
+                'X-Reflow-Expanded-H': str(res.get('expanded_h', '')),
+                'X-Reflow-Original-H': str(res.get('original_h', '')),
+            }
+            if cached_keys:
+                headers['X-Cached-Font-Keys'] = ','.join(cached_keys)
+            return self._send_raw(200, out_bytes, 'application/pdf', extra_headers=headers)
+        except ValueError as err:
+            msg = str(err) or 'INVALID_REFLOW_REQUEST'
+            if msg.startswith('INVALID_'):
+                return self._send_json(400, {'ok': False, 'error': msg})
+            return self._send_json(422, {'ok': False, 'error': msg})
+        except Exception:
+            return self._send_json(503, {'ok': False, 'error': 'PDF_REFLOW_UNAVAILABLE'})
+
+    def _apply_pdf_ocr_edit(self):
+        try:
+            meta, working_bytes, _ = _parse_binary_frame(self._read_body())
+            pno = meta.get('pno')
+            edit = meta.get('edit')
+            if type(pno) is not int or pno < 0 or not isinstance(edit, dict) or not working_bytes:
+                raise ValueError('INVALID_OCR_EDIT_REQUEST')
+            if len(working_bytes) > PDF_TEXT_LIMIT:
+                return self._send_json(413, {'ok': False, 'error': 'PDF_OCR_LIMIT'})
+            cached_keys, missing_keys = _ingest_reflow_fonts(edit)
+            if missing_keys:
+                return self._send_json(409, {'ok': False, 'error': 'FONT_CACHE_MISS', 'missingFontKeys': missing_keys})
+            edit_copy = dict(edit)
+            ck = edit_copy.get('fontCacheKey')
+            if ck and not edit_copy.get('fontBuffer'):
+                with _REFLOW_LOCK:
+                    if ck in _REFLOW_FONT_CACHE:
+                        edit_copy['fontBuffer'] = _REFLOW_FONT_CACHE[ck]
+            _ensure_engine_path()
+            import ocr_edit
+            out_bytes, res_meta = ocr_edit.apply_ocr_text_edit_bytes(
+                working_bytes,
+                pno,
+                edit_copy,
+                font_dir=os.path.join(bundle_dir, 'fonts', 'fallback'),
+            )
+            headers = {
+                'X-Reflow-Overflow': '1' if res_meta.get('overflow') else '0',
+                'X-Reflow-Expanded-H': str(res_meta.get('expanded_h', '')),
+                'X-Reflow-Original-H': str(res_meta.get('original_h', '')),
+            }
+            if cached_keys:
+                headers['X-Cached-Font-Keys'] = ','.join(cached_keys)
+            return self._send_raw(200, out_bytes, 'application/pdf', extra_headers=headers)
+        except ValueError as err:
+            msg = str(err) or 'INVALID_OCR_EDIT_REQUEST'
+            if msg.startswith('INVALID_'):
+                return self._send_json(400, {'ok': False, 'error': msg})
+            return self._send_json(422, {'ok': False, 'error': msg})
+        except Exception:
+            return self._send_json(503, {'ok': False, 'error': 'PDF_ENGINE_UNAVAILABLE'})
 
     def _translate_pdf(self):
         try:
@@ -5986,7 +6254,7 @@ INSTRUCCIONES:
             client_count = len(_EVENT_QUEUES)
         return self._send_json(200, {'open_mode': mode, 'client_count': client_count})
 
-    def _send_raw(self, code, body, ctype='application/json'):
+    def _send_raw(self, code, body, ctype='application/json', extra_headers=None):
         self.send_response(code)
         self.send_header('Access-Control-Allow-Origin', self._get_cors_origin())
         self.send_header('Content-Type', ctype)
@@ -5994,6 +6262,10 @@ INSTRUCCIONES:
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         self.send_header('Pragma', 'no-cache')
         self.send_header('Expires', '0')
+        if extra_headers:
+            for hk, hv in extra_headers.items():
+                self.send_header(hk, str(hv))
+            self.send_header('Access-Control-Expose-Headers', ', '.join(extra_headers.keys()))
         self.end_headers()
         self.wfile.write(body)
 

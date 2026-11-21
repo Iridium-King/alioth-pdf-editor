@@ -32,7 +32,7 @@ HIDDEN_IMPORTS = [
     'win32com', 'win32com.client', 'pythoncom', 'http.server', 'mimetypes',
     'configparser', 'json', 'queue', 'urllib.request', 'ssl', 'tempfile', 'shutil',
     'subprocess', 'threading', 'time', 'webbrowser',
-    '_proxy', '_cli', '_stdio', '_pdf_engine', '_mcp_check', 'mcp_server', 'win32timezone',
+    '_proxy', '_cli', '_stdio', '_pdf_engine', '_ocr_service', '_mcp_check', 'mcp_server', 'win32timezone',
 ]
 
 POPPLER_ROOT_DLLS = set('''deflate.dll freetype.dll icudt78.dll icuuc78.dll jpeg8.dll
