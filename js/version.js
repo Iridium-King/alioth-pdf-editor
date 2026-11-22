@@ -1,7 +1,17 @@
-const ALIOTH_VERSION = '3.2.50';
+const ALIOTH_VERSION = '3.2.51';
 window.ALIOTH_VERSION = ALIOTH_VERSION;
 
 const ALIOTH_CHANGELOG = [
+    {
+        version: '3.2.51',
+        date: '2026-11-21',
+        items: [
+            { type: 'improve', text: '<strong>OCR rápido e inteligente:</strong> Aplicar OCR acelera la detección en páginas escaneadas y preserva fondos, membretes y marcas de agua con inpainting adaptativo.' },
+            { type: 'fix', text: '<strong>Edición de texto precisa:</strong> Captura continua de selecciones multipalabra en una línea sin fusionar columnas, ajuste automático de línea base y retención de tipografía Bold.' },
+            { type: 'fix', text: '<strong>Atajos de teclado en el editor:</strong> Escribir la letra H o caracteres de herramienta no reinicia el cursor ni interrumpe la edición en curso.' },
+            { type: 'improve', text: '<strong>Seguridad de documentos:</strong> Bloqueo de macros en la conversión de Office y protección automática para evitar invalidar PDFs con firma digital.' }
+        ]
+    },
     {
         version: '3.2.50',
         date: '2026-11-20',

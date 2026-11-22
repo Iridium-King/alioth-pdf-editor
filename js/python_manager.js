@@ -60,7 +60,7 @@
 
                         // Cargar motor quirúrgico text_splice y puente aislado ocr_edit en Pyodide FS
                         try {
-                            const _spliceResp = await fetch('./js/engine/text_splice.py?v=3.2.50');
+                            const _spliceResp = await fetch('./js/engine/text_splice.py?v=3.2.51');
                             if (_spliceResp.ok) {
                                 const _spliceSource = await _spliceResp.text();
                                 this.pyodide.FS.writeFile('/home/pyodide/text_splice.py', _spliceSource);
@@ -70,7 +70,7 @@
                             console.warn("⚠️ PythonManager: Could not load text_splice.py, using legacy fallback", _err);
                         }
                         try {
-                            const _ocrEditResp = await fetch('./js/engine/ocr_edit.py?v=3.2.50');
+                            const _ocrEditResp = await fetch('./js/engine/ocr_edit.py?v=3.2.51');
                             if (_ocrEditResp.ok) {
                                 const _ocrEditSource = await _ocrEditResp.text();
                                 this.pyodide.FS.writeFile('/home/pyodide/ocr_edit.py', _ocrEditSource);
