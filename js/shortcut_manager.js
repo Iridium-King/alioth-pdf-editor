@@ -364,15 +364,25 @@
                     return;
                 }
 
-                // Si un input nativo de texto de diálogo tiene foco activo, permitimos los atajos de formato (Ctrl+B, Ctrl+I, Ctrl+U)
-                // y los atajos de guardado/impresión/búsqueda (Ctrl+S, Ctrl+P, Ctrl+F, Ctrl+Z, Ctrl+Y),
-                // pero ignoramos teclas simples como 'H' o números para no interferir con la escritura.
-                const activeEl = document.activeElement;
-                const isWritingInInput = activeEl && (
-                    activeEl.tagName === 'INPUT' ||
-                    activeEl.tagName === 'TEXTAREA' ||
-                    activeEl.tagName === 'SELECT'
-                );
+                if (e.isComposing || e.keyCode === 229) return;
+
+                // Si un input nativo, textarea o editor inline contenteditable tiene foco activo,
+                // permitimos los atajos de formato (Ctrl+B, Ctrl+I, Ctrl+U) y guardado/impresión/búsqueda
+                // (Ctrl+S, Ctrl+P, Ctrl+F, Ctrl+Z, Ctrl+Y), pero ignoramos teclas simples como 'H'
+                // para no interferir con la escritura ni reiniciar el cursor.
+                const _isEditableTarget = (rawEl) => {
+                    const el = rawEl && rawEl.nodeType === 3 ? rawEl.parentElement : rawEl;
+                    if (!el) return false;
+                    return (
+                        el.tagName === 'INPUT' ||
+                        el.tagName === 'TEXTAREA' ||
+                        el.tagName === 'SELECT' ||
+                        el.isContentEditable === true ||
+                        el.contentEditable === 'true' ||
+                        Boolean(el.closest && el.closest('[contenteditable="true"], .text-content'))
+                    );
+                };
+                const isWritingInInput = _isEditableTarget(document.activeElement) || _isEditableTarget(e.target);
 
                 // Buscar si coincide con alguna acción registrada
                 for (const item of this.shortcuts) {

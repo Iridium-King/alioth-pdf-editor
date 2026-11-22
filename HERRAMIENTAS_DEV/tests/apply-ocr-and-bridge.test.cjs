@@ -435,3 +435,85 @@ test('_collectSingleLineMultiSpanItems captura los 7 spans OCR de una línea sin
     const strs = JSON.parse(JSON.stringify(res.items.map(i => i.str)));
     assert.ok(!strs.includes('CITLALI') && !strs.includes('Metepec'));
 });
+
+test('ShortcutManager ignora atajos de una sola tecla (H) dentro de editor inline contenteditable', () => {
+    const shortcutCode = read('js/shortcut_manager.js');
+    const keydownListeners = [];
+    let handCalls = 0;
+    let boldCalls = 0;
+    const inlineSpan = {
+        tagName: 'SPAN',
+        nodeType: 1,
+        isContentEditable: true,
+        contentEditable: 'true',
+        closest: (sel) => (sel.includes('.text-content') || sel.includes('contenteditable') ? inlineSpan : null)
+    };
+    const bodyEl = { tagName: 'BODY', nodeType: 1, isContentEditable: false, closest: () => null };
+    const docMock = { activeElement: inlineSpan, getElementById: () => null };
+    const appMock = {
+        toggleHandMode: () => { handCalls += 1; },
+        toggleStyle: (style) => { if (style === 'bold') boldCalls += 1; }
+    };
+    const winMock = {
+        __appReady: true,
+        app: appMock,
+        addEventListener: (ev, fn) => { if (ev === 'keydown') keydownListeners.push(fn); }
+    };
+    const ctx = {
+        window: winMock,
+        app: appMock,
+        document: docMock,
+        localStorage: { getItem: () => null, setItem: () => {} },
+        console,
+        JSON,
+        RegExp,
+        Array,
+        Object
+    };
+    vm.runInNewContext(shortcutCode, ctx);
+    assert.equal(keydownListeners.length, 1);
+    const handler = keydownListeners[0];
+
+    const makeEvt = (key, extra = {}) => {
+        const evt = {
+            key,
+            ctrlKey: false,
+            altKey: false,
+            metaKey: false,
+            shiftKey: false,
+            isComposing: false,
+            target: docMock.activeElement,
+            prevented: false,
+            stopped: false,
+            preventDefault() { this.prevented = true; },
+            stopPropagation() { this.stopped = true; },
+            ...extra
+        };
+        return evt;
+    };
+
+    // 1. Escribir 'H' y 'h' en span contenteditable NO debe activar Herramienta Mano ni prevenir tecla
+    const evtUpperH = makeEvt('H');
+    handler(evtUpperH);
+    assert.equal(handCalls, 0);
+    assert.equal(evtUpperH.prevented, false);
+    assert.equal(evtUpperH.stopped, false);
+
+    const evtLowerH = makeEvt('h');
+    handler(evtLowerH);
+    assert.equal(handCalls, 0);
+    assert.equal(evtLowerH.prevented, false);
+
+    // 2. Ctrl+B sí debe funcionar dentro de editor contenteditable
+    const evtBold = makeEvt('b', { ctrlKey: true });
+    handler(evtBold);
+    assert.equal(boldCalls, 1);
+    assert.equal(evtBold.prevented, true);
+
+    // 3. Fuera de un editor (foco en BODY), 'H' SÍ debe activar Herramienta Mano
+    docMock.activeElement = bodyEl;
+    const evtBodyH = makeEvt('H', { target: bodyEl });
+    handler(evtBodyH);
+    assert.equal(handCalls, 1);
+    assert.equal(evtBodyH.prevented, true);
+});
