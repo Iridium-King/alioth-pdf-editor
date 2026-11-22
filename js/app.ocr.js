@@ -182,6 +182,19 @@ Object.assign(window.app, {
                             skipDigital: !!skipDigital,
                         }),
                     });
+                    if (resp && resp.status === 422) {
+                        const payload = await resp.json().catch(() => ({}));
+                        if (payload.error === 'PDF_HAS_SIGNATURE') {
+                            this.toggleLoader?.(false);
+                            this.showToast?.('⚠️ No se puede aplicar OCR: el PDF contiene una firma digital que se invalidaría.');
+                            return { ok: false, error: 'PDF_HAS_SIGNATURE' };
+                        }
+                        if (payload.error === 'PDF_IS_ENCRYPTED') {
+                            this.toggleLoader?.(false);
+                            this.showToast?.('⚠️ No se puede aplicar OCR: el PDF está protegido con contraseña.');
+                            return { ok: false, error: 'PDF_IS_ENCRYPTED' };
+                        }
+                    }
                     if (resp && resp.ok) {
                         const payload = await resp.json();
                         if (payload && payload.ok && payload.pdfBase64) {

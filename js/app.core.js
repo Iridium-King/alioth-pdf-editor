@@ -2867,10 +2867,6 @@ _result
                                 location.reload();
                                 return;
                             }
-                            if (data.action === 'eval' && data.code) {
-                                try { new Function(data.code)(); } catch(e) { console.error('[SSE Eval Error]', e); }
-                                return;
-                            }
                             if (data.action === 'open_file' && data.path) {
                                 await this.openFileFromPath(data.path);
                             }

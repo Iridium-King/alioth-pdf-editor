@@ -739,6 +739,41 @@ class ComplexPdfOcrAndEditTests(unittest.TestCase):
             self.assertEqual(dark_stray, 0, "No deben quedar píxeles oscuros del texto antiguo")
             self.assertGreater(peach_count, pure_white_count * 2, "Debe preservar el círculo durazno sin cuadro blanco")
 
+    def test_audit_security_encrypted_and_signed_pdf_protection(self):
+        import _ocr_service
+        # 1. Probar detección y protección contra PDFs cifrados
+        enc_doc = fitz.open()
+        p = enc_doc.new_page()
+        p.insert_text(fitz.Point(50, 100), "Confidencial Protegido", fontsize=12)
+        enc_bytes = enc_doc.tobytes(
+            encryption=fitz.PDF_ENCRYPT_AES_256,
+            owner_pw="OwnerSecret123!",
+            user_pw="UserPass123!"
+        )
+        enc_doc.close()
+        self.assertEqual(_ocr_service.check_pdf_protection(enc_bytes), "PDF_ENCRYPTED")
+        with self.assertRaises(ValueError) as ctx:
+            _ocr_service.apply_ocr_to_pdf(enc_bytes)
+        self.assertEqual(str(ctx.exception), "PDF_IS_ENCRYPTED")
+
+        # 2. Probar detección y protección contra PDFs con firma digital
+        sig_doc = fitz.open()
+        p_sig = sig_doc.new_page()
+        p_sig.insert_text(fitz.Point(50, 100), "Documento Legal Firmado", fontsize=12)
+        annot = p_sig.add_rect_annot(fitz.Rect(50, 150, 200, 200))
+        annot.update()
+        sig_widget = fitz.Widget()
+        sig_widget.field_type = fitz.PDF_WIDGET_TYPE_SIGNATURE
+        sig_widget.field_name = "DigitalSignature1"
+        sig_widget.rect = fitz.Rect(50, 220, 200, 270)
+        p_sig.add_widget(sig_widget)
+        sig_bytes = sig_doc.tobytes()
+        sig_doc.close()
+        self.assertEqual(_ocr_service.check_pdf_protection(sig_bytes), "PDF_SIGNED")
+        with self.assertRaises(ValueError) as ctx2:
+            _ocr_service.apply_ocr_to_pdf(sig_bytes)
+        self.assertEqual(str(ctx2.exception), "PDF_HAS_SIGNATURE")
+
 
 if __name__ == "__main__":
     unittest.main()

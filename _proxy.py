@@ -1430,18 +1430,9 @@ def _com_worker_loop(progid, req_q):
         app = win32com.client.DispatchEx(progid)
         app.Visible = False
         app.DisplayAlerts = False
-        try: app.AutomationSecurity = 1
+        # Modo seguro: msoAutomationSecurityForceDisable = 3 (deshabilitar macros en automatización)
+        try: app.AutomationSecurity = 3
         except: pass
-        # Para Excel: deshabilitar Protected View (archivos de internet/temp)
-        if progid == 'Excel.Application':
-            try:
-                pvs = app.Application.ProtectedViewSettings
-                pvs.EnabledForFilesFromInternet = False
-                pvs.EnabledForUnsafeLocations  = False
-                pvs.EnabledForFilesFromOutlook  = False
-                print(f"[COM Worker] Excel Protected View deshabilitado")
-            except Exception as e:
-                print(f"[COM Worker] No se pudo deshabilitar Protected View: {e}")
         print(f"[COM Worker] {progid} ready (ver={getattr(app, 'Version', '?')})")
 
         while True:
@@ -2486,7 +2477,8 @@ def _convert_via_msoffice_com(input_path, output_path, timeout, pagesetup_params
 
     def _do(app):
         app.DisplayAlerts = False
-        try: app.AutomationSecurity = 1
+        # Modo seguro: msoAutomationSecurityForceDisable = 3 (deshabilitar macros en automatización)
+        try: app.AutomationSecurity = 3
         except: pass
 
         if progid == 'Word.Application':
@@ -2508,7 +2500,7 @@ def _convert_via_msoffice_com(input_path, output_path, timeout, pagesetup_params
         elif progid == 'Excel.Application':
             wb = None
             try:
-                app.Workbooks.Open(input_path, ReadOnly=False, UpdateLinks=0)
+                app.Workbooks.Open(input_path, ReadOnly=True, UpdateLinks=0)
                 wb = app.ActiveWorkbook
                 if wb is None:
                     raise RuntimeError("Excel no pudo abrir el archivo (Protected View o acceso denegado)")
@@ -2699,10 +2691,8 @@ def _excel_inspect_pagesetup(xlsx_path):
             xl = win32com.client.DispatchEx('Excel.Application')
             xl.Visible = False
             xl.DisplayAlerts = False
-            try:
-                pvs = xl.Application.ProtectedViewSettings
-                pvs.EnabledForFilesFromInternet = False
-                pvs.EnabledForUnsafeLocations   = False
+            # Modo seguro: deshabilitar macros en inspección automática
+            try: xl.AutomationSecurity = 3
             except: pass
             wb = xl.Workbooks.Open(xlsx_path, ReadOnly=True, UpdateLinks=0)
             ws = wb.ActiveSheet
@@ -2772,11 +2762,6 @@ def _excel_open_for_edit(xlsx_path, session_id):
             xl = win32com.client.DispatchEx('Excel.Application')
             xl.Visible = True
             xl.DisplayAlerts = False
-            try:
-                pvs = xl.Application.ProtectedViewSettings
-                pvs.EnabledForFilesFromInternet = False
-                pvs.EnabledForUnsafeLocations   = False
-            except: pass
 
             wb = xl.Workbooks.Open(xlsx_path, ReadOnly=False, UpdateLinks=0)
             ws = wb.ActiveSheet
@@ -3037,17 +3022,6 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                     q.put({'action': 'reload', 'time': time.time()})
                 count = len(_EVENT_QUEUES)
             return self._send_json(200, {'ok': True, 'reloaded_clients': count})
-
-        # Evaluar código JS en clientes conectados via SSE
-        if self.path.startswith('/api/eval-js'):
-            query = urllib.parse.urlparse(self.path).query
-            params = urllib.parse.parse_qs(query)
-            code = params.get('code', [''])[0]
-            with _CLIENTS_LOCK:
-                for q in _EVENT_QUEUES.values():
-                    q.put({'action': 'eval', 'code': code, 'time': time.time()})
-                count = len(_EVENT_QUEUES)
-            return self._send_json(200, {'ok': True, 'clients': count})
 
         # Reenviar archivo PDF a pestaña de ventana activa
         if self.path.startswith('/api/open-external-file') or self.path.startswith('/api/open-file-in-tab'):
@@ -4052,7 +4026,11 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             if len(body) > MAX_REQUEST_BODY_BYTES:
                 return self._send_json(413, {'ok': False, 'error': 'PDF_OCR_LIMIT'})
             return self._send_raw(200, body, 'application/json')
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as err:
+            if str(err) == 'PDF_HAS_SIGNATURE':
+                return self._send_json(422, {'ok': False, 'error': 'PDF_HAS_SIGNATURE', 'message': 'El documento contiene una firma digital que se invalidaría al aplicar OCR.'})
+            if str(err) == 'PDF_IS_ENCRYPTED':
+                return self._send_json(422, {'ok': False, 'error': 'PDF_IS_ENCRYPTED', 'message': 'El documento está protegido con contraseña.'})
             return self._send_json(400, {'ok': False, 'error': 'INVALID_PDF_OCR_REQUEST'})
         except RuntimeError as err:
             if 'WINDOWS_OCR_UNAVAILABLE' in str(err):

@@ -517,3 +517,27 @@ test('ShortcutManager ignora atajos de una sola tecla (H) dentro de editor inlin
     assert.equal(handCalls, 1);
     assert.equal(evtBodyH.prevented, true);
 });
+
+test('Auditoría P0/P1: eval-js retirado, Office seguro (AutomationSecurity 3 sin ProtectedView tampering) y sin ExecutionPolicy Bypass', () => {
+    const proxyPy = read('_proxy.py');
+    const appCoreJs = read('js/app.core.js');
+    const ocrServicePy = read('_ocr_service.py');
+    const baseHtml = read('BASE.html');
+
+    // 1. eval-js retirado de _proxy.py y no evaluado en app.core.js
+    assert.ok(!proxyPy.includes("'/api/eval-js'"), '_proxy.py no debe contener endpoint /api/eval-js');
+    assert.ok(!proxyPy.includes('"/api/eval-js"'), '_proxy.py no debe contener endpoint /api/eval-js');
+    assert.ok(!appCoreJs.includes("action === 'eval'"), 'js/app.core.js no debe evaluar código recibido por SSE');
+
+    // 2. Office seguro: AutomationSecurity = 3 y sin desactivar ProtectedView
+    assert.ok(proxyPy.includes('app.AutomationSecurity = 3'), 'Office COM worker debe forzar AutomationSecurity = 3');
+    assert.ok(!proxyPy.includes('AutomationSecurity = 1'), 'No debe quedar AutomationSecurity = 1 en _proxy.py');
+    assert.ok(!proxyPy.includes('EnabledForFilesFromInternet = False'), 'No debe modificarse ProtectedView globalmente');
+
+    // 3. PowerShell OCR sin ExecutionPolicy Bypass
+    assert.ok(!ocrServicePy.includes('-ExecutionPolicy'), '_ocr_service.py no debe invocar ExecutionPolicy Bypass');
+    assert.ok(!ocrServicePy.includes('Bypass'), '_ocr_service.py no debe contener Bypass');
+
+    // 4. Modal OCR de BASE.html advierte sobre PDFs con firma digital
+    assert.ok(baseHtml.includes('los documentos con firma digital se protegen para no invalidar su firma'), 'BASE.html debe reflejar la protección de firmas');
+});

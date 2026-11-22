@@ -82,7 +82,7 @@ try {
     langs = []
     try:
         proc = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+            ["powershell.exe", "-NoProfile", "-Command", ps_script],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -420,7 +420,7 @@ $json = @{ lang = $engine.RecognizerLanguage.LanguageTag; pages = $results } | C
             env = dict(os.environ, ALIOTH_OCR_MANIFEST=manifest_path, ALIOTH_OCR_OUT=out_path)
             timeout_s = max(30, 15 * len(jobs))
             proc = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+                ["powershell.exe", "-NoProfile", "-Command", ps_script],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -863,8 +863,42 @@ def inject_ocr_layer(pdf_bytes, pages_words, font_dir=None):
     return out_bytes
 
 
+def check_pdf_protection(pdf_bytes):
+    """Detecta si el PDF está cifrado o contiene firmas digitales que se invalidarían."""
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    except Exception:
+        return None
+    try:
+        if getattr(doc, "is_encrypted", False) or getattr(doc, "needs_pass", False):
+            return "PDF_ENCRYPTED"
+        for page in doc:
+            for w in page.widgets():
+                if getattr(w, "is_signed", False) or getattr(w, "field_type", None) == getattr(fitz, "PDF_WIDGET_TYPE_SIGNATURE", 6):
+                    return "PDF_SIGNED"
+        for i in range(1, doc.xref_length()):
+            try:
+                keys = doc.xref_get_keys(i)
+                if "ByteRange" in keys and "Contents" in keys:
+                    return "PDF_SIGNED"
+            except Exception:
+                pass
+        return None
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+
+
 def apply_ocr_to_pdf(pdf_bytes, page_indices=None, lang="es", dpi=300, skip_digital=True, font_dir=None):
     """Ejecuta Windows OCR y agrega la capa invisible sin alterar contenido existente."""
+    prot = check_pdf_protection(pdf_bytes)
+    if prot == "PDF_SIGNED":
+        raise ValueError("PDF_HAS_SIGNATURE")
+    if prot == "PDF_ENCRYPTED":
+        raise ValueError("PDF_IS_ENCRYPTED")
+
     ocr_res = ocr_pages_windows(
         pdf_bytes,
         page_indices=page_indices,
