@@ -19,6 +19,18 @@
         } catch (_) {}
         window.__aliothSkipSplash = skip;
         if (skip) document.documentElement.classList.add('skip-splash');
+        window.__aliothDismissSplash = () => {
+            const splash = document.getElementById('alioth-splash');
+            if (!splash) return;
+            if (skip) { splash.remove(); return; }
+            splash.classList.add('fade-out');
+            setTimeout(() => splash.remove(), 160);
+        };
+        window.__aliothFinishSplash = () => {
+            if (window.__aliothNativeHost) {
+                window.chrome.webview.postMessage({ channel: 'alioth-startup', state: 'splash-finished' });
+            } else window.__aliothDismissSplash();
+        };
     })();
     </script>
     <script src="js/preferences.js?v=appearance-1"></script>
@@ -115,7 +127,10 @@
 </div>
 
 <script>
-if (!window.__aliothSkipSplash) document.getElementById('splash-logo').src = 'ICONOS/ALIOTH TDAH STUDIOS LOGO 2.png';
+if (!window.__aliothSkipSplash) {
+    document.getElementById('splash-logo').src = 'ICONOS/ALIOTH TDAH STUDIOS LOGO 2.png';
+    if (window.__aliothNativeHost) window.chrome.webview.postMessage({ channel: 'alioth-startup', state: 'splash-visible' });
+}
 </script>
 
 <!-- Pantalla de bloqueo de la app para cifrado local -->
@@ -5268,7 +5283,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
     </div>
 
         <script>window.i18n.setLanguage(window.i18n.getCurrentLanguage());</script>
-    <script type="module" src="js/main.js?v=3.2.52"></script>
+    <script type="module" src="js/main.js?v=3.2.53"></script>
     <!-- MODAL PROPIEDADES CAMPO -->
     <div id="properties-modal"
         style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">

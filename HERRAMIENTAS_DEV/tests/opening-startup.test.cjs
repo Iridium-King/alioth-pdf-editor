@@ -61,6 +61,56 @@ test('unavailable storage does not interrupt startup or detached windows', () =>
   }
 });
 
+test('native splash waits for the host to hide its controls before revealing the editor', () => {
+  for (const search of ['', '?detach=1']) {
+    const messages = [], classes = [], timers = [];
+    let removed = false;
+    const window = {
+      __aliothNativeHost: true,
+      chrome: { webview: { postMessage: message => messages.push(message.state) } }
+    };
+    vm.runInNewContext(splashScript, {
+      window, URLSearchParams, location: { search },
+      sessionStorage: { getItem: () => null, setItem() {} },
+      setTimeout: callback => timers.push(callback),
+      document: {
+        documentElement: { classList: { add() {} } },
+        getElementById: () => ({ classList: { add: value => classes.push(value) }, remove: () => { removed = true; } })
+      }
+    });
+    window.__aliothFinishSplash();
+    assert.deepEqual(messages, ['splash-finished']);
+    assert.equal(removed, false);
+    assert.deepEqual(classes, []);
+    window.__aliothDismissSplash();
+    if (search) {
+      assert.equal(removed, true);
+      assert.equal(timers.length, 0);
+    } else {
+      assert.deepEqual(classes, ['fade-out']);
+      assert.equal(removed, false);
+      timers[0]();
+      assert.equal(removed, true);
+    }
+  }
+});
+
+test('browser splash completes without waiting for a native host', () => {
+  let faded = false, removed = false;
+  const window = {};
+  vm.runInNewContext(splashScript, {
+    window, URLSearchParams, location: { search: '' },
+    sessionStorage: { getItem: () => null, setItem() {} }, setTimeout: callback => callback(),
+    document: {
+      documentElement: { classList: { add() {} } },
+      getElementById: () => ({ classList: { add: () => { faded = true; } }, remove: () => { removed = true; } })
+    }
+  });
+  window.__aliothFinishSplash();
+  assert.equal(faded, true);
+  assert.equal(removed, true);
+});
+
 function openingApp() {
   let finishDatabase;
   const databaseGate = new Promise(resolve => { finishDatabase = resolve; });

@@ -1777,17 +1777,7 @@ _result
                 void openStartupFile();
                 console.log("Alioth PDF Editor Iniciado (Con Auto-Guardado + Interact.js)");
                 console.log(`📦 VERSION: ${ALIOTH_VERSION}`);
-                // Hide splash screen when initialization completes.
-                (function() {
-                    var sp = document.getElementById('alioth-splash');
-                    if (!sp) return;
-                    if (window.__aliothSkipSplash) {
-                        if (sp.parentNode) sp.parentNode.removeChild(sp);
-                        return;
-                    }
-                    sp.classList.add('fade-out');
-                    setTimeout(function(){ if (sp.parentNode) sp.parentNode.removeChild(sp); }, 160);
-                })();
+                window.__aliothFinishSplash?.();
                 // Resaltado de campos activo por defecto
                 if (!this._readingMode) document.body.classList.add('fields-highlighted');
 

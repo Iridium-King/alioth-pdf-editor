@@ -7,6 +7,7 @@ using Microsoft.Web.WebView2.Core;
 
 internal sealed partial class HostWindow
 {
+    private bool RecoveryActionsVisible { get { return recoveryBar != null && recoveryBar.Visible; } }
     private bool verifying;
     private readonly System.Diagnostics.Stopwatch startupClock = System.Diagnostics.Stopwatch.StartNew();
     private bool StartupAssetVerification { get { var args = System.Environment.GetCommandLineArgs(); return args.Length > 6 && args[6] == "startup-asset"; } }
@@ -700,7 +701,7 @@ internal sealed partial class HostWindow
             throw new Exception("STARTUP_TIMER_DID_NOT_TRIGGER_AFTER_DEADLINE");
         await WaitForFailureInterface();
         if (!startupComplete || !Program.SoftwareRendering || !startupRetried || !view.Enabled ||
-            recoveryBar.Visible || view == initialView || view.CoreWebView2.Source != source || recoveryPrompts.Count != 0 ||
+            RecoveryActionsVisible || view == initialView || view.CoreWebView2.Source != source || recoveryPrompts.Count != 0 ||
             await view.CoreWebView2.ExecuteScriptAsync("localStorage.getItem('alioth_qa_startup')") != "\"retained\"")
             throw new Exception("STARTUP_RETRY_DID_NOT_RESTORE_EDITOR");
         File.WriteAllText(Path.Combine(directory, "startup-recovery.json"),
@@ -715,7 +716,7 @@ internal sealed partial class HostWindow
         await WaitForFailureInterface();
         view.CoreWebView2.Navigate(Program.Origin + "/__qa_missing_document_404");
         for (int i = 0; i < 100 && !recoveryPrompts.Contains("navigation"); i++) await Task.Delay(100);
-        if (!recoveryPrompts.Contains("navigation") || recoveryBar == null || !recoveryBar.Visible)
+        if (!recoveryPrompts.Contains("navigation") || RecoveryActionsVisible)
             throw new Exception("HTTP_FAILURE_RECOVERY_NOT_AVAILABLE");
         await Task.Delay(400);
         if (!view.CoreWebView2.Source.EndsWith("/__qa_missing_document_404")) throw new Exception("UNREQUESTED_NAVIGATION_RELOAD");
@@ -725,10 +726,10 @@ internal sealed partial class HostWindow
         var crashing = view.CoreWebView2.CallDevToolsProtocolMethodAsync("Page.crash", "{}");
         crashing.ContinueWith(task => { var observed = task.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
         for (int i = 0; i < 100 && !recoveryPrompts.Contains("renderer"); i++) await Task.Delay(100);
-        if (!rendererUnavailable || !recoveryPrompts.Contains("renderer") || recoveryBar == null || !recoveryBar.Visible)
+        if (!rendererUnavailable || !recoveryPrompts.Contains("renderer") || RecoveryActionsVisible)
             throw new Exception("RENDERER_CRASH_RECOVERY_NOT_AVAILABLE");
         await Task.Delay(400);
-        if (!rendererUnavailable || !recoveryBar.Visible) throw new Exception("UNREQUESTED_RENDERER_RELOAD");
+        if (!rendererUnavailable || RecoveryActionsVisible) throw new Exception("UNREQUESTED_RENDERER_RELOAD");
         int beforeClose = recoveryPrompts.Count;
         Close();
         for (int i = 0; i < 50 && recoveryPrompts.Count == beforeClose; i++) await Task.Delay(100);
@@ -739,13 +740,13 @@ internal sealed partial class HostWindow
         await WaitForFailureInterface();
         string retained = await view.CoreWebView2.ExecuteScriptAsync("({saved:localStorage.getItem('alioth_qa_recovery_probe'),memory:window.__qaUnsavedProbe||null})");
         var retainedState = Program.Json.Deserialize<System.Collections.Generic.Dictionary<string, object>>(retained);
-        if ((string)retainedState["saved"] != "retained" || retainedState["memory"] != null || recoveryBar.Visible)
+        if ((string)retainedState["saved"] != "retained" || retainedState["memory"] != null || RecoveryActionsVisible)
             throw new Exception("EXPLICIT_RENDERER_RECOVERY_FAILED");
         int browserProcessId = (int)view.CoreWebView2.BrowserProcessId;
         if (browserProcessId == System.Diagnostics.Process.GetCurrentProcess().Id) throw new Exception("INVALID_QA_BROWSER_PROCESS");
         using (var browserProcess = System.Diagnostics.Process.GetProcessById(browserProcessId)) browserProcess.Kill();
         for (int i = 0; i < 100 && !recoveryPrompts.Contains("browser"); i++) await Task.Delay(100);
-        if (!rendererUnavailable || !recreateNeeded || !recoveryPrompts.Contains("browser") || !recoveryBar.Visible)
+        if (!rendererUnavailable || !recreateNeeded || !recoveryPrompts.Contains("browser") || RecoveryActionsVisible)
             throw new Exception("BROWSER_CRASH_RECOVERY_NOT_AVAILABLE");
         await Task.Delay(400);
         if (!rendererUnavailable || !recreateNeeded) throw new Exception("UNREQUESTED_BROWSER_RECREATE");
@@ -753,7 +754,7 @@ internal sealed partial class HostWindow
         OfferRecovery();
         await Task.Delay(100);
         await WaitForFailureInterface();
-        if (await view.CoreWebView2.ExecuteScriptAsync("localStorage.getItem('alioth_qa_recovery_probe')") != "\"retained\"" || recoveryBar.Visible)
+        if (await view.CoreWebView2.ExecuteScriptAsync("localStorage.getItem('alioth_qa_recovery_probe')") != "\"retained\"" || RecoveryActionsVisible)
             throw new Exception("EXPLICIT_BROWSER_RECOVERY_FAILED");
         await view.CoreWebView2.ExecuteScriptAsync("app.flushDocumentEdits=()=>new Promise(()=>{})");
         closeTimer.Interval = 200;

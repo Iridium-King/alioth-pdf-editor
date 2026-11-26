@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -227,7 +228,7 @@ internal sealed partial class HostWindow : Form
     private readonly System.Windows.Forms.Timer startupTimer = new System.Windows.Forms.Timer { Interval = 25000 };
     private TaskCompletionSource<bool> startupDeadline;
     private string startupStage;
-    private bool startupComplete, startupRetried;
+    private bool startupComplete, startupRetried, splashVisible;
     private CoreWebView2Environment environment;
     private Panel recoveryBar;
     private Button recoveryRetry;
@@ -340,7 +341,8 @@ internal sealed partial class HostWindow : Form
         startupTimer.Start();
         Program.Log("startup-begin", startupStage);
         view.Enabled = false;
-        ShowRecoveryActions(false);
+        splashVisible = false;
+        if (recoveryBar != null) recoveryBar.Visible = false;
     }
 
     private async void StartupTimedOut(object sender, EventArgs e)
@@ -356,6 +358,7 @@ internal sealed partial class HostWindow : Form
             Program.Log("startup-retry", startupStage);
             await RetryRecovery(trySoftware: true);
         }
+        else if (!splashVisible) QueueRecovery("startup-timeout", true);
     }
 
     private async Task NotifyLauncher()
@@ -458,7 +461,8 @@ internal sealed partial class HostWindow : Form
                         // A visible migration can take longer than the editor bootstrap.
                         view.Enabled = false;
                         startupTimer.Start();
-                        ShowRecoveryActions(false);
+                        splashVisible = false;
+                        if (recoveryBar != null) recoveryBar.Visible = false;
                     }
                     if (primary && !startupComplete)
                         startupStage = uri.AbsolutePath == "/BASE.html" ? "editor" : "navigation";
@@ -629,8 +633,10 @@ internal sealed partial class HostWindow : Form
             object channel;
             if (data.TryGetValue("channel", out channel) && Object.Equals(channel, "alioth-startup"))
             {
-                if (primary && !startupComplete && e.Source == view.CoreWebView2.Source)
-                    await HandleStartupMessage(source.AbsolutePath, Convert.ToString(data["state"]));
+                string state = Convert.ToString(data["state"]);
+                if (e.Source == view.CoreWebView2.Source &&
+                    (primary && !startupComplete || state == "splash-visible" || state == "splash-finished"))
+                    await HandleStartupMessage(source.AbsolutePath, state);
                 return;
             }
             if (data.ContainsKey("channel") && Convert.ToString(data["channel"]) == "alioth-file-paths")
@@ -705,16 +711,31 @@ internal sealed partial class HostWindow : Form
 
     private async Task HandleStartupMessage(string path, string state)
     {
+        if (path == "/BASE.html" && state == "splash-visible")
+        {
+            splashVisible = true;
+            ShowRecoveryActions(recoveryCategory != null);
+            return;
+        }
+        if (path == "/BASE.html" && state == "splash-finished")
+        {
+            splashVisible = false;
+            if (recoveryBar != null) recoveryBar.Visible = false;
+            await view.CoreWebView2.ExecuteScriptAsync("window.__aliothDismissSplash?.();");
+            return;
+        }
         if (path == "/BASE.html" && state == "editor-failed")
         {
             startupTimer.Stop();
             Program.Log("startup-failed", "editor");
-            ShowRecoveryBar("startup-timeout", true);
+            if (splashVisible) ShowRecoveryBar("startup-timeout", true);
+            else QueueRecovery("startup-timeout", true);
             return;
         }
         bool editorReady = path == "/BASE.html" && state == "editor-ready";
         if (!editorReady && !(path == "/browser-migration.html" && state == "migration-visible")) return;
         startupComplete = editorReady;
+        splashVisible = false;
         startupStage = null;
         startupTimer.Stop();
         view.Enabled = true;
@@ -773,15 +794,22 @@ internal sealed partial class HostWindow : Form
 
     private void ShowRecoveryActions(bool canRetry)
     {
+        if (!splashVisible)
+        {
+            if (recoveryBar != null) recoveryBar.Visible = false;
+            return;
+        }
         if (recoveryBar == null)
         {
             recoveryBar = new Panel {
-                Width = 184, Height = 36, BackColor = BackColor,
+                Height = 36, BackColor = Color.FromArgb(18, 16, 31),
                 Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
-                Location = new System.Drawing.Point(ClientSize.Width - 198, ClientSize.Height - 50)
+                Top = ClientSize.Height - 50
             };
-            recoveryRetry = new Button { Dock = DockStyle.Right, Width = 94, Text = "Reintentar" };
-            var close = new Button { Dock = DockStyle.Right, Width = 84, Text = "Cancelar" };
+            recoveryRetry = CreateSplashButton("Reintentar", 100);
+            recoveryRetry.Dock = DockStyle.Left;
+            var close = CreateSplashButton("Cancelar", 92);
+            close.Dock = DockStyle.Right;
             recoveryRetry.Click += delegate { OfferRecovery(); };
             close.Click += delegate { Close(); };
             recoveryBar.Controls.Add(recoveryRetry);
@@ -789,8 +817,42 @@ internal sealed partial class HostWindow : Form
             Controls.Add(recoveryBar);
         }
         recoveryRetry.Visible = canRetry;
+        recoveryBar.Width = canRetry ? 200 : 92;
+        recoveryBar.Left = ClientSize.Width - recoveryBar.Width - 14;
         recoveryBar.Visible = true;
         recoveryBar.BringToFront();
+    }
+
+    private static Button CreateSplashButton(string text, int width)
+    {
+        var font = new Font("Segoe UI", 10, FontStyle.Regular);
+        var button = new Button {
+            Text = text, AccessibleName = text, Width = width, Height = 36,
+            FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = false,
+            BackColor = Color.FromArgb(48, 46, 66), ForeColor = Color.White,
+            Font = font, Cursor = Cursors.Hand
+        };
+        button.FlatAppearance.BorderSize = 0;
+        button.FlatAppearance.MouseOverBackColor = Color.FromArgb(66, 63, 90);
+        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(80, 76, 108);
+        EventHandler roundButton = delegate {
+            if (button.Width < 20 || button.Height < 20) return;
+            using (var path = new GraphicsPath())
+            {
+                path.AddArc(0, 0, 20, 20, 180, 90);
+                path.AddArc(button.Width - 20, 0, 20, 20, 270, 90);
+                path.AddArc(button.Width - 20, button.Height - 20, 20, 20, 0, 90);
+                path.AddArc(0, button.Height - 20, 20, 20, 90, 90);
+                path.CloseFigure();
+                var previous = button.Region;
+                button.Region = new Region(path);
+                if (previous != null) previous.Dispose();
+            }
+        };
+        button.Resize += roundButton;
+        roundButton(button, EventArgs.Empty);
+        button.Disposed += delegate { font.Dispose(); };
+        return button;
     }
 
     internal void QueueRecovery(string category, bool recreate)
