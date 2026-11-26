@@ -294,8 +294,9 @@ class ComplexPdfOcrAndEditTests(unittest.TestCase):
     @unittest.skipUnless(LAPI_PDF_PATH.exists(), "Requiere el PDF real Lapi local")
     def test_fixture1_real_lapi_pdf_ocr_accuracy_alignment_and_pixel_identity(self):
         import _ocr_service
-        if not _ocr_service.list_windows_ocr_languages():
-            self.skipTest("Windows OCR sin idiomas instalados")
+        languages = _ocr_service.list_windows_ocr_languages()
+        if not _ocr_service.resolve_windows_ocr_language("es", languages):
+            self.skipTest("Requiere Windows OCR en español; idiomas disponibles: " + repr(languages))
         raw = LAPI_PDF_PATH.read_bytes()
         with fitz.open(stream=raw, filetype="pdf") as orig_doc:
             self.assertEqual(orig_doc[0].get_text().strip(), "")
@@ -342,8 +343,9 @@ class ComplexPdfOcrAndEditTests(unittest.TestCase):
 
     def test_fixture2_hybrid_multipage_and_rotated_ocr(self):
         import _ocr_service
-        if not _ocr_service.list_windows_ocr_languages():
-            self.skipTest("Windows OCR sin idiomas instalados")
+        languages = _ocr_service.list_windows_ocr_languages()
+        if not _ocr_service.resolve_windows_ocr_language("es", languages):
+            self.skipTest("Requiere Windows OCR en español; idiomas disponibles: " + repr(languages))
         raw = _build_hybrid_multipage_pdf()
         out_bytes, stats = _ocr_service.apply_ocr_to_pdf(
             raw, page_indices=None, lang="es", dpi=300, skip_digital=True,
@@ -351,6 +353,7 @@ class ComplexPdfOcrAndEditTests(unittest.TestCase):
         )
         self.assertEqual(stats["skipped_pages"], [0])
         self.assertEqual(stats["processed_pages"], [1, 2])
+        self.assertEqual(stats["lang_used"].split("-")[0].lower(), "es")
 
         with fitz.open(stream=out_bytes, filetype="pdf") as doc:
             # Página 0 intacta (solo texto visible nativo)

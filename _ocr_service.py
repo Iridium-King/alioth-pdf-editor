@@ -139,14 +139,16 @@ def resolve_windows_ocr_language(requested_lang, available_langs):
         hit = _pick(["es-mx", "es-es", "es-419", "es"])
         if hit:
             return hit
+        if req in ("es", "spa"):
+            return None
         if req in ("es+en", "spa+eng", "auto"):
             hit_en = _pick(["en-us", "en-gb", "en"])
             if hit_en:
                 return hit_en
     elif req in ("en", "eng"):
-        hit = _pick(["en-us", "en-gb", "en"])
-        if hit:
-            return hit
+        return _pick(["en-us", "en-gb", "en"])
+    else:
+        return _pick([req])
 
     return tags[0]
 
