@@ -3455,7 +3455,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                     if (compress) {
                         if (typeof PythonManager === 'undefined' || typeof PythonManager.compressPDF !== 'function')
                             throw new Error('COMPRESSION_UNAVAILABLE');
-                        document.getElementById('loader-msg').innerText = "Python: Comprimiendo PDF...";
+                        document.getElementById('loader-msg').innerText = "Comprimiendo PDF...";
                         // compressLevel: 'fast' = no recomprimir imgs, 'standard' = calidad 75, 'max' = calidad 45
                         const imgQuality = compressLevel === 'max' ? 45 : compressLevel === 'fast' ? 0 : compressLevel === 'lossless' ? -1 : 75;
                         try {
@@ -4710,7 +4710,7 @@ base64.b64encode(buf.getvalue()).decode("ascii")
 
                     // 🐍 PRO-MERGE AUTOMÁTICO: Calidad estructural si hay varios archivos
                     if (orderedFiles.length > 1) {
-                        this.toggleLoader(true, 'Python: Combinando archivos (Estructural)...');
+                        this.toggleLoader(true, 'Combinando archivos...');
                         try {
                             await PythonManager.init();
                             const buffers = [];

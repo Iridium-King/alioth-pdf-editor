@@ -35,7 +35,7 @@ Object.assign(window.app, {
                 const worker = await this._createLocalOCRWorker('spa', message => {
                     if (message.status !== 'recognizing text') return;
                     const label = document.getElementById('loader-msg');
-                    if (label) label.innerText = `OCR: ${Math.round(message.progress * 100)}% completado...`;
+                    if (label) label.innerText = `Reconociendo texto: ${Math.round(message.progress * 100)}% completado...`;
                 });
                 try {
                     await worker.setParameters({ tessedit_pageseg_mode: psmMode, preserve_interword_spaces: '1' });
@@ -62,7 +62,7 @@ Object.assign(window.app, {
                 const worker = await this._createLocalOCRWorker(langKey, message => {
                     if (message.status !== 'recognizing text') return;
                     const label = document.getElementById('loader-msg');
-                    if (label) label.innerText = `OCR: ${Math.round(message.progress * 100)}% completado...`;
+                    if (label) label.innerText = `Reconociendo texto: ${Math.round(message.progress * 100)}% completado...`;
                 });
                 try {
                     await worker.setParameters({ tessedit_pageseg_mode: psmMode, preserve_interword_spaces: '1' });
@@ -164,12 +164,12 @@ Object.assign(window.app, {
         let usedEngine = 'tesseract-offline';
         let stats = { processed_pages: [], skipped_pages: [], words_inserted: 0 };
 
-        this.toggleLoader?.(true, 'Iniciando OCR...');
+        this.toggleLoader?.(true, 'Preparando reconocimiento de texto...');
         try {
             // 1. Camino primario: Windows OCR nativo vía _proxy.py
             const proto = (typeof window !== 'undefined' && window.location && window.location.protocol) || '';
             if (proto !== 'file:' && typeof fetch === 'function') {
-                report(15, `OCR: Analizando ${targetIndices.length} página(s) con Windows OCR...`);
+                report(15, `Analizando ${targetIndices.length} página(s)...`);
                 try {
                     const resp = await fetch('/api/pdf/ocr', {
                         method: 'POST',
@@ -215,7 +215,7 @@ Object.assign(window.app, {
                 const pagesToOcr = [];
                 const skippedPages = [];
 
-                report(10, 'OCR offline: Revisando páginas...');
+                report(10, 'Revisando páginas...');
                 for (const pIdx of targetIndices) {
                     let isDigital = false;
                     if (skipDigital && pm && typeof pm.extractPageText === 'function') {
@@ -239,7 +239,7 @@ Object.assign(window.app, {
                     for (let idx = 0; idx < pagesToOcr.length; idx++) {
                         const pIdx = pagesToOcr[idx];
                         const pctBase = 20 + Math.round((idx / pagesToOcr.length) * 60);
-                        report(pctBase, `OCR offline (${tessLang}): página ${pIdx + 1} (${idx + 1}/${pagesToOcr.length})...`);
+                        report(pctBase, `Reconociendo texto en página ${pIdx + 1} (${idx + 1}/${pagesToOcr.length})...`);
                         const matchingPage = doc.pages.find(p => p.sourceId === curPage.sourceId && p.pageIndex === pIdx) || {
                             sourceId: curPage.sourceId,
                             pageIndex: pIdx,
@@ -273,7 +273,7 @@ Object.assign(window.app, {
                         if (!pm || typeof pm.createSearchablePDF !== 'function') {
                             throw new Error('PythonManager.createSearchablePDF no disponible');
                         }
-                        report(88, 'Python: Insertando capa de texto invisible...');
+                        report(88, 'Incorporando texto reconocido al PDF...');
                         outBuffer = await pm.createSearchablePDF(beforeBuffer, ocrWords);
                     } else {
                         outBuffer = beforeBuffer;
@@ -293,7 +293,7 @@ Object.assign(window.app, {
             }
 
             // 3. Validar con PDF.js antes de publicar y reutilizar el pdfDoc cargado
-            report(93, 'Verificando PDF resultante (abriendo)...');
+            report(93, 'Verificando PDF resultante...');
             let validatedDoc = null;
             let loadingTask = null;
             if (typeof pdfjsLib !== 'undefined' && typeof pdfjsLib.getDocument === 'function') {
@@ -305,14 +305,14 @@ Object.assign(window.app, {
                 });
                 try {
                     validatedDoc = await loadingTask.promise;
-                    report(95, 'Verificando PDF resultante (página)...');
+                    report(95, 'Verificando página...');
                     const checkIdx = (stats.processed_pages && stats.processed_pages[0] !== undefined)
                         ? stats.processed_pages[0]
                         : curPage.pageIndex;
                     const checkedPage = await validatedDoc.getPage(checkIdx + 1);
-                    report(96, 'Verificando PDF resultante (operadores)...');
+                    report(96, 'Verificando contenido de la página...');
                     await checkedPage.getOperatorList();
-                    report(97, 'Verificando PDF resultante (texto)...');
+                    report(97, 'Verificando texto reconocido...');
                     await checkedPage.getTextContent();
                 } catch (verifyErr) {
                     try { await loadingTask.destroy(); } catch (_) {}

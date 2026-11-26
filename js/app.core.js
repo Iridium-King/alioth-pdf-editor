@@ -1670,12 +1670,16 @@ _result
                 const _urlParams = new URLSearchParams(window.location.search);
                 const _openFile  = _urlParams.get('openfile') || _urlParams.get('open') || _urlParams.get('file');
                 const _readMode  = _urlParams.get('readmode') === '1';
-                if (_openFile) {
-                    setTimeout(async () => {
+                const startupFile = _openFile ? fetch('/open-file?path=' + encodeURIComponent(_openFile))
+                    .then(async response => {
+                        if (!response.ok) throw new Error('HTTP ' + response.status);
+                        return { arrayBuffer: await response.arrayBuffer() };
+                    }).catch(error => ({ error })) : null;
+                const openStartupFile = async () => {
+                    if (startupFile) {
                         try {
-                            const resp = await fetch('/open-file?path=' + encodeURIComponent(_openFile));
-                            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                            const arrayBuffer = await resp.arrayBuffer();
+                            const { arrayBuffer, error } = await startupFile;
+                            if (error) throw error;
                             const rawName = _openFile.replace(/\\/g, '/').split('/').pop() || 'documento.pdf';
                             let fileName = rawName;
                             try { fileName = decodeURIComponent(rawName); } catch (_) {}
@@ -1711,8 +1715,8 @@ _result
                             console.error('Error abriendo archivo desde URL:', err);
                             this.showToast('No se pudo abrir el archivo: ' + err.message);
                         }
-                    }, 600);
-                }
+                    }
+                };
 
 
                 // Parche de CSS para corregir Z-Index
@@ -1770,21 +1774,19 @@ _result
                     this.renderHomeDocuments();
                 }
 
+                void openStartupFile();
                 console.log("Alioth PDF Editor Iniciado (Con Auto-Guardado + Interact.js)");
                 console.log(`📦 VERSION: ${ALIOTH_VERSION}`);
                 // Hide splash screen when initialization completes.
                 (function() {
                     var sp = document.getElementById('alioth-splash');
                     if (!sp) return;
-                    var isDetached = new URLSearchParams(location.search).has('detach') ||
-                                     new URLSearchParams(location.search).has('transferToken') ||
-                                     new URLSearchParams(location.search).has('token');
-                    if (isDetached) {
+                    if (window.__aliothSkipSplash) {
                         if (sp.parentNode) sp.parentNode.removeChild(sp);
                         return;
                     }
                     sp.classList.add('fade-out');
-                    setTimeout(function(){ if (sp.parentNode) sp.parentNode.removeChild(sp); }, 600);
+                    setTimeout(function(){ if (sp.parentNode) sp.parentNode.removeChild(sp); }, 160);
                 })();
                 // Resaltado de campos activo por defecto
                 if (!this._readingMode) document.body.classList.add('fields-highlighted');

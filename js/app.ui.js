@@ -1605,7 +1605,7 @@ Object.assign(app, {
                 if (!doc) return;
                 if (!await this._ensurePythonEngine()) return;
 
-                this.toggleLoader(true, "⚙️ Leyendo dimensiones...");
+                this.toggleLoader(true, "Leyendo tamaño de las páginas...");
                 try {
                     // Step 1: Read actual page dimensions from each source PDF via Python
                     const pageDims = []; // [{sourceId, pageIndex, docIdx, w, h}]
@@ -1646,7 +1646,7 @@ get_page_dim(js_data, js_idx)
                     });
                     if (!needsChange) { this.showToast("✅ Todas las páginas ya tienen el mismo tamaño"); this.toggleLoader(false); return; }
 
-                    this.toggleLoader(true, `⚙️ Igualando páginas a ${tMin}×${tMax}pt...`);
+                    this.toggleLoader(true, 'Igualando tamaño de las páginas...');
 
                     // Step 3: Group pages to change by sourceId
                     const bySource = {};

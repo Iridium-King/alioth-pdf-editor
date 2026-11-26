@@ -5,10 +5,67 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { loadAppModules } = require('./helpers/document-harness.cjs');
 
+const splashScript = fs.readFileSync(path.resolve(__dirname, '../../BASE.html'), 'utf8')
+  .match(/<script id="alioth-startup-session">([\s\S]*?)<\/script>/)[1];
+
+function visitSplash(session, saved = new Map(), search = '', tab = new Map()) {
+  const storage = values => ({ getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) });
+  const window = { __aliothLogonSession: session };
+  const classes = new Set();
+  vm.runInNewContext(splashScript, {
+    window, URLSearchParams, location: { search },
+    localStorage: storage(saved), sessionStorage: storage(tab),
+    document: { documentElement: { classList: { add: value => classes.add(value) } } }
+  });
+  return { skipped: window.__aliothSkipSplash, hidden: classes.has('skip-splash') };
+}
+
+test('splash appears once across new windows and process restarts in one Windows logon', () => {
+  const saved = new Map();
+  assert.deepEqual(visitSplash('logon-1', saved), { skipped: false, hidden: false });
+  assert.deepEqual(visitSplash('logon-1', saved), { skipped: true, hidden: true });
+  assert.deepEqual(visitSplash('logon-1', saved, '?openfile=otro.pdf'), { skipped: true, hidden: true });
+});
+
+test('a new Windows logon allows the splash again', () => {
+  const saved = new Map();
+  visitSplash('logon-1', saved);
+  assert.equal(visitSplash('logon-2', saved).skipped, false);
+  assert.equal(visitSplash('logon-2', saved).skipped, true);
+});
+
+test('detached and transferred windows skip the splash without consuming the first normal opening', () => {
+  for (const query of ['?detach=1', '?transferToken=1', '?token=1']) {
+    const saved = new Map();
+    assert.equal(visitSplash('logon-1', saved, query).skipped, true);
+    assert.equal(saved.size, 0);
+    assert.equal(visitSplash('logon-1', saved).skipped, false);
+  }
+});
+
+test('browser fallback remembers the splash within the browser tab session', () => {
+  const tab = new Map();
+  assert.equal(visitSplash(null, new Map(), '', tab).skipped, false);
+  assert.equal(visitSplash(null, new Map(), '', tab).skipped, true);
+});
+
+test('unavailable storage does not interrupt startup or detached windows', () => {
+  for (const search of ['', '?detach=1']) {
+    const window = {};
+    vm.runInNewContext(splashScript, {
+      window, URLSearchParams, location: { search },
+      sessionStorage: { getItem() { throw new Error('Storage unavailable'); } },
+      document: { documentElement: { classList: { add() {} } } }
+    });
+    assert.equal(window.__aliothSkipSplash, Boolean(search));
+  }
+});
+
 function openingApp() {
   let finishDatabase;
   const databaseGate = new Promise(resolve => { finishDatabase = resolve; });
   class Dexie {
+    constructor() { this.appState = { where: () => ({ between: () => ({ delete: async () => {} }) }) }; }
     version() { return { stores() {} }; }
     open() { return databaseGate; }
   }

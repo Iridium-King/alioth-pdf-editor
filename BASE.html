@@ -5,11 +5,26 @@
 
 <head>
     <meta charset="UTF-8">
+    <script id="alioth-startup-session">
+    (() => {
+        const parameters = new URLSearchParams(location.search);
+        let skip = ['detach', 'transferToken', 'token'].some(key => parameters.has(key));
+        try {
+            const session = window.__aliothLogonSession;
+            const storage = session ? localStorage : sessionStorage;
+            const key = session ? 'alioth_splash_logon' : 'alioth_splash_seen';
+            const value = session || '1';
+            skip = skip || storage.getItem(key) === value;
+            if (!skip) storage.setItem(key, value);
+        } catch (_) {}
+        window.__aliothSkipSplash = skip;
+        if (skip) document.documentElement.classList.add('skip-splash');
+    })();
+    </script>
     <script src="js/preferences.js?v=appearance-1"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ALIOTH PDF EDITOR</title>
     <link rel="icon" type="image/x-icon" href="ICONOS/ICONO 1.ico">
-    <link rel="preload" as="image" href="ICONOS/ALIOTH TDAH STUDIOS LOGO 2.png">
     
     <!-- Anti-Cache Meta Tags -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -66,12 +81,6 @@
 <!-- ═══════════════════════════════════════════
      ALIOTH SPLASH SCREEN
      ═══════════════════════════════════════════ -->
-<script>
-window._splashStart = Date.now();
-if (new URLSearchParams(window.location.search).has('detach') || new URLSearchParams(window.location.search).has('transferToken') || new URLSearchParams(window.location.search).has('token')) {
-    document.write('<style>#alioth-splash { display: none !important; }</style>');
-}
-</script>
 <div id="alioth-splash">
     <div style="font-family:'Segoe UI',sans-serif;font-size:11px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:2.5px;margin-bottom:16px;animation:splash-fade-up 0.7s ease 0.1s forwards;opacity:0;">Powered by</div>
 
@@ -96,7 +105,7 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
                     stroke-dashoffset="0"
                     transform="rotate(-90 115 115)"/>
         </svg>
-        <img id="splash-logo" src="ICONOS/ALIOTH TDAH STUDIOS LOGO 2.png" style="background:#fff;padding:4px;">
+        <img id="splash-logo" style="background:#fff;padding:4px;">
     </div>
 
     <div id="splash-subtitle">Alioth PDF Editor</div>
@@ -104,6 +113,10 @@ if (new URLSearchParams(window.location.search).has('detach') || new URLSearchPa
         <span></span><span></span><span></span>
     </div>
 </div>
+
+<script>
+if (!window.__aliothSkipSplash) document.getElementById('splash-logo').src = 'ICONOS/ALIOTH TDAH STUDIOS LOGO 2.png';
+</script>
 
 <!-- Pantalla de bloqueo de la app para cifrado local -->
 <div id="alioth-unlock-overlay" style="display:none;">
@@ -5255,7 +5268,7 @@ Arrastra para seleccionar el área · Esc para cancelar">
     </div>
 
         <script>window.i18n.setLanguage(window.i18n.getCurrentLanguage());</script>
-    <script type="module" src="js/main.js?v=3.2.51"></script>
+    <script type="module" src="js/main.js?v=3.2.52"></script>
     <!-- MODAL PROPIEDADES CAMPO -->
     <div id="properties-modal"
         style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); z-index: 10000; align-items: center; justify-content: center; backdrop-filter: blur(4px);">

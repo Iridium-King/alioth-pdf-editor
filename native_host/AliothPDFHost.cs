@@ -6,6 +6,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
@@ -18,6 +19,7 @@ internal static class Program
     internal const string Origin = "http://alioth.localhost";
     internal static Uri Backend;
     internal static string Assets, Profile, Session;
+    internal static string LogonSession;
     internal static bool SoftwareRendering;
     internal static CoreWebView2Environment Environment;
     internal static HostContext Context;
@@ -41,6 +43,7 @@ internal static class Program
             Profile = Path.GetFullPath(args[1]);
             Assets = Path.GetFullPath(args[2]);
             Session = args[3];
+            LogonSession = GetLogonSession();
             SoftwareRendering = System.Environment.GetEnvironmentVariable("ALIOTH_WEBVIEW_SOFTWARE") == "1";
             ServicePointManager.DefaultConnectionLimit = 32;
             CoreWebView2Environment.GetAvailableBrowserVersionString();
@@ -60,6 +63,51 @@ internal static class Program
     {
         return uri.GetLeftPart(UriPartial.Authority) == Origin ||
             uri.GetLeftPart(UriPartial.Authority) == Backend.GetLeftPart(UriPartial.Authority);
+    }
+
+    [StructLayout(LayoutKind.Sequential)] private struct Luid { public uint Low; public int High; }
+    [StructLayout(LayoutKind.Sequential)] private struct TokenStatistics {
+        public Luid TokenId, AuthenticationId;
+        public long ExpirationTime;
+        public int TokenType, ImpersonationLevel;
+        public uint DynamicCharged, DynamicAvailable, GroupCount, PrivilegeCount;
+        public Luid ModifiedId;
+    }
+    [StructLayout(LayoutKind.Sequential)] private struct LsaString {
+        public ushort Length, MaximumLength;
+        public IntPtr Buffer;
+    }
+    [StructLayout(LayoutKind.Sequential)] private struct LogonData {
+        public uint Size;
+        public Luid LogonId;
+        public LsaString UserName, LogonDomain, AuthenticationPackage;
+        public uint LogonType, SessionId;
+        public IntPtr Sid;
+        public long LogonTime;
+    }
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool GetTokenInformation(IntPtr token, int type, out TokenStatistics data, int size, out int needed);
+    [DllImport("secur32.dll")] private static extern uint LsaGetLogonSessionData(ref Luid id, out IntPtr data);
+    [DllImport("secur32.dll")] private static extern uint LsaFreeReturnBuffer(IntPtr buffer);
+
+    private static string GetLogonSession()
+    {
+        IntPtr data = IntPtr.Zero;
+        try
+        {
+            using (var identity = WindowsIdentity.GetCurrent())
+            {
+                TokenStatistics statistics;
+                int needed;
+                if (!GetTokenInformation(identity.Token, 10, out statistics, Marshal.SizeOf(typeof(TokenStatistics)), out needed)) return null;
+                var id = statistics.AuthenticationId;
+                if (LsaGetLogonSessionData(ref id, out data) != 0 || data == IntPtr.Zero) return null;
+                var logon = (LogonData)Marshal.PtrToStructure(data, typeof(LogonData));
+                return id.High.ToString("X8") + id.Low.ToString("X8") + "-" + logon.LogonTime.ToString("X16");
+            }
+        }
+        catch (Exception error) { LogError("logon-session-unavailable", error); return null; }
+        finally { if (data != IntPtr.Zero) LsaFreeReturnBuffer(data); }
     }
 
     internal static void OpenExternal(string uri)
@@ -182,7 +230,6 @@ internal sealed partial class HostWindow : Form
     private bool startupComplete, startupRetried;
     private CoreWebView2Environment environment;
     private Panel recoveryBar;
-    private Label recoveryLabel;
     private Button recoveryRetry;
     private string recoveryCategory, recoveryTarget, lastPromptCategory;
     private bool recoveryQueued, recoveryDialogOpen, retrying, recreateNeeded, rendererUnavailable;
@@ -293,7 +340,7 @@ internal sealed partial class HostWindow : Form
         startupTimer.Start();
         Program.Log("startup-begin", startupStage);
         view.Enabled = false;
-        ShowStatusBar("Abriendo ALIOTH PDF EDITOR…", false);
+        ShowRecoveryActions(false);
     }
 
     private async void StartupTimedOut(object sender, EventArgs e)
@@ -336,7 +383,8 @@ internal sealed partial class HostWindow : Form
             if (!pending()) return true;
             var core = initializingView.CoreWebView2;
             if (startupStage != null) startupStage = "native-bridge";
-            await core.AddScriptToExecuteOnDocumentCreatedAsync(NativeScript);
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(
+                "if(location.origin==='" + Program.Origin + "') window.__aliothLogonSession=" + Program.Json.Serialize(Program.LogonSession) + ";" + NativeScript);
             if (!pending()) return true;
 #if QA
             if (LayoutVerification)
@@ -410,7 +458,7 @@ internal sealed partial class HostWindow : Form
                         // A visible migration can take longer than the editor bootstrap.
                         view.Enabled = false;
                         startupTimer.Start();
-                        ShowStatusBar("Abriendo ALIOTH PDF EDITOR…", false);
+                        ShowRecoveryActions(false);
                     }
                     if (primary && !startupComplete)
                         startupStage = uri.AbsolutePath == "/BASE.html" ? "editor" : "navigation";
@@ -720,27 +768,26 @@ internal sealed partial class HostWindow : Form
         if (allowClose || IsDisposed) return;
         recoveryCategory = category;
         recreateNeeded = recreateNeeded || recreate;
-        ShowStatusBar(category == "startup-timeout"
-            ? "El editor no terminó de abrirse. Puedes esperar o reintentar."
-            : "La vista necesita recuperarse. Tus datos guardados se conservan.", true);
+        ShowRecoveryActions(true);
     }
 
-    private void ShowStatusBar(string text, bool canRetry)
+    private void ShowRecoveryActions(bool canRetry)
     {
         if (recoveryBar == null)
         {
-            recoveryBar = new Panel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(8), BackColor = Color.FromArgb(39, 54, 73) };
-            recoveryLabel = new Label { Dock = DockStyle.Fill, ForeColor = Color.White, TextAlign = ContentAlignment.MiddleLeft };
+            recoveryBar = new Panel {
+                Width = 184, Height = 36, BackColor = BackColor,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                Location = new System.Drawing.Point(ClientSize.Width - 198, ClientSize.Height - 50)
+            };
             recoveryRetry = new Button { Dock = DockStyle.Right, Width = 94, Text = "Reintentar" };
-            var close = new Button { Dock = DockStyle.Right, Width = 76, Text = "Cerrar" };
+            var close = new Button { Dock = DockStyle.Right, Width = 84, Text = "Cancelar" };
             recoveryRetry.Click += delegate { OfferRecovery(); };
             close.Click += delegate { Close(); };
-            recoveryBar.Controls.Add(recoveryLabel);
             recoveryBar.Controls.Add(recoveryRetry);
             recoveryBar.Controls.Add(close);
             Controls.Add(recoveryBar);
         }
-        recoveryLabel.Text = text;
         recoveryRetry.Visible = canRetry;
         recoveryBar.Visible = true;
         recoveryBar.BringToFront();

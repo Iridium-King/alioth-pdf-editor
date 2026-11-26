@@ -1,5 +1,5 @@
 // main.js — Entry point para la aplicación Alioth PDF Editor
-import './version.js?v=3.2.51';
+import './version.js?v=3.2.52';
 import './i18n.js?v=appearance-1';
 import './app.lazy.js?v=3.2.37';
 import './app.ocr.js?v=3.2.44';

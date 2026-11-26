@@ -19,7 +19,7 @@ Object.assign(app, {
                     const src = page && doc.sources[page.sourceId];
 
                     if (src && src.buffer && window.PythonManager?.extractPageText) {
-                        document.getElementById('loader-msg').innerText = "Extrayendo texto nativo del PDF...";
+                        document.getElementById('loader-msg').innerText = "Extrayendo texto del PDF...";
                         try {
                             const nativeText = await PythonManager.extractPageText(src.buffer, page.pageIndex);
 
@@ -56,7 +56,7 @@ Object.assign(app, {
                     }
 
                     // ── PASO 2: Fallback a Tesseract (PDF escaneado o imagen) ──
-                    document.getElementById('loader-msg').innerText = "OCR: Preparando imagen...";
+                    document.getElementById('loader-msg').innerText = "Preparando imagen...";
 
                     // Escalar 3x para mayor precisión en documentos escaneados
                     const tempCanvas = document.createElement('canvas');
@@ -71,7 +71,7 @@ Object.assign(app, {
                     // ── Pre-procesamiento PIL para mejorar accuracy de Tesseract ──
                     if (window.PythonManager) {
                         try {
-                            document.getElementById('loader-msg').innerText = "OCR: Optimizando imagen con Python...";
+                            document.getElementById('loader-msg').innerText = "Optimizando imagen...";
                             imageData = await PythonManager.preprocessForOCR(imageData);
                         } catch (preprocEx) {
                             console.warn("⚠️ Pre-procesamiento OCR falló, usando original:", preprocEx);
@@ -91,7 +91,7 @@ Object.assign(app, {
                     } catch (_) { }
 
                     const worker = await this._getOCRWorker(psmMode);
-                    document.getElementById('loader-msg').innerText = "OCR: Reconociendo texto...";
+                    document.getElementById('loader-msg').innerText = "Reconociendo texto...";
                     const ret = await worker.recognize(imageData);
 
                     // ── Marcar palabras de baja confianza en el texto resultado ──
@@ -151,7 +151,7 @@ Object.assign(app, {
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
                 if (!await this._ensurePythonEngine()) return;
 
-                this.toggleLoader(true, `Analizando tablas (${strategy === 'lattice' ? 'Lattice' : 'Stream'})...`);
+                this.toggleLoader(true, 'Analizando tablas...');
                 try {
                     const tables = await PythonManager.detectTables(src.buffer, page.pageIndex, clip, strategy);
                     this.toggleLoader(false);
@@ -2764,7 +2764,7 @@ Reglas:
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
 
-                this.toggleLoader(true, `Python: Escaneando y tachando ${type}s...`);
+                this.toggleLoader(true, `Escaneando y tachando ${type}s...`);
                 try {
                     const redactedBuffer = await PythonManager.autoRedactPattern(src.buffer, type);
                     const blob = new Blob([redactedBuffer], { type: 'application/pdf' });
@@ -3663,7 +3663,7 @@ Reglas:
                     return;
                 }
 
-                this.toggleLoader(true, 'Ejecutando OCR...');
+                this.toggleLoader(true, 'Preparando reconocimiento de texto...');
                 this.addAIMessage('bot', '🔤 Analizando página...', true);
 
                 try {
@@ -3673,7 +3673,7 @@ Reglas:
 
                     if (src && src.buffer) {
                         try {
-                            this.toggleLoader(true, 'Extrayendo texto nativo...');
+                            this.toggleLoader(true, 'Extrayendo texto...');
                             const nativeText = await PythonManager.extractPageText(src.buffer, page.pageIndex);
 
                             if (nativeText && nativeText.length > 20) {
@@ -3709,7 +3709,7 @@ Reglas:
                     let ocrInput;
                     try {
                         if (window.PythonManager) {
-                            this.toggleLoader(true, 'Pre-procesando imagen con PIL...');
+                            this.toggleLoader(true, 'Preparando imagen...');
                             const rawDataURL = canvas.toDataURL('image/png');
                             const processedDataURL = await PythonManager.preprocessForOCR(rawDataURL);
                             if (processedDataURL && processedDataURL !== rawDataURL) {
@@ -3802,7 +3802,7 @@ Reglas:
                     const imgParts = images.map(img => ({ inline_data: { mime_type: 'image/jpeg', data: img.data } }));
 
                     // ── PASO 1: Identificar tipo de documento ────────────────────────────────
-                    document.getElementById('loader-msg').innerText = 'IA: identificando tipo de documento...';
+                    document.getElementById('loader-msg').innerText = 'Identificando tipo de documento...';
                     const step1 = await callGemini([
                         { text: `Analiza estas imágenes de un documento PDF. Responde SOLO con JSON sin markdown:
 {"docType":"tipo en español (CURP/CV/Contrato/Reporte/Factura/etc.)","isSingleRecord":true/false,"pageTypes":{"1":"form|cv|document",...}}
@@ -3822,7 +3822,7 @@ isSingleRecord=true si es un formulario de identidad (CURP, INE, acta, pasaporte
                     console.log('📋 docType:', docMeta.docType, '| isSingleRecord:', docMeta.isSingleRecord);
 
                     // ── PASO 2: Generar índice semántico ─────────────────────────────────────
-                    document.getElementById('loader-msg').innerText = 'IA: generando índice...';
+                    document.getElementById('loader-msg').innerText = 'Generando índice...';
                     const indexPrompt = docMeta.isSingleRecord
                         ? `Este documento es: "${docMeta.docType}". Es un registro/formulario único.
 Genera UNA entrada por tipo de documento presente.

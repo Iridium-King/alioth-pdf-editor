@@ -943,7 +943,7 @@ Object.assign(app, {
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
 
-                this.toggleLoader(true, 'Python: Reparando y optimizando estructura...');
+                this.toggleLoader(true, 'Reparando y optimizando el PDF...');
                 try {
                     const optimizedBuffer = await PythonManager.repairAndOptimize(src.buffer);
                     const blob = new Blob([optimizedBuffer], { type: 'application/pdf' });
@@ -1020,7 +1020,7 @@ Object.assign(app, {
 
                 if (level === null) return;
 
-                this.toggleLoader(true, 'Python: Comprimiendo PDF...');
+                this.toggleLoader(true, 'Comprimiendo PDF...');
                 try {
                     const compressedBuffer = await PythonManager.compressPDF(src.buffer, level);
                     const newSize = compressedBuffer.byteLength;
@@ -1157,7 +1157,7 @@ Object.assign(app, {
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
 
-                this.toggleLoader(true, 'Python: Aplanando formularios y anotaciones...');
+                this.toggleLoader(true, 'Aplanando formularios y anotaciones...');
                 try {
                     const flattenedBuffer = await PythonManager.flattenPDF(src.buffer);
                     const blob = new Blob([flattenedBuffer], { type: 'application/pdf' });
@@ -1182,7 +1182,7 @@ Object.assign(app, {
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
                 if (doc._originalColorBuffer) { this.showToast('⚠️ El documento ya está en escala de grises'); return; }
 
-                this.toggleLoader(true, 'Python: Convirtiendo a escala de grises...');
+                this.toggleLoader(true, 'Convirtiendo a escala de grises...');
                 try {
                     const originalBuffer = src.buffer.slice(0);
                     const originalName = doc.name;
@@ -1240,7 +1240,7 @@ Object.assign(app, {
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
                 if (doc._originalBeforeInvertBuffer) { this.showToast('⚠️ El documento ya tiene colores invertidos'); return; }
 
-                this.toggleLoader(true, 'Python: Invirtiendo colores...');
+                this.toggleLoader(true, 'Invirtiendo colores...');
                 try {
                     const originalBuffer = src.buffer.slice(0);
                     const originalName = doc.name;
@@ -1359,7 +1359,7 @@ invert_colors(js_data)
                 const src = page && doc.sources[page.sourceId];
                 if (!src || !src.buffer) { this.showToast('⚠️ Abre un PDF primero'); return; }
 
-                this.toggleLoader(true, 'Python: Renderizando imagen de alta resolución (300 DPI)...');
+                this.toggleLoader(true, 'Generando imagen de alta resolución...');
                 try {
                     const dataUrl = await PythonManager.exportHighResImage(src.buffer, page.pageIndex);
                     if (dataUrl) {
@@ -2035,7 +2035,7 @@ invert_colors(js_data)
                 const idx = page.objects.indexOf(textObj);
                 if (idx !== -1) page.objects.splice(idx, 1);
 
-                this.toggleLoader(true, 'Python: Aplicando reflow...');
+                this.toggleLoader(true, 'Aplicando cambios al texto...');
                 try {
                     // ── FASE A: Borrado previo garantizado (Splicing quirúrgico con fallback de borrado) ──
                     const _isOcrEdit = Boolean(data && data.isOcrHidden === true);
@@ -2641,7 +2641,7 @@ invert_colors(js_data)
                     // Solo para PDFs escaneados o QRs de bajo contraste — no afecta QRs ya detectados
                     if (foundQRs.length === 0 && window.PythonManager) {
                         try {
-                            document.getElementById('loader-msg').innerText = "Escaneando QRs (mejora PIL)...";
+                            document.getElementById('loader-msg').innerText = "Escaneando QRs...";
                             const rawDataUrl = tempCanvas.toDataURL('image/png');
                             const preprocessed = await PythonManager.preprocessForOCR(rawDataUrl);
                             // Cargar imagen procesada en canvas temporal para obtener ImageData
@@ -3221,7 +3221,7 @@ invert_colors(js_data)
                     throw new Error('No se pudo generar el PDF');
                 }
 
-                document.getElementById('loader-msg').innerText = "Aplicando protección AES-256...";
+                document.getElementById('loader-msg').innerText = "Protegiendo el PDF...";
 
                 let finalBytes = pdfBytes;
                 let encryptionMethod = 'none';
@@ -3256,7 +3256,7 @@ invert_colors(js_data)
                         const pageCount = srcDoc.getPageCount();
 
                         for (let i = 0; i < pageCount; i++) {
-                            document.getElementById('loader-msg').innerText = `Encriptando página ${i + 1}/${pageCount} (jsPDF)...`;
+                            document.getElementById('loader-msg').innerText = `Protegiendo página ${i + 1}/${pageCount}...`;
 
                             const page = srcDoc.getPage(i);
                             const { width, height } = page.getSize();
