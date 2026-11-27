@@ -1,13 +1,19 @@
 """Selector nativo de destinos PDF y apertura de archivos, aislado del servidor HTTP."""
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 import ctypes
-from ctypes import wintypes
+import json
 import logging
 import os
 import queue
+import subprocess
+import sys
 import threading
+
+if os.name == 'nt':
+    from ctypes import wintypes
 
 
 OFN_OVERWRITEPROMPT = 0x00000002
@@ -40,81 +46,78 @@ class _DialogRequest:
     initial_dir: str | None = None
 
 
-class _OPENFILENAMEW(ctypes.Structure):
-    _fields_ = [
-        ('lStructSize', wintypes.DWORD),
-        ('hwndOwner', wintypes.HWND),
-        ('hInstance', wintypes.HINSTANCE),
-        ('lpstrFilter', wintypes.LPCWSTR),
-        ('lpstrCustomFilter', wintypes.LPWSTR),
-        ('nMaxCustFilter', wintypes.DWORD),
-        ('nFilterIndex', wintypes.DWORD),
-        ('lpstrFile', wintypes.LPWSTR),
-        ('nMaxFile', wintypes.DWORD),
-        ('lpstrFileTitle', wintypes.LPWSTR),
-        ('nMaxFileTitle', wintypes.DWORD),
-        ('lpstrInitialDir', wintypes.LPCWSTR),
-        ('lpstrTitle', wintypes.LPCWSTR),
-        ('Flags', wintypes.DWORD),
-        ('nFileOffset', wintypes.WORD),
-        ('nFileExtension', wintypes.WORD),
-        ('lpstrDefExt', wintypes.LPCWSTR),
-        ('lCustData', wintypes.LPARAM),
-        ('lpfnHook', ctypes.c_void_p),
-        ('lpTemplateName', wintypes.LPCWSTR),
-        ('pvReserved', ctypes.c_void_p),
-        ('dwReserved', wintypes.DWORD),
-        ('FlagsEx', wintypes.DWORD),
-    ]
+if os.name == 'nt':
+    class _OPENFILENAMEW(ctypes.Structure):
+        _fields_ = [
+            ('lStructSize', wintypes.DWORD),
+            ('hwndOwner', wintypes.HWND),
+            ('hInstance', wintypes.HINSTANCE),
+            ('lpstrFilter', wintypes.LPCWSTR),
+            ('lpstrCustomFilter', wintypes.LPWSTR),
+            ('nMaxCustFilter', wintypes.DWORD),
+            ('nFilterIndex', wintypes.DWORD),
+            ('lpstrFile', wintypes.LPWSTR),
+            ('nMaxFile', wintypes.DWORD),
+            ('lpstrFileTitle', wintypes.LPWSTR),
+            ('nMaxFileTitle', wintypes.DWORD),
+            ('lpstrInitialDir', wintypes.LPCWSTR),
+            ('lpstrTitle', wintypes.LPCWSTR),
+            ('Flags', wintypes.DWORD),
+            ('nFileOffset', wintypes.WORD),
+            ('nFileExtension', wintypes.WORD),
+            ('lpstrDefExt', wintypes.LPCWSTR),
+            ('lCustData', wintypes.LPARAM),
+            ('lpfnHook', ctypes.c_void_p),
+            ('lpTemplateName', wintypes.LPCWSTR),
+            ('pvReserved', ctypes.c_void_p),
+            ('dwReserved', wintypes.DWORD),
+            ('FlagsEx', wintypes.DWORD),
+        ]
 
+    class _MONITORINFO(ctypes.Structure):
+        _fields_ = [('cbSize', wintypes.DWORD), ('rcMonitor', wintypes.RECT),
+                    ('rcWork', wintypes.RECT), ('dwFlags', wintypes.DWORD)]
 
-class _MONITORINFO(ctypes.Structure):
-    _fields_ = [('cbSize', wintypes.DWORD), ('rcMonitor', wintypes.RECT),
-                ('rcWork', wintypes.RECT), ('dwFlags', wintypes.DWORD)]
+    class _CWPRETSTRUCT(ctypes.Structure):
+        _fields_ = [('lResult', ctypes.c_ssize_t), ('lParam', wintypes.LPARAM),
+                    ('wParam', wintypes.WPARAM), ('message', wintypes.UINT), ('hwnd', wintypes.HWND)]
 
+    def _open_dialog_api():
+        api = ctypes.WinDLL('user32', use_last_error=True)
+        for name, args, result in (
+            ('IsWindow', [wintypes.HWND], wintypes.BOOL),
+            ('GetClassNameW', [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int),
+            ('GetWindowTextW', [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int),
+            ('GetWindowRect', [wintypes.HWND, ctypes.POINTER(wintypes.RECT)], wintypes.BOOL),
+            ('MonitorFromWindow', [wintypes.HWND, wintypes.DWORD], wintypes.HANDLE),
+            ('GetMonitorInfoW', [wintypes.HANDLE, ctypes.POINTER(_MONITORINFO)], wintypes.BOOL),
+            ('SetWindowPos', [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                              ctypes.c_int, ctypes.c_int, wintypes.UINT], wintypes.BOOL),
+            ('SetWindowsHookExW', [ctypes.c_int, ctypes.c_void_p, wintypes.HINSTANCE, wintypes.DWORD], wintypes.HANDLE),
+            ('UnhookWindowsHookEx', [wintypes.HANDLE], wintypes.BOOL),
+            ('CallNextHookEx', [wintypes.HANDLE, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM], ctypes.c_ssize_t),
+        ):
+            function = getattr(api, name)
+            function.argtypes, function.restype = args, result
+        return api
 
-class _CWPRETSTRUCT(ctypes.Structure):
-    _fields_ = [('lResult', ctypes.c_ssize_t), ('lParam', wintypes.LPARAM),
-                ('wParam', wintypes.WPARAM), ('message', wintypes.UINT), ('hwnd', wintypes.HWND)]
-
-
-def _open_dialog_api():
-    api = ctypes.WinDLL('user32', use_last_error=True)
-    for name, args, result in (
-        ('IsWindow', [wintypes.HWND], wintypes.BOOL),
-        ('GetClassNameW', [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int),
-        ('GetWindowTextW', [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int], ctypes.c_int),
-        ('GetWindowRect', [wintypes.HWND, ctypes.POINTER(wintypes.RECT)], wintypes.BOOL),
-        ('MonitorFromWindow', [wintypes.HWND, wintypes.DWORD], wintypes.HANDLE),
-        ('GetMonitorInfoW', [wintypes.HANDLE, ctypes.POINTER(_MONITORINFO)], wintypes.BOOL),
-        ('SetWindowPos', [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
-                          ctypes.c_int, ctypes.c_int, wintypes.UINT], wintypes.BOOL),
-        ('SetWindowsHookExW', [ctypes.c_int, ctypes.c_void_p, wintypes.HINSTANCE, wintypes.DWORD], wintypes.HANDLE),
-        ('UnhookWindowsHookEx', [wintypes.HANDLE], wintypes.BOOL),
-        ('CallNextHookEx', [wintypes.HANDLE, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM], ctypes.c_ssize_t),
-    ):
-        function = getattr(api, name)
-        function.argtypes, function.restype = args, result
-    return api
-
-
-def _position_open_dialog(hwnd, owner_hwnd, api):
-    rect, owner = wintypes.RECT(), wintypes.RECT()
-    valid_owner = bool(owner_hwnd and api.IsWindow(owner_hwnd) and api.GetWindowRect(owner_hwnd, ctypes.byref(owner)))
-    monitor = api.MonitorFromWindow(owner_hwnd if valid_owner else hwnd, 2)
-    info = _MONITORINFO(cbSize=ctypes.sizeof(_MONITORINFO))
-    if not api.GetWindowRect(hwnd, ctypes.byref(rect)) or not monitor or not api.GetMonitorInfoW(monitor, ctypes.byref(info)):
-        return False
-    width, height = rect.right - rect.left, rect.bottom - rect.top
-    if width <= 0 or height <= 0:
-        return False
-    work = info.rcWork
-    right = min(owner.right, work.right) if valid_owner else work.right
-    x = max(work.left, min(right - width, work.right - width))
-    y = max(work.top, min(rect.top, work.bottom - height))
-    if (x, y) == (rect.left, rect.top):
-        return True
-    return bool(api.SetWindowPos(hwnd, None, x, y, 0, 0, 0x0015))
+    def _position_open_dialog(hwnd, owner_hwnd, api):
+        rect, owner = wintypes.RECT(), wintypes.RECT()
+        valid_owner = bool(owner_hwnd and api.IsWindow(owner_hwnd) and api.GetWindowRect(owner_hwnd, ctypes.byref(owner)))
+        monitor = api.MonitorFromWindow(owner_hwnd if valid_owner else hwnd, 2)
+        info = _MONITORINFO(cbSize=ctypes.sizeof(_MONITORINFO))
+        if not api.GetWindowRect(hwnd, ctypes.byref(rect)) or not monitor or not api.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            return False
+        width, height = rect.right - rect.left, rect.bottom - rect.top
+        if width <= 0 or height <= 0:
+            return False
+        work = info.rcWork
+        right = min(owner.right, work.right) if valid_owner else work.right
+        x = max(work.left, min(right - width, work.right - width))
+        y = max(work.top, min(rect.top, work.bottom - height))
+        if (x, y) == (rect.left, rect.top):
+            return True
+        return bool(api.SetWindowPos(hwnd, None, x, y, 0, 0, 0x0015))
 
 
 def _suggested_filename(value):
@@ -248,12 +251,46 @@ def _windows_open_picker(filter_str=None, title=None, owner_hwnd=None, user32=No
     return None
 
 
+def _macos_save_picker(suggested_name, owner_hwnd=None, initial_dir=None):
+    name = suggested_name or 'documento.pdf'
+    if not name.lower().endswith('.pdf'):
+        name += '.pdf'
+    lines = [f'set defaultName to {json.dumps(name, ensure_ascii=False)}']
+    if initial_dir and os.path.isdir(initial_dir):
+        lines.append(f'set defaultLoc to POSIX file {json.dumps(str(initial_dir), ensure_ascii=False)}')
+        lines.append('set chosenFile to choose file name with prompt "Guardar PDF como" default name defaultName default location defaultLoc')
+    else:
+        lines.append('set chosenFile to choose file name with prompt "Guardar PDF como" default name defaultName')
+    lines.append('return POSIX path of chosenFile')
+    res = subprocess.run(['/usr/bin/osascript', '-e', '\n'.join(lines)], capture_output=True, text=True)
+    if res.returncode == 0 and res.stdout.strip():
+        chosen = Path(res.stdout.strip())
+        if chosen.suffix.lower() != '.pdf':
+            chosen = chosen.with_suffix('.pdf')
+        return chosen
+    return None
+
+
+def _macos_open_picker(filter_str=None, title=None, owner_hwnd=None):
+    prompt = title or 'Abrir Archivo'
+    script = (
+        f'set chosenFile to choose file with prompt {json.dumps(prompt, ensure_ascii=False)}\n'
+        'return POSIX path of chosenFile'
+    )
+    res = subprocess.run(['/usr/bin/osascript', '-e', script], capture_output=True, text=True)
+    if res.returncode == 0 and res.stdout.strip():
+        return Path(res.stdout.strip())
+    return None
+
+
 class NativeFileDialog:
     """Mantiene un único selector activo en un trabajador dedicado."""
 
     def __init__(self, picker=None, open_picker=None, foreground_window=None):
-        self._picker = picker or _windows_save_picker
-        self._open_picker = open_picker or _windows_open_picker
+        default_save = _macos_save_picker if sys.platform == 'darwin' else _windows_save_picker
+        default_open = _macos_open_picker if sys.platform == 'darwin' else _windows_open_picker
+        self._picker = picker or default_save
+        self._open_picker = open_picker or default_open
         self._foreground_window = foreground_window or _foreground_window
         self._requests = queue.Queue()
         self._state_lock = threading.Lock()

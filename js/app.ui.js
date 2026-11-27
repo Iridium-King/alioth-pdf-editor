@@ -3612,7 +3612,7 @@ equalize_pages(js_data, js_params_json)
                 // Mostrar en el Explorador de Windows (PdfCraft style)
                 addItem(
                     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-                    'Mostrar en el Explorador',
+                    window.webkit?.messageHandlers?.alioth ? 'Mostrar en Finder' : 'Mostrar en el Explorador',
                     () => this.revealCurrentFileInExplorer(docId)
                 );
 
@@ -9836,7 +9836,7 @@ ${rulesPrompt}
                     { id: 'file_save_as', category: 'Archivo', icon: '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>', title: 'Guardar como...', action: () => this.showSaveModal?.() },
                     { id: 'file_print', category: 'Archivo', icon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>', title: 'Imprimir documento', action: () => this.showPrintModal?.() },
                     { id: 'file_close', category: 'Archivo', icon: '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>', title: 'Cerrar documento actual', action: () => this.closeDocument?.() },
-                    { id: 'file_reveal', category: 'Archivo', icon: '<svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>', title: 'Mostrar archivo en el Explorador de Windows', action: () => this.revealCurrentFileInExplorer?.() },
+                    { id: 'file_reveal', category: 'Archivo', icon: '<svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>', title: window.webkit?.messageHandlers?.alioth ? 'Mostrar archivo en Finder' : 'Mostrar archivo en el Explorador de Windows', action: () => this.revealCurrentFileInExplorer?.() },
                     { id: 'tab_reopen', category: 'Pestañas', icon: '<svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>', title: 'Reabrir última pestaña cerrada', action: () => this.reopenLastClosedTab?.() },
 
                     // IA Studio
@@ -10038,7 +10038,7 @@ ${rulesPrompt}
                     });
                     const res = await resp.json();
                     if (res && res.ok) {
-                        this.showToast('📁 Mostrado en el Explorador de Windows');
+                        this.showToast(window.webkit?.messageHandlers?.alioth ? '📁 Mostrado en Finder' : '📁 Mostrado en el Explorador de Windows');
                     } else {
                         this.showToast('⚠️ No se pudo abrir en el Explorador: ' + (res?.error || ''));
                     }

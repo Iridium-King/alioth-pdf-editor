@@ -39,6 +39,8 @@ def host_executable(bundle):
 
 
 def startup_failure_choice():
+    if os.name != 'nt':
+        return 'legacy'
     import ctypes
     answer = ctypes.windll.user32.MessageBoxW(
         None,

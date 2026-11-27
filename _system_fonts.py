@@ -6,6 +6,7 @@ only when the requested font is unavailable on the destination computer.
 """
 import os
 from pathlib import Path
+import sys
 
 FONT_FILES = frozenset('''arial.ttf arialbd.ttf arialbi.ttf ariali.ttf
 arialn.ttf arialnb.ttf arialnbi.ttf arialni.ttf
@@ -40,18 +41,41 @@ def _fallback(name):
     raise ValueError('Unknown font')
 
 
+_MACOS_FONT_NAMES = {
+    'arial.ttf': 'Arial.ttf', 'arialbd.ttf': 'Arial Bold.ttf', 'arialbi.ttf': 'Arial Bold Italic.ttf', 'ariali.ttf': 'Arial Italic.ttf',
+    'arialn.ttf': 'Arial Narrow.ttf', 'arialnb.ttf': 'Arial Narrow Bold.ttf', 'arialnbi.ttf': 'Arial Narrow Bold Italic.ttf', 'arialni.ttf': 'Arial Narrow Italic.ttf',
+    'cour.ttf': 'Courier New.ttf', 'courbd.ttf': 'Courier New Bold.ttf', 'courbi.ttf': 'Courier New Bold Italic.ttf', 'couri.ttf': 'Courier New Italic.ttf',
+    'georgia.ttf': 'Georgia.ttf', 'georgiab.ttf': 'Georgia Bold.ttf', 'georgiai.ttf': 'Georgia Italic.ttf', 'georgiaz.ttf': 'Georgia Bold Italic.ttf',
+    'impact.ttf': 'Impact.ttf', 'tahoma.ttf': 'Tahoma.ttf', 'tahomabd.ttf': 'Tahoma Bold.ttf',
+    'times.ttf': 'Times New Roman.ttf', 'timesbd.ttf': 'Times New Roman Bold.ttf', 'timesbi.ttf': 'Times New Roman Bold Italic.ttf', 'timesi.ttf': 'Times New Roman Italic.ttf',
+    'trebuc.ttf': 'Trebuchet MS.ttf', 'trebucbd.ttf': 'Trebuchet MS Bold.ttf', 'trebucbi.ttf': 'Trebuchet MS Bold Italic.ttf', 'trebucit.ttf': 'Trebuchet MS Italic.ttf',
+    'verdana.ttf': 'Verdana.ttf', 'verdanab.ttf': 'Verdana Bold.ttf', 'verdanai.ttf': 'Verdana Italic.ttf', 'verdanaz.ttf': 'Verdana Bold Italic.ttf',
+}
+
+
 def resolve_font(name, bundle, roots=None):
     name = name.lower()
     if name not in FONT_FILES:
         return None
     if roots is None:
-        roots = [Path(os.environ.get('WINDIR', r'C:\Windows')) / 'Fonts']
-        local = os.environ.get('LOCALAPPDATA')
-        if local:
-            roots.append(Path(local) / 'Microsoft/Windows/Fonts')
+        if sys.platform == 'darwin':
+            roots = [
+                Path('/System/Library/Fonts/Supplemental'),
+                Path('/Library/Fonts'),
+                Path.home() / 'Library/Fonts',
+            ]
+        else:
+            roots = [Path(os.environ.get('WINDIR', r'C:\Windows')) / 'Fonts']
+            local = os.environ.get('LOCALAPPDATA')
+            if local:
+                roots.append(Path(local) / 'Microsoft/Windows/Fonts')
+    candidates = [name]
+    if sys.platform == 'darwin' and name in _MACOS_FONT_NAMES:
+        candidates.insert(0, _MACOS_FONT_NAMES[name])
     for root in roots:
-        path = Path(root) / name
-        if path.is_file():
-            return path
+        for candidate in candidates:
+            path = Path(root) / candidate
+            if path.is_file():
+                return path
     fallback = Path(bundle) / 'fonts/fallback' / _fallback(name)
     return fallback if fallback.is_file() else None

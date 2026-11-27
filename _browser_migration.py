@@ -95,7 +95,7 @@ class BrowserMigration:
 
     @staticmethod
     def _launch(arguments, cwd, hidden=False):
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, 'frozen', False) and os.name == 'nt':
             import ctypes
             ctypes.windll.kernel32.SetDllDirectoryW(None)
         try:
@@ -107,7 +107,7 @@ class BrowserMigration:
                 options['startupinfo'] = startup
             return subprocess.Popen(arguments, cwd=cwd, **options)
         finally:
-            if getattr(sys, 'frozen', False):
+            if getattr(sys, 'frozen', False) and os.name == 'nt':
                 ctypes.windll.kernel32.SetDllDirectoryW(sys._MEIPASS)
 
     def publish(self, token, packet):

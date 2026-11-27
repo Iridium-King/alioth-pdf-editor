@@ -3938,6 +3938,18 @@ base64.b64encode(buf.getvalue()).decode("ascii")
                     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                     const file = new File([blob], fn, { type: 'application/pdf' });
 
+                    const macHost = window.webkit?.messageHandlers?.alioth;
+                    if (macHost) {
+                        const token = crypto.randomUUID();
+                        const response = await fetch('/transfer-payload?token=' + token, {
+                            method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: blob
+                        });
+                        if (!response.ok) throw new Error('No se pudo preparar el PDF');
+                        this.toggleLoader(false);
+                        await macHost.postMessage({ action: 'sharePDF', token, filename: fn });
+                        return;
+                    }
+
                     // Si el sistema soporta Web Share con archivos (Windows 10/11), abre directamente el menú nativo con el archivo adjunto
                     if (navigator.canShare && navigator.canShare({ files: [file] })) {
                         try {

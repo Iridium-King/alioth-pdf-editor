@@ -3451,25 +3451,32 @@ _result
                 if (!element || this._checkingWindowsIntegration) return;
                 this._checkingWindowsIntegration = true;
                 try {
-                    const response = await fetch('/system/integration-status');
-                    if (!response.ok) throw new Error('WINDOWS_STATUS_UNAVAILABLE');
-                    const state = await response.json();
+                    const macHost = window.webkit?.messageHandlers?.alioth;
+                    const response = macHost ? null : await fetch('/system/integration-status');
+                    if (response && !response.ok) throw new Error('INTEGRATION_STATUS_UNAVAILABLE');
+                    const state = macHost ? await macHost.postMessage({ action: 'integrationStatus' }) : await response.json();
+                    if (state.platform === 'darwin') {
+                        element.textContent = state.defaultIsAlioth ? 'Visor PDF predeterminado: Alioth' : 'Visor PDF predeterminado: otra aplicación';
+                        return;
+                    }
                     element.textContent = state.supported
                         ? `Certificado: ${state.certificateInstalled ? 'instalado' : 'pendiente'} · Registro PDF: ${state.registered ? 'listo' : 'pendiente'} · Predeterminado: ${state.defaultIsAlioth ? 'Alioth' : 'otra aplicación'}`
-                        : 'La asociación de archivos está disponible en Windows.';
+                        : 'Selecciona Alioth desde las opciones de apertura de archivos de tu sistema.';
                 } catch (_) {
-                    element.textContent = 'No se pudo comprobar la configuración de Windows.';
+                    element.textContent = 'No se pudo comprobar el visor PDF predeterminado.';
                 } finally {
                     this._checkingWindowsIntegration = false;
                 }
             },
 
             associatePdfAsDefault: async function () {
-                this.showToast('⏳ Preparando registro de Windows para archivos PDF...');
+                this.showToast('⏳ Preparando la asociación de archivos PDF...');
                 try {
-                    const r = await fetch('/system/associate-pdf', { method: 'POST' });
-                    const data = await r.json();
+                    const macHost = window.webkit?.messageHandlers?.alioth;
+                    const r = macHost ? null : await fetch('/system/associate-pdf', { method: 'POST' });
+                    const data = macHost ? await macHost.postMessage({ action: 'associatePDF' }) : await r.json();
                     this.refreshWindowsIntegrationStatus?.();
+                    if (data?.cancelled) return;
                     if (data && data.ok) {
                         this.showToast('✅ ' + (data.message || 'Alioth PDF registrado como predeterminado.'), 6000);
                     } else {

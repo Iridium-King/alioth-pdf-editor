@@ -233,6 +233,14 @@ def _translation_request(data):
             raise ValueError('INVALID_TRANSLATION_OCCURRENCE')
     return operation, pdf, occurrences, fonts
 
+def _user_appdata_root():
+    if os.environ.get('APPDATA'):
+        return os.environ['APPDATA']
+    if sys.platform == 'darwin':
+        return os.path.join(os.path.expanduser('~'), 'Library', 'Application Support')
+    return os.path.join(os.path.expanduser('~'), '.local', 'share')
+
+
 def get_config_path():
     # 1. Config.ini junto al ejecutable .exe (permite personalizar)
     local_cfg = os.path.join(exe_dir, 'config.ini')
@@ -245,7 +253,7 @@ def get_config_path():
         return os.path.join(bundle_dir, 'config.ini')
 
     app_name = 'AliothPDF-Distribucion' if 'distribucion' in os.path.basename(sys.executable).lower() else 'AliothPDF'
-    appdata_dir = os.path.join(os.environ.get('APPDATA', exe_dir), app_name)
+    appdata_dir = os.path.join(_user_appdata_root(), app_name)
     try: os.makedirs(appdata_dir, exist_ok=True)
     except: pass
     return os.path.join(appdata_dir, 'config.ini')
@@ -267,7 +275,7 @@ def _preferences_store():
     directory = os.path.dirname(get_config_path())
     if getattr(sys, 'frozen', False):
         app_name = 'AliothPDF-Distribucion' if 'distribucion' in os.path.basename(sys.executable).lower() else 'AliothPDF'
-        directory = os.path.join(os.environ.get('APPDATA', exe_dir), app_name)
+        directory = os.path.join(_user_appdata_root(), app_name)
     return UserPreferences(os.path.join(directory, 'preferences.json'))
 
 
@@ -476,16 +484,86 @@ def translation_checkpoint(data):
     return {}
 
 _SECRET_PREFIX = 'dpapi:'
+_MAC_SECRET_PREFIX = 'macsec:'
+_MAC_KEYCHAIN_SERVICE = 'com.alioth.pdfeditor'
+_MAC_KEYCHAIN_ACCOUNT = 'master-key'
+_MAC_FERNET_CACHE = None
+
+
+def _get_macos_fernet():
+    global _MAC_FERNET_CACHE
+    if _MAC_FERNET_CACHE is not None:
+        return _MAC_FERNET_CACHE
+    from cryptography.fernet import Fernet
+
+    raw_key = None
+    # 1. Try macOS Keychain via /usr/bin/security
+    try:
+        res = subprocess.run(
+            ['/usr/bin/security', 'find-generic-password', '-s', _MAC_KEYCHAIN_SERVICE, '-a', _MAC_KEYCHAIN_ACCOUNT, '-w'],
+            capture_output=True, text=True, timeout=10
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            raw_key = res.stdout.strip().encode('ascii')
+    except Exception:
+        pass
+
+    # 2. Fallback: check local 0600 keyfile if Keychain didn't have it
+    keyfile = os.path.join(_user_appdata_root(), 'AliothPDF', '.master.key')
+    if not raw_key and os.path.isfile(keyfile):
+        try:
+            with open(keyfile, 'rb') as f:
+                raw_key = f.read().strip()
+        except Exception:
+            pass
+
+    # 3. Generate a new key and persist in macOS Keychain (fallback to 0600 keyfile)
+    if not raw_key:
+        raw_key = Fernet.generate_key()
+        stored_in_keychain = False
+        try:
+            res = subprocess.run(
+                ['/usr/bin/security', 'add-generic-password', '-U',
+                 '-s', _MAC_KEYCHAIN_SERVICE, '-a', _MAC_KEYCHAIN_ACCOUNT,
+                 '-w', raw_key.decode('ascii')],
+                capture_output=True, text=True, timeout=10
+            )
+            stored_in_keychain = (res.returncode == 0)
+        except Exception:
+            stored_in_keychain = False
+        if not stored_in_keychain:
+            os.makedirs(os.path.dirname(keyfile), exist_ok=True)
+            fd = os.open(keyfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'wb') as f:
+                f.write(raw_key)
+
+    _MAC_FERNET_CACHE = Fernet(raw_key)
+    return _MAC_FERNET_CACHE
+
 
 def _protect_secret(value):
-    import win32crypt
-    encrypted = win32crypt.CryptProtectData(value.encode('utf-8'), 'Alioth PDF API key', None, None, None, 0)
-    if isinstance(encrypted, tuple): encrypted = encrypted[-1]
-    return _SECRET_PREFIX + base64.b64encode(encrypted).decode('ascii')
+    if os.name == 'nt':
+        import win32crypt
+        encrypted = win32crypt.CryptProtectData(value.encode('utf-8'), 'Alioth PDF API key', None, None, None, 0)
+        if isinstance(encrypted, tuple): encrypted = encrypted[-1]
+        return _SECRET_PREFIX + base64.b64encode(encrypted).decode('ascii')
+    token = _get_macos_fernet().encrypt(value.encode('utf-8')).decode('ascii')
+    return _MAC_SECRET_PREFIX + token
+
 
 def _unprotect_secret(value):
-    if not value or not value.startswith(_SECRET_PREFIX):
-        return value or ''
+    if not value:
+        return ''
+    if value.startswith(_MAC_SECRET_PREFIX):
+        try:
+            token = value[len(_MAC_SECRET_PREFIX):].encode('ascii')
+            return _get_macos_fernet().decrypt(token).decode('utf-8')
+        except Exception:
+            return ''
+    if not value.startswith(_SECRET_PREFIX):
+        return value
+    if os.name != 'nt':
+        return ''
     try:
         import win32crypt
         decrypted = win32crypt.CryptUnprotectData(base64.b64decode(value[len(_SECRET_PREFIX):]), None, None, None, 0)
@@ -3239,6 +3317,19 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
 
     def _list_printers(self):
         try:
+            if sys.platform == 'darwin':
+                names = []
+                res = subprocess.run(['lpstat', '-a'], capture_output=True, text=True, timeout=5)
+                if res.returncode == 0:
+                    for line in res.stdout.splitlines():
+                        parts = line.split()
+                        if parts:
+                            names.append(parts[0])
+                default = ''
+                res_d = subprocess.run(['lpstat', '-d'], capture_output=True, text=True, timeout=5)
+                if res_d.returncode == 0 and ':' in res_d.stdout:
+                    default = res_d.stdout.split(':', 1)[1].strip()
+                return self._send_json(200, {'printers': sorted(set(names), key=str.casefold), 'default': default})
             import win32print
             from pywintypes import error as PrinterError
             flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
@@ -3863,7 +3954,10 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             if not target_path or not os.path.exists(target_path):
                 return self._send_json(404, {'ok': False, 'error': 'FILE_NOT_FOUND'})
             norm_path = os.path.abspath(target_path)
-            subprocess.Popen(['explorer.exe', f'/select,{norm_path}'])
+            if sys.platform == 'darwin':
+                subprocess.Popen(['/usr/bin/open', '-R', norm_path])
+            else:
+                subprocess.Popen(['explorer.exe', f'/select,{norm_path}'])
             return self._send_json(200, {'ok': True, 'path': norm_path})
         except Exception as e:
             return self._send_json(500, {'ok': False, 'error': str(e)})
@@ -3887,7 +3981,12 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             cfg.set(provider, f'api_key_{index}', _protect_secret(key))
             if provider == 'azure' and endpoint:
                 cfg.set(provider, f'endpoint_{index}', endpoint)
-            with open(get_config_path(), 'w', encoding='utf-8') as f: cfg.write(f)
+            cfg_path = get_config_path()
+            os.makedirs(os.path.dirname(os.path.abspath(cfg_path)), exist_ok=True)
+            with open(cfg_path, 'w', encoding='utf-8') as f: cfg.write(f)
+            if os.name != 'nt':
+                try: os.chmod(cfg_path, 0o600)
+                except OSError: pass
             self._reload_credentials()
             return self._send_json(200, {'ok': True, 'count': len(existing) + 1})
         except Exception as e:
@@ -3906,7 +4005,12 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     for key in list(cfg[provider]):
                         if key.startswith('api_key') or (provider == 'azure' and key.startswith('endpoint')): cfg.remove_option(provider, key)
-                with open(get_config_path(), 'w', encoding='utf-8') as f: cfg.write(f)
+            cfg_path = get_config_path()
+            os.makedirs(os.path.dirname(os.path.abspath(cfg_path)), exist_ok=True)
+            with open(cfg_path, 'w', encoding='utf-8') as f: cfg.write(f)
+            if os.name != 'nt':
+                try: os.chmod(cfg_path, 0o600)
+                except OSError: pass
             self._reload_credentials()
             return self._send_json(200, {'ok': True})
         except Exception as e:
@@ -4585,6 +4689,12 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
     def _excel_browse(self):
         """POST /excel/browse — abre diálogo nativo del SO y retorna la ruta seleccionada."""
         try:
+            if sys.platform == 'darwin':
+                res = subprocess.run(
+                    ['/usr/bin/osascript', '-e', 'POSIX path of (choose file with prompt "Seleccionar archivo Excel")'],
+                    capture_output=True, text=True, timeout=120
+                )
+                return self._send_json(200, {'path': res.stdout.strip() if res.returncode == 0 else ''})
             ps_cmd = (
                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
                 "$dlg = New-Object System.Windows.Forms.OpenFileDialog;"
@@ -4612,6 +4722,10 @@ class AliothHandler(http.server.BaseHTTPRequestHandler):
             body_text = self._read_body()
             body = json.loads(body_text) if body_text else {}
             default_name = body.get('default_name', 'Extraccion_Datos.xlsx').replace("'", "").replace('"', '').replace(';', '')
+            if sys.platform == 'darwin':
+                script = f'POSIX path of (choose file name with prompt "Guardar nuevo archivo Excel" default name {json.dumps(default_name, ensure_ascii=False)})'
+                res = subprocess.run(['/usr/bin/osascript', '-e', script], capture_output=True, text=True, timeout=120)
+                return self._send_json(200, {'path': res.stdout.strip() if res.returncode == 0 else ''})
             ps_cmd = (
                 "[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms') | Out-Null;"
                 "$dlg = New-Object System.Windows.Forms.SaveFileDialog;"
@@ -6463,13 +6577,13 @@ def launch_browser(port=8765, args=None):
         return connected
 
     def launch_external(action):
-        if getattr(sys, 'frozen', False):
+        if getattr(sys, 'frozen', False) and os.name == 'nt':
             import ctypes
             ctypes.windll.kernel32.SetDllDirectoryW(None)
         try:
             return action()
         finally:
-            if getattr(sys, 'frozen', False):
+            if getattr(sys, 'frozen', False) and os.name == 'nt':
                 ctypes.windll.kernel32.SetDllDirectoryW(bundle_dir)
 
     while True:
@@ -6483,6 +6597,32 @@ def launch_browser(port=8765, args=None):
         if choice != 'legacy':
             return
         break
+
+    # --- macOS: open Chrome or Safari in app mode ---
+    if sys.platform == 'darwin':
+        mac_browsers = [
+            ('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+             [f'--app={url}', '--window-size=1400,900', '--no-first-run']),
+            ('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+             [f'--app={url}', '--window-size=1400,900', '--no-first-run']),
+        ]
+        for mac_exe, mac_args in mac_browsers:
+            if os.path.exists(mac_exe):
+                try:
+                    subprocess.Popen([mac_exe] + mac_args)
+                    wait_for_window()
+                    return
+                except Exception:
+                    pass
+        # Fallback: open with default browser via macOS open command
+        try:
+            subprocess.Popen(['open', url])
+            wait_for_window()
+            return
+        except Exception:
+            pass
+        print('[Browser] No se pudo abrir Alioth en macOS.')
+        return
 
     edge_paths = [
         os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
@@ -6568,7 +6708,8 @@ def _client_monitor_loop(cleanup_fn):
 
 
 if __name__ == '__main__':
-    if not _PROJECT_PREVIEW and check_existing_instance_and_forward(sys.argv[1:]):
+    _managed_host = '--no-browser' in sys.argv
+    if not _PROJECT_PREVIEW and not _managed_host and check_existing_instance_and_forward(sys.argv[1:]):
         sys.exit(0)
 
     if not _PROJECT_PREVIEW:
@@ -6647,14 +6788,24 @@ if __name__ == '__main__':
             preview_runtime.cleanup()
     atexit.register(_cleanup_runtime)
 
-    # Iniciar monitor de inactividad de clientes
-    threading.Thread(target=_client_monitor_loop, args=(_cleanup_runtime,), daemon=True).start()
+    import signal
+    def _handle_sigterm(_signum, _frame):
+        _cleanup_runtime()
+        os._exit(0)
+    try:
+        signal.signal(signal.SIGTERM, _handle_sigterm)
+    except Exception:
+        pass
+
+    # Iniciar monitor de inactividad de clientes (solo si no es gestionado por el host nativo macOS)
+    if not _managed_host:
+        threading.Thread(target=_client_monitor_loop, args=(_cleanup_runtime,), daemon=True).start()
 
     # Si es binario congelado (PyInstaller .exe) o se solicita con flag, lanzar navegador
-    if getattr(sys, 'frozen', False) or '--launch-browser' in sys.argv:
+    if not _managed_host and (getattr(sys, 'frozen', False) or '--launch-browser' in sys.argv):
         threading.Thread(target=launch_browser, args=(port, sys.argv[1:]), daemon=True).start()
 
-    print(f'--- ALIOTH PROXY v3.1 ACTIVO en puerto {port} | Gemini keys: {len(GEMINI_KEYS)} | Groq keys: {len(GROQ_KEYS)} ---')
+    print(f'--- ALIOTH PROXY v3.1 ACTIVO en puerto {port} | Gemini keys: {len(GEMINI_KEYS)} | Groq keys: {len(GROQ_KEYS)} ---', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

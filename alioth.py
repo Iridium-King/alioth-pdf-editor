@@ -36,7 +36,7 @@ def _launch_gui(args):
     # The legacy startup owns forwarding PDFs and opening the native window.
     # Source launches through alioth.py should open that window just like double click.
     gui_args = list(args)
-    if "--launch-browser" not in gui_args:
+    if "--launch-browser" not in gui_args and "--no-browser" not in gui_args:
         gui_args.append("--launch-browser")
     sys.argv = [original[0], *gui_args]
     try:
@@ -73,8 +73,8 @@ def _mcp_main(args):
 
 
 def main(argv=None):
-    args = list(sys.argv[1:] if argv is None else argv)
-    if not args or args[0] in {"gui", "--launch-browser"} or args[0].lower().endswith(".pdf"):
+    args = [a for a in (sys.argv[1:] if argv is None else argv) if not a.startswith("-psn_")]
+    if not args or args[0] in {"gui", "--launch-browser", "--no-browser"} or args[0].lower().endswith(".pdf"):
         return _launch_gui(args[1:] if args[:1] == ["gui"] else args)
     if args[0] in {"--mcp", "--cli"}:
         args = (["mcp", "serve", *args[1:]] if args[0] == "--mcp" else args[1:])

@@ -1,4 +1,5 @@
 """Autorizaciones efímeras para destinos elegidos por Windows."""
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from dataclasses import replace
